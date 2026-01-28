@@ -331,7 +331,7 @@ def upsert_snapshot(
 
       date_kickoff, date_design, date_validation, date_golive, date_reception, date_end,
 
-      team, project_manager, consultant, order_phase, internal_status, project_type, service_type, offer_code, report_date,
+      team, project_manager, consultant, order_phase, internal_status, project_type, service_type, offer_code, report_date, comments,
       kickoff_ok, design_ok, validation_ok, golive_ok, reception_ok, end_ok,
       mp,
 
@@ -355,7 +355,7 @@ def upsert_snapshot(
 
       %(date_kickoff)s, %(date_design)s, %(date_validation)s, %(date_golive)s, %(date_reception)s, %(date_end)s,
 
-      %(team)s, %(project_manager)s, %(consultant)s, %(order_phase)s, %(internal_status)s, %(project_type)s, %(service_type)s, %(offer_code)s, %(report_date)s,
+      %(team)s, %(project_manager)s, %(consultant)s, %(order_phase)s, %(internal_status)s, %(project_type)s, %(service_type)s, %(offer_code)s, %(report_date)s, %(comments)s,
       %(kickoff_ok)s, %(design_ok)s, %(validation_ok)s, %(golive_ok)s, %(reception_ok)s, %(end_ok)s,
       %(mp)s,
 
@@ -407,6 +407,7 @@ def upsert_snapshot(
       service_type = COALESCE(EXCLUDED.service_type, project_snapshot.service_type),
       offer_code = COALESCE(EXCLUDED.offer_code, project_snapshot.offer_code),
       report_date = COALESCE(EXCLUDED.report_date, project_snapshot.report_date),
+      comments = COALESCE(EXCLUDED.comments, project_snapshot.comments),
 
       kickoff_ok = COALESCE(EXCLUDED.kickoff_ok, project_snapshot.kickoff_ok),
       design_ok = COALESCE(EXCLUDED.design_ok, project_snapshot.design_ok),
@@ -516,6 +517,7 @@ def map_row(row: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "service_type": row.get("service_type"),
         "offer_code": row.get("offer_code"),
         "report_date": _to_date(row.get("report_date")),
+        "comments": row.get("comments"),
 
         "kickoff_ok": _to_bool(row.get("kickoff_ok")),
         "design_ok": _to_bool(row.get("design_ok")),

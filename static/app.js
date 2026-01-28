@@ -1,5 +1,6 @@
 ﻿const API = "http://127.0.0.1:8000";
 const $ = (id) => document.getElementById(id);
+let currentProjectId = null;
 
 function isEmpty(v) {
   return v === null || v === undefined || v === "" || v === "NaT";
@@ -28,6 +29,11 @@ function fmtPct(v, mode = "0_100") {
   const val = mode === "0_1" ? n * 100 : n;
   return `${val.toFixed(2)} %`;
 }
+function fmtFixed2(v) {
+  if (isEmpty(v)) return "—";
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(2) : String(v);
+}
 function fmtDateISO(v) {
   if (isEmpty(v)) return "—";
   const d = new Date(v + "T00:00:00");
@@ -37,6 +43,11 @@ function fmtDateTime(v) {
   if (isEmpty(v)) return "—";
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString("es-ES");
+}
+function toInputValue(v) {
+  if (isEmpty(v)) return "0";
+  const n = Number(v);
+  return Number.isFinite(n) ? String(n) : "0";
 }
 
 function show(id) {
@@ -50,6 +61,10 @@ function hide(id) {
 function setText(id, value) {
   const el = $(id);
   if (el) el.textContent = value;
+}
+function setValue(id, value) {
+  const el = $(id);
+  if (el) el.value = value;
 }
 
 function setKpiColor(id, sign) {
@@ -68,8 +83,9 @@ function setActionsEnabled(isEnabled) {
 }
 
 function resetUI() {
+  currentProjectId = null;
   // ocultar secciones
-  ["projectHeader", "datesRow", "kpis", "detailsWrap"].forEach(hide);
+  ["projectHeader", "datesRow", "excelCommentsCard", "detailsSection"].forEach(hide);
 
   // desactivar acciones dependientes de proyecto
   setActionsEnabled(false);
@@ -90,27 +106,29 @@ function resetUI() {
     "date_golive",
     "date_reception",
     "date_end",
-
-    // KPIs nuevos (fila)
-    "kpi_avance_w",
-    "kpi_horas_proyecto",
-    "kpi_horas_teoricas",
-    "kpi_horas_reales",
-    "kpi_desviacion_pct",
-
-    // otros KPIs que pudieras mantener
-    "kpi_deviation_cd",
-    "kpi_payment_pending",
+    "excel_comments",
+    "weekly_progress_delta",
+    "weekly_real_hours_delta",
+    "weekly_theoretical_hours_delta",
+    "weekly_deviation_pct_delta",
+    "weekly_productivity",
+    "economic_total",
+    "economic_pending",
+    "economic_paid_pct",
   ];
   idsToClear.forEach((id) => setText(id, "—"));
-  setKpiColor("kpi_desviacion_pct", 0);
-
-  const details = $("details");
-  if (details) details.innerHTML = "";
+  setValue("phase_design", "");
+  setValue("phase_development", "");
+  setValue("phase_pem", "");
+  setValue("phase_hypercare", "");
+  setValue("role_pm", "");
+  setValue("role_consultant", "");
+  setValue("role_technical", "");
+  setValue("project_comment_input", "");
 }
 
 async function loadProject(code) {
-  const res = await fetch(`${API}/projects/${encodeURIComponent(code)}/state`);
+  const res = await fetch(`${API}/projects/${encodeURIComponent(code)}/details`);
   if (!res.ok) {
     resetUI();
     alert(`No puedo cargar el proyecto ${code} (HTTP ${res.status})`);
@@ -125,6 +143,7 @@ async function loadProject(code) {
     alert("Respuesta vacía o incompleta del servidor.");
     return;
   }
+  currentProjectId = s.project.id;
 
   // Header (cabecera)
   show("projectHeader");
@@ -154,107 +173,127 @@ async function loadProject(code) {
   setText("date_reception", fmtDateISO(l.date_reception));
   setText("date_end", fmtDateISO(l.date_end));
 
-  // KPIs
-  show("kpis");
-
-  // --- KPI row (Avance / Horas / Desviación) ---
-  const avanceW = Number(l.progress_w); // 0..100 esperado
-  const horasProyecto = !isEmpty(l.ordered_total)
-    ? Number(l.ordered_total)
-    : Number(l.ordered_n || 0) + Number(l.ordered_e || 0);
-
-  const horasTeoricas = !isEmpty(l.horas_teoricas)
-    ? Number(l.horas_teoricas)
-    : Number.isFinite(horasProyecto) && Number.isFinite(avanceW)
-    ? horasProyecto * (avanceW / 100.0)
-    : NaN;
-
-  const horasReales = !isEmpty(l.real_hours) ? Number(l.real_hours) : NaN;
-
-  const desviacionPct = !isEmpty(l.desviacion_pct)
-    ? Number(l.desviacion_pct)
-    : Number.isFinite(horasTeoricas) &&
-      horasTeoricas !== 0 &&
-      Number.isFinite(horasReales)
-    ? ((horasReales - horasTeoricas) / horasTeoricas) * 100.0
-    : NaN;
-
-  setText("kpi_avance_w", fmtPct(l.progress_w, "0_100"));
-  setText(
-    "kpi_horas_proyecto",
-    Number.isFinite(horasProyecto) ? fmtNum(horasProyecto) : "—"
-  );
-  setText(
-    "kpi_horas_teoricas",
-    Number.isFinite(horasTeoricas) ? fmtNum(horasTeoricas) : "—"
-  );
-  setText(
-    "kpi_horas_reales",
-    Number.isFinite(horasReales) ? fmtNum(horasReales) : "—"
-  );
-
-  if (Number.isFinite(desviacionPct)) {
-    setText("kpi_desviacion_pct", `${desviacionPct.toFixed(2)} %`);
-    // >0 rojo, <0 verde
-    setKpiColor("kpi_desviacion_pct", desviacionPct);
-  } else {
-    setText("kpi_desviacion_pct", "—");
-    setKpiColor("kpi_desviacion_pct", 0);
-  }
-
   // activar acciones cuando ya hay proyecto cargado
   setActionsEnabled(true);
 
-  // Details
-  show("detailsWrap");
-  const details = $("details");
-  if (details) {
-    details.innerHTML = "";
+  show("excelCommentsCard");
+  setText("excel_comments", fmtText(l.comments));
 
-    const rows = [
-      ["Avance semanal (W)", fmtPct(l.progress_w, "0_100")],
-      ["Horas proyecto (Ordered total)", Number.isFinite(horasProyecto) ? fmtNum(horasProyecto) : "—"],
-      ["Horas teóricas", Number.isFinite(horasTeoricas) ? fmtNum(horasTeoricas) : "—"],
-      ["Horas reales", Number.isFinite(horasReales) ? fmtNum(horasReales) : "—"],
-      ["Desviación %", Number.isFinite(desviacionPct) ? `${desviacionPct.toFixed(2)} %` : "—"],
+  show("detailsSection");
+  setText("weekly_progress_delta", fmtPct(l.progress_w_delta, "0_100"));
+  setText("weekly_real_hours_delta", fmtNum(l.real_hours_delta));
+  setText("weekly_theoretical_hours_delta", fmtNum(l.horas_teoricas_delta));
+  setText("weekly_deviation_pct_delta", fmtPct(l.desviacion_pct_delta, "0_100"));
+  setText("weekly_productivity", fmtFixed2(l.productividad_proyecto));
 
-      ["Progreso acumulado (C)", fmtPct(l.progress_c, "0_100")],
-      ["Progreso PM", fmtPct(l.progress_pm, "0_100")],
-      ["Progreso E", fmtPct(l.progress_e, "0_100")],
+  setText("economic_total", fmtEur(l.payment_total));
+  setText("economic_pending", fmtEur(l.payment_pending));
+  setText("economic_paid_pct", fmtPct(l.payment_inv, "0_100"));
 
-      ["Desviación TD", fmtNum(l.deviation_td)],
-      ["Desviación CD", fmtNum(l.deviation_cd)],
-      ["Desviación PMD", fmtNum(l.deviation_pmd)],
+  const phaseValues = s.assigned_hours_phase || {};
+  setValue("phase_design", toInputValue(phaseValues.design ?? 0));
+  setValue("phase_development", toInputValue(phaseValues.development ?? 0));
+  setValue("phase_pem", toInputValue(phaseValues.pem ?? 0));
+  setValue("phase_hypercare", toInputValue(phaseValues.hypercare ?? 0));
 
-      ["Importe total", fmtEur(l.payment_total)],
-      ["Pendiente", fmtEur(l.payment_pending)],
-      ["Facturado (%)", fmtPct(l.payment_inv, "0_100")],
+  const roleValues = s.assigned_hours_role || {};
+  setValue("role_pm", toInputValue(roleValues.pm ?? 0));
+  setValue("role_consultant", toInputValue(roleValues.consultant ?? 0));
+  setValue("role_technical", toInputValue(roleValues.technical ?? 0));
 
-      ["Distribución C", fmtPct(l.dist_c, "0_1")],
-      ["Distribución PM", fmtPct(l.dist_pm, "0_1")],
-      ["Distribución E", fmtPct(l.dist_e, "0_1")],
+  setValue("project_comment_input", s.project_comment ?? "");
+}
 
-      ["Fase pedido", fmtText(l.order_phase)],
-      ["Estado interno", fmtText(l.internal_status)],
-      ["Tipo proyecto", fmtText(l.project_type)],
-      ["Oferta", fmtText(l.offer_code)],
-      ["Fecha reporte", fmtText(l.report_date)],
+async function postJson(url, payload) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const message = await res.text();
+    throw new Error(message || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
 
-      ["Replanificación", fmtText(l.replanning_reason)],
-      ["Comentarios", fmtText(l.comments)],
-    ];
+async function savePhaseHours() {
+  if (!currentProjectId) {
+    alert("Carga un proyecto antes de guardar.");
+    return;
+  }
+  const status = $("phaseStatus");
+  if (status) status.textContent = "Guardando...";
+  try {
+    await Promise.all([
+      postJson(`${API}/projects/${currentProjectId}/assigned-hours/phase`, {
+        phase: "design",
+        hours: Number($("phase_design").value || 0),
+      }),
+      postJson(`${API}/projects/${currentProjectId}/assigned-hours/phase`, {
+        phase: "development",
+        hours: Number($("phase_development").value || 0),
+      }),
+      postJson(`${API}/projects/${currentProjectId}/assigned-hours/phase`, {
+        phase: "pem",
+        hours: Number($("phase_pem").value || 0),
+      }),
+      postJson(`${API}/projects/${currentProjectId}/assigned-hours/phase`, {
+        phase: "hypercare",
+        hours: Number($("phase_hypercare").value || 0),
+      }),
+    ]);
+    if (status) status.textContent = "Guardado";
+  } catch (err) {
+    if (status) status.textContent = "Error al guardar";
+    alert(err.message);
+  }
+}
 
-    rows.forEach(([label, value]) => {
-      const col = document.createElement("div");
-      col.className = "col-12 col-md-6";
-      col.innerHTML = `
-        <div class="d-flex justify-content-between align-items-start border rounded-4 p-2 px-3" style="background:#f8fafc;">
-          <div class="text-muted small fw-semibold" style="max-width:45%;">${label}</div>
-          <div class="fw-bold text-end" style="max-width:55%; white-space:pre-wrap;">${value}</div>
-        </div>
-      `;
-      details.appendChild(col);
+async function saveRoleHours() {
+  if (!currentProjectId) {
+    alert("Carga un proyecto antes de guardar.");
+    return;
+  }
+  const status = $("roleStatus");
+  if (status) status.textContent = "Guardando...";
+  try {
+    await Promise.all([
+      postJson(`${API}/projects/${currentProjectId}/assigned-hours/role`, {
+        role: "pm",
+        hours: Number($("role_pm").value || 0),
+      }),
+      postJson(`${API}/projects/${currentProjectId}/assigned-hours/role`, {
+        role: "consultant",
+        hours: Number($("role_consultant").value || 0),
+      }),
+      postJson(`${API}/projects/${currentProjectId}/assigned-hours/role`, {
+        role: "technical",
+        hours: Number($("role_technical").value || 0),
+      }),
+    ]);
+    if (status) status.textContent = "Guardado";
+  } catch (err) {
+    if (status) status.textContent = "Error al guardar";
+    alert(err.message);
+  }
+}
+
+async function saveProjectComment() {
+  if (!currentProjectId) {
+    alert("Carga un proyecto antes de guardar.");
+    return;
+  }
+  const status = $("commentStatus");
+  if (status) status.textContent = "Guardando...";
+  try {
+    await postJson(`${API}/projects/${currentProjectId}/comments`, {
+      comment_text: $("project_comment_input").value || "",
     });
+    if (status) status.textContent = "Guardado";
+  } catch (err) {
+    if (status) status.textContent = "Error al guardar";
+    alert(err.message);
   }
 }
 
@@ -271,6 +310,7 @@ function onLoadClick() {
 
 document.addEventListener("DOMContentLoaded", () => {
   resetUI(); // todo en blanco al entrar
+  currentProjectId = null;
 
   // Buscar
   const btn = $("btnLoad");
@@ -304,4 +344,13 @@ document.addEventListener("DOMContentLoaded", () => {
       alert("Pendiente: Generar informe (siguiente paso).");
     });
   }
+
+  const savePhase = $("savePhase");
+  if (savePhase) savePhase.addEventListener("click", savePhaseHours);
+
+  const saveRole = $("saveRole");
+  if (saveRole) saveRole.addEventListener("click", saveRoleHours);
+
+  const saveComment = $("saveProjectComment");
+  if (saveComment) saveComment.addEventListener("click", saveProjectComment);
 });

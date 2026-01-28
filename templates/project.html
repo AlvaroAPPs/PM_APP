@@ -170,68 +170,134 @@
           </div>
         </div>
 
-        <!-- KPI row (single line) -->
-        <div class="col-12">
-          <div class="row g-3 row-cols-1 row-cols-md-5">
-            <div class="col">
-              <div class="card shadow-soft">
-                <div class="card-body">
-                  <div class="muted fw-semibold">Avance (W)</div>
-                  <div class="kpi-value" id="kpi_avance_w">—</div>
-                  <div class="muted small">Progreso semanal</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="col">
-              <div class="card shadow-soft">
-                <div class="card-body">
-                  <div class="muted fw-semibold">Horas proyecto</div>
-                  <div class="kpi-value" id="kpi_horas_proyecto">—</div>
-                  <div class="muted small">Total (Ordered total)</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="col">
-              <div class="card shadow-soft">
-                <div class="card-body">
-                  <div class="muted fw-semibold">Horas teóricas</div>
-                  <div class="kpi-value" id="kpi_horas_teoricas">—</div>
-                  <div class="muted small">Total * Avance</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="col">
-              <div class="card shadow-soft">
-                <div class="card-body">
-                  <div class="muted fw-semibold">Horas reales</div>
-                  <div class="kpi-value" id="kpi_horas_reales">—</div>
-                  <div class="muted small">Real</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="col">
-              <div class="card shadow-soft">
-                <div class="card-body">
-                  <div class="muted fw-semibold">Desviación %</div>
-                  <div class="kpi-value" id="kpi_desviacion_pct">—</div>
-                  <div class="muted small">Real vs Teóricas</div>
-                </div>
-              </div>
-            </div>
+        <!-- Comments from Excel -->
+        <div id="excelCommentsCard" class="card shadow-soft mt-3 d-none">
+          <div class="card-body">
+            <div class="fw-semibold mb-2">Comentarios (Excel)</div>
+            <div id="excel_comments" class="border rounded-4 p-3 bg-light" style="white-space: pre-wrap;">—</div>
           </div>
         </div>
 
+        <!-- Details -->
+        <div id="detailsSection" class="card shadow-soft mt-3 d-none">
+          <div class="card-body">
+            <h3 class="fw-semibold mb-3">Detalles</h3>
 
-        <!-- Details (si lo quieres mantener, lo dejamos oculto por ahora) -->
-        <div id="detailsWrap" class="mt-3 d-none">
-          <div class="card shadow-soft">
-            <div class="card-body">
-              <div class="fw-semibold mb-3">Detalles</div>
-              <div id="details" class="row g-2"></div>
+            <div class="mb-4">
+              <div class="fw-semibold mb-2">Evolución semanal</div>
+              <div class="row g-2">
+                <div class="col-12 col-md-4">
+                  <div class="border rounded-4 p-3 bg-light">
+                    <div class="muted small fw-semibold">Progreso Δ (W)</div>
+                    <div class="fw-bold" id="weekly_progress_delta">—</div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-4">
+                  <div class="border rounded-4 p-3 bg-light">
+                    <div class="muted small fw-semibold">Horas reales Δ</div>
+                    <div class="fw-bold" id="weekly_real_hours_delta">—</div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-4">
+                  <div class="border rounded-4 p-3 bg-light">
+                    <div class="muted small fw-semibold">Horas teóricas Δ</div>
+                    <div class="fw-bold" id="weekly_theoretical_hours_delta">—</div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-4">
+                  <div class="border rounded-4 p-3 bg-light">
+                    <div class="muted small fw-semibold">Desviación % Δ</div>
+                    <div class="fw-bold" id="weekly_deviation_pct_delta">—</div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-4">
+                  <div class="border rounded-4 p-3 bg-light">
+                    <div class="muted small fw-semibold">Productividad proyecto</div>
+                    <div class="fw-bold" id="weekly_productivity">—</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mb-4">
+              <div class="fw-semibold mb-2">Horas asignadas por fase</div>
+              <div class="row g-2">
+                <div class="col-12 col-md-3">
+                  <label class="muted small fw-semibold" for="phase_design">Design</label>
+                  <input id="phase_design" type="number" step="0.01" class="form-control" />
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="muted small fw-semibold" for="phase_development">Development</label>
+                  <input id="phase_development" type="number" step="0.01" class="form-control" />
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="muted small fw-semibold" for="phase_pem">PEM</label>
+                  <input id="phase_pem" type="number" step="0.01" class="form-control" />
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="muted small fw-semibold" for="phase_hypercare">Hypercare</label>
+                  <input id="phase_hypercare" type="number" step="0.01" class="form-control" />
+                </div>
+              </div>
+              <div class="d-flex align-items-center gap-2 mt-2">
+                <button id="savePhase" class="btn btn-sm btn-dark">Guardar fases</button>
+                <div id="phaseStatus" class="muted small"></div>
+              </div>
+            </div>
+
+            <div class="mb-4">
+              <div class="fw-semibold mb-2">Horas asignadas por rol</div>
+              <div class="row g-2">
+                <div class="col-12 col-md-4">
+                  <label class="muted small fw-semibold" for="role_pm">Project Manager (PM)</label>
+                  <input id="role_pm" type="number" step="0.01" class="form-control" />
+                </div>
+                <div class="col-12 col-md-4">
+                  <label class="muted small fw-semibold" for="role_consultant">Consultor</label>
+                  <input id="role_consultant" type="number" step="0.01" class="form-control" />
+                </div>
+                <div class="col-12 col-md-4">
+                  <label class="muted small fw-semibold" for="role_technical">Technical</label>
+                  <input id="role_technical" type="number" step="0.01" class="form-control" />
+                </div>
+              </div>
+              <div class="d-flex align-items-center gap-2 mt-2">
+                <button id="saveRole" class="btn btn-sm btn-dark">Guardar roles</button>
+                <div id="roleStatus" class="muted small"></div>
+              </div>
+            </div>
+
+            <div class="mb-4">
+              <div class="fw-semibold mb-2">Estado económico</div>
+              <div class="row g-2">
+                <div class="col-12 col-md-4">
+                  <div class="border rounded-4 p-3 bg-light">
+                    <div class="muted small fw-semibold">Total</div>
+                    <div class="fw-bold" id="economic_total">—</div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-4">
+                  <div class="border rounded-4 p-3 bg-light">
+                    <div class="muted small fw-semibold">Pendiente</div>
+                    <div class="fw-bold" id="economic_pending">—</div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-4">
+                  <div class="border rounded-4 p-3 bg-light">
+                    <div class="muted small fw-semibold">Cobrado %</div>
+                    <div class="fw-bold" id="economic_paid_pct">—</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="fw-semibold mb-2">Comentarios del proyecto</div>
+              <textarea id="project_comment_input" class="form-control" rows="4" placeholder="Añade comentarios del proyecto..."></textarea>
+              <div class="d-flex align-items-center gap-2 mt-2">
+                <button id="saveProjectComment" class="btn btn-sm btn-dark">Guardar comentario</button>
+                <div id="commentStatus" class="muted small"></div>
+              </div>
             </div>
           </div>
         </div>
