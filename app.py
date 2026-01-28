@@ -38,6 +38,16 @@ class ProjectCommentIn(BaseModel):
     comment_text: str | None = None
 
 
+def normalize_comment(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, memoryview):
+        value = value.tobytes()
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="ignore")
+    return str(value)
+
+
 def ensure_details_columns(cur: psycopg.Cursor) -> None:
     cur.execute(
         """
@@ -321,13 +331,15 @@ def project_details(project_code: str):
         "status": p[8],
     }
 
+    project_comment = p[9] if p[9] is not None else latest_dict.get("comments")
+    excel_comments = latest_dict.get("comments")
     return {
         "project": project,
         "latest": latest_dict,
         "assigned_hours_phase": assigned_hours_phase,
         "assigned_hours_role": assigned_hours_role,
-        "project_comment": p[9] if p[9] is not None else latest_dict.get("comments"),
-        "excel_comments": latest_dict.get("comments"),
+        "project_comment": normalize_comment(project_comment),
+        "excel_comments": normalize_comment(excel_comments),
     }
 
 
