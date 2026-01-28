@@ -85,7 +85,7 @@ function setActionsEnabled(isEnabled) {
 function resetUI() {
   currentProjectId = null;
   // ocultar secciones
-  ["projectHeader", "datesRow", "kpis", "detailsSection"].forEach(hide);
+  ["projectHeader", "datesRow", "kpis", "excelCommentsCard", "detailsSection"].forEach(hide);
 
   // desactivar acciones dependientes de proyecto
   setActionsEnabled(false);
@@ -111,6 +111,7 @@ function resetUI() {
     "kpi_horas_teoricas",
     "kpi_horas_reales",
     "kpi_desviacion_pct",
+    "excel_comments",
     "weekly_progress_delta",
     "weekly_real_hours_delta",
     "weekly_theoretical_hours_delta",
@@ -228,6 +229,9 @@ async function loadProject(code) {
     setText("kpi_desviacion_pct", "—");
     setKpiColor("kpi_desviacion_pct", 0);
   }
+
+  show("excelCommentsCard");
+  setText("excel_comments", fmtText(l.comments));
 
   show("detailsSection");
   setText("weekly_progress_delta", fmtPct(l.progress_w_delta, "0_100"));
