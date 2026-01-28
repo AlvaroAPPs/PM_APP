@@ -170,6 +170,61 @@
           </div>
         </div>
 
+        <!-- KPI row (single line) -->
+        <div id="kpis" class="col-12 d-none">
+          <div class="row g-3 row-cols-1 row-cols-md-5">
+            <div class="col">
+              <div class="card shadow-soft">
+                <div class="card-body">
+                  <div class="muted fw-semibold">Avance (W)</div>
+                  <div class="kpi-value" id="kpi_avance_w">—</div>
+                  <div class="muted small">Progreso semanal</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col">
+              <div class="card shadow-soft">
+                <div class="card-body">
+                  <div class="muted fw-semibold">Horas proyecto</div>
+                  <div class="kpi-value" id="kpi_horas_proyecto">—</div>
+                  <div class="muted small">Total (Ordered total)</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col">
+              <div class="card shadow-soft">
+                <div class="card-body">
+                  <div class="muted fw-semibold">Horas teóricas</div>
+                  <div class="kpi-value" id="kpi_horas_teoricas">—</div>
+                  <div class="muted small">Total * Avance</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col">
+              <div class="card shadow-soft">
+                <div class="card-body">
+                  <div class="muted fw-semibold">Horas reales</div>
+                  <div class="kpi-value" id="kpi_horas_reales">—</div>
+                  <div class="muted small">Real</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col">
+              <div class="card shadow-soft">
+                <div class="card-body">
+                  <div class="muted fw-semibold">Desviación %</div>
+                  <div class="kpi-value" id="kpi_desviacion_pct">—</div>
+                  <div class="muted small">Real vs Teóricas</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Comments from Excel -->
         <div id="excelCommentsCard" class="card shadow-soft mt-3 d-none">
           <div class="card-body">

@@ -85,7 +85,7 @@ function setActionsEnabled(isEnabled) {
 function resetUI() {
   currentProjectId = null;
   // ocultar secciones
-  ["projectHeader", "datesRow", "excelCommentsCard", "detailsSection"].forEach(hide);
+  ["projectHeader", "datesRow", "kpis", "excelCommentsCard", "detailsSection"].forEach(hide);
 
   // desactivar acciones dependientes de proyecto
   setActionsEnabled(false);
@@ -106,6 +106,11 @@ function resetUI() {
     "date_golive",
     "date_reception",
     "date_end",
+    "kpi_avance_w",
+    "kpi_horas_proyecto",
+    "kpi_horas_teoricas",
+    "kpi_horas_reales",
+    "kpi_desviacion_pct",
     "excel_comments",
     "weekly_progress_delta",
     "weekly_real_hours_delta",
@@ -117,6 +122,7 @@ function resetUI() {
     "economic_paid_pct",
   ];
   idsToClear.forEach((id) => setText(id, "—"));
+  setKpiColor("kpi_desviacion_pct", 0);
   setValue("phase_design", "");
   setValue("phase_development", "");
   setValue("phase_pem", "");
@@ -175,6 +181,54 @@ async function loadProject(code) {
 
   // activar acciones cuando ya hay proyecto cargado
   setActionsEnabled(true);
+
+  // KPIs
+  show("kpis");
+
+  // --- KPI row (Avance / Horas / Desviación) ---
+  const avanceW = Number(l.progress_w); // 0..100 esperado
+  const horasProyecto = !isEmpty(l.ordered_total)
+    ? Number(l.ordered_total)
+    : Number(l.ordered_n || 0) + Number(l.ordered_e || 0);
+
+  const horasTeoricas = !isEmpty(l.horas_teoricas)
+    ? Number(l.horas_teoricas)
+    : Number.isFinite(horasProyecto) && Number.isFinite(avanceW)
+    ? horasProyecto * (avanceW / 100.0)
+    : NaN;
+
+  const horasReales = !isEmpty(l.real_hours) ? Number(l.real_hours) : NaN;
+
+  const desviacionPct = !isEmpty(l.desviacion_pct)
+    ? Number(l.desviacion_pct)
+    : Number.isFinite(horasTeoricas) &&
+      horasTeoricas !== 0 &&
+      Number.isFinite(horasReales)
+    ? ((horasReales - horasTeoricas) / horasTeoricas) * 100.0
+    : NaN;
+
+  setText("kpi_avance_w", fmtPct(l.progress_w, "0_100"));
+  setText(
+    "kpi_horas_proyecto",
+    Number.isFinite(horasProyecto) ? fmtNum(horasProyecto) : "—"
+  );
+  setText(
+    "kpi_horas_teoricas",
+    Number.isFinite(horasTeoricas) ? fmtNum(horasTeoricas) : "—"
+  );
+  setText(
+    "kpi_horas_reales",
+    Number.isFinite(horasReales) ? fmtNum(horasReales) : "—"
+  );
+
+  if (Number.isFinite(desviacionPct)) {
+    setText("kpi_desviacion_pct", `${desviacionPct.toFixed(2)} %`);
+    // >0 rojo, <0 verde
+    setKpiColor("kpi_desviacion_pct", desviacionPct);
+  } else {
+    setText("kpi_desviacion_pct", "—");
+    setKpiColor("kpi_desviacion_pct", 0);
+  }
 
   show("excelCommentsCard");
   setText("excel_comments", fmtText(l.comments));
