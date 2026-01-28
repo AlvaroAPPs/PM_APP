@@ -85,7 +85,7 @@ function setActionsEnabled(isEnabled) {
 function resetUI() {
   currentProjectId = null;
   // ocultar secciones
-  ["projectHeader", "datesRow", "kpis", "excelCommentsCard", "detailsSection"].forEach(hide);
+  ["projectHeader", "datesRow", "kpis", "detailsSection"].forEach(hide);
 
   // desactivar acciones dependientes de proyecto
   setActionsEnabled(false);
@@ -111,7 +111,6 @@ function resetUI() {
     "kpi_horas_teoricas",
     "kpi_horas_reales",
     "kpi_desviacion_pct",
-    "excel_comments",
     "weekly_progress_delta",
     "weekly_real_hours_delta",
     "weekly_theoretical_hours_delta",
@@ -129,7 +128,7 @@ function resetUI() {
   setValue("phase_hypercare", "");
   setValue("role_pm", "");
   setValue("role_consultant", "");
-  setValue("role_technical", "");
+  setValue("role_technician", "");
   setValue("project_comment_input", "");
 }
 
@@ -230,9 +229,6 @@ async function loadProject(code) {
     setKpiColor("kpi_desviacion_pct", 0);
   }
 
-  show("excelCommentsCard");
-  setText("excel_comments", fmtText(l.comments));
-
   show("detailsSection");
   setText("weekly_progress_delta", fmtPct(l.progress_w_delta, "0_100"));
   setText("weekly_real_hours_delta", fmtNum(l.real_hours_delta));
@@ -253,7 +249,7 @@ async function loadProject(code) {
   const roleValues = s.assigned_hours_role || {};
   setValue("role_pm", toInputValue(roleValues.pm ?? 0));
   setValue("role_consultant", toInputValue(roleValues.consultant ?? 0));
-  setValue("role_technical", toInputValue(roleValues.technical ?? 0));
+  setValue("role_technician", toInputValue(roleValues.technician ?? 0));
 
   setValue("project_comment_input", s.project_comment ?? "");
 }
@@ -322,8 +318,8 @@ async function saveRoleHours() {
         hours: Number($("role_consultant").value || 0),
       }),
       postJson(`${API}/projects/${currentProjectId}/assigned-hours/role`, {
-        role: "technical",
-        hours: Number($("role_technical").value || 0),
+        role: "technician",
+        hours: Number($("role_technician").value || 0),
       }),
     ]);
     if (status) status.textContent = "Guardado";

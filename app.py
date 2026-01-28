@@ -21,7 +21,7 @@ templates = Jinja2Templates(directory="templates")
 DB_DSN = os.environ.get("DB_DSN", "postgresql://postgres:TU_PASSWORD@localhost:5432/mecalux")
 
 PHASES = ("design", "development", "pem", "hypercare")
-ROLES = ("pm", "consultant", "technical")
+ROLES = ("pm", "consultant", "technician")
 
 
 class AssignedHoursPhaseIn(BaseModel):
@@ -38,41 +38,18 @@ class ProjectCommentIn(BaseModel):
     comment_text: str | None = None
 
 
-def ensure_details_tables(cur: psycopg.Cursor) -> None:
+def ensure_details_columns(cur: psycopg.Cursor) -> None:
     cur.execute(
         """
-        CREATE TABLE IF NOT EXISTS project_assigned_hours_phase (
-            id SERIAL PRIMARY KEY,
-            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            phase TEXT NOT NULL,
-            hours NUMERIC NOT NULL DEFAULT 0,
-            updated_at TIMESTAMP NOT NULL DEFAULT now(),
-            UNIQUE (project_id, phase)
-        );
-        """
-    )
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS project_assigned_hours_role (
-            id SERIAL PRIMARY KEY,
-            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            role TEXT NOT NULL,
-            hours NUMERIC NOT NULL DEFAULT 0,
-            updated_at TIMESTAMP NOT NULL DEFAULT now(),
-            UNIQUE (project_id, role)
-        );
-        """
-    )
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS project_comments (
-            id SERIAL PRIMARY KEY,
-            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            comment_text TEXT,
-            created_at TIMESTAMP NOT NULL DEFAULT now(),
-            updated_at TIMESTAMP NOT NULL DEFAULT now(),
-            UNIQUE (project_id)
-        );
+        ALTER TABLE projects
+        ADD COLUMN IF NOT EXISTS comments TEXT,
+        ADD COLUMN IF NOT EXISTS hours_design NUMERIC DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS hours_development NUMERIC DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS hours_pem NUMERIC DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS hours_hypercare NUMERIC DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS hours_pm NUMERIC DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS hours_consultant NUMERIC DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS hours_technician NUMERIC DEFAULT 0;
         """
     )
 
@@ -284,10 +261,13 @@ def project_state(project_code: str, weeks_back: int = 20):
 def project_details(project_code: str):
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
-            ensure_details_tables(cur)
+            ensure_details_columns(cur)
             cur.execute(
                 """
-                SELECT id, project_code, project_name, client, company, team, project_manager, consultant, status
+                SELECT id, project_code, project_name, client, company, team, project_manager, consultant, status,
+                       comments,
+                       hours_design, hours_development, hours_pem, hours_hypercare,
+                       hours_pm, hours_consultant, hours_technician
                 FROM projects
                 WHERE project_code = %s
                 """,
@@ -316,44 +296,18 @@ def project_details(project_code: str):
             colnames = [desc[0] for desc in cur.description]
             latest_dict = dict(zip(colnames, latest))
 
-            cur.execute(
-                """
-                SELECT phase, hours
-                FROM project_assigned_hours_phase
-                WHERE project_id = %s
-                """,
-                (project_id,),
-            )
-            phase_rows = cur.fetchall()
+    assigned_hours_phase = {
+        "design": float(p[10] or 0),
+        "development": float(p[11] or 0),
+        "pem": float(p[12] or 0),
+        "hypercare": float(p[13] or 0),
+    }
 
-            cur.execute(
-                """
-                SELECT role, hours
-                FROM project_assigned_hours_role
-                WHERE project_id = %s
-                """,
-                (project_id,),
-            )
-            role_rows = cur.fetchall()
-
-            cur.execute(
-                """
-                SELECT comment_text
-                FROM project_comments
-                WHERE project_id = %s
-                LIMIT 1
-                """,
-                (project_id,),
-            )
-            comment_row = cur.fetchone()
-
-    assigned_hours_phase = {phase: 0 for phase in PHASES}
-    for phase, hours in phase_rows:
-        assigned_hours_phase[phase] = float(hours) if hours is not None else 0
-
-    assigned_hours_role = {role: 0 for role in ROLES}
-    for role, hours in role_rows:
-        assigned_hours_role[role] = float(hours) if hours is not None else 0
+    assigned_hours_role = {
+        "pm": float(p[14] or 0),
+        "consultant": float(p[15] or 0),
+        "technician": float(p[16] or 0),
+    }
 
     project = {
         "id": p[0],
@@ -372,7 +326,7 @@ def project_details(project_code: str):
         "latest": latest_dict,
         "assigned_hours_phase": assigned_hours_phase,
         "assigned_hours_role": assigned_hours_role,
-        "project_comment": comment_row[0] if comment_row else None,
+        "project_comment": p[9] if p[9] is not None else latest_dict.get("comments"),
     }
 
 
@@ -383,16 +337,21 @@ def update_assigned_hours_phase(project_id: int, payload: AssignedHoursPhaseIn):
     hours = payload.hours if payload.hours is not None else 0
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
-            ensure_details_tables(cur)
+            ensure_details_columns(cur)
+            column_map = {
+                "design": "hours_design",
+                "development": "hours_development",
+                "pem": "hours_pem",
+                "hypercare": "hours_hypercare",
+            }
+            column = column_map[payload.phase]
             cur.execute(
-                """
-                INSERT INTO project_assigned_hours_phase (project_id, phase, hours, updated_at)
-                VALUES (%s, %s, %s, now())
-                ON CONFLICT (project_id, phase)
-                DO UPDATE SET hours = EXCLUDED.hours, updated_at = now()
-                RETURNING id;
+                f"""
+                UPDATE projects
+                SET {column} = %s
+                WHERE id = %s
                 """,
-                (project_id, payload.phase, hours),
+                (hours, project_id),
             )
         conn.commit()
     return {"status": "ok"}
@@ -405,16 +364,20 @@ def update_assigned_hours_role(project_id: int, payload: AssignedHoursRoleIn):
     hours = payload.hours if payload.hours is not None else 0
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
-            ensure_details_tables(cur)
+            ensure_details_columns(cur)
+            column_map = {
+                "pm": "hours_pm",
+                "consultant": "hours_consultant",
+                "technician": "hours_technician",
+            }
+            column = column_map[payload.role]
             cur.execute(
-                """
-                INSERT INTO project_assigned_hours_role (project_id, role, hours, updated_at)
-                VALUES (%s, %s, %s, now())
-                ON CONFLICT (project_id, role)
-                DO UPDATE SET hours = EXCLUDED.hours, updated_at = now()
-                RETURNING id;
+                f"""
+                UPDATE projects
+                SET {column} = %s
+                WHERE id = %s
                 """,
-                (project_id, payload.role, hours),
+                (hours, project_id),
             )
         conn.commit()
     return {"status": "ok"}
@@ -424,16 +387,14 @@ def update_assigned_hours_role(project_id: int, payload: AssignedHoursRoleIn):
 def update_project_comment(project_id: int, payload: ProjectCommentIn):
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
-            ensure_details_tables(cur)
+            ensure_details_columns(cur)
             cur.execute(
                 """
-                INSERT INTO project_comments (project_id, comment_text, created_at, updated_at)
-                VALUES (%s, %s, now(), now())
-                ON CONFLICT (project_id)
-                DO UPDATE SET comment_text = EXCLUDED.comment_text, updated_at = now()
-                RETURNING id;
+                UPDATE projects
+                SET comments = %s
+                WHERE id = %s
                 """,
-                (project_id, payload.comment_text),
+                (payload.comment_text, project_id),
             )
         conn.commit()
     return {"status": "ok"}
