@@ -327,6 +327,7 @@ def project_details(project_code: str):
         "assigned_hours_phase": assigned_hours_phase,
         "assigned_hours_role": assigned_hours_role,
         "project_comment": p[9] if p[9] is not None else latest_dict.get("comments"),
+        "excel_comments": latest_dict.get("comments"),
     }
 
 

@@ -231,7 +231,8 @@ async function loadProject(code) {
   }
 
   show("excelCommentsCard");
-  setText("excel_comments", fmtText(l.comments));
+  const excelComments = s.excel_comments ?? l.comments;
+  setText("excel_comments", fmtText(excelComments));
 
   show("detailsSection");
   setText("weekly_progress_delta", fmtPct(l.progress_w_delta, "0_100"));
