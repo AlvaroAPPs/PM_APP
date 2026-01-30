@@ -48,6 +48,18 @@ def normalize_comment(value: object) -> str | None:
     return str(value)
 
 
+def to_float(value: object) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
+def to_date_iso(value: object) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
 def ensure_details_columns(cur: psycopg.Cursor) -> None:
     cur.execute(
         """
@@ -73,6 +85,14 @@ def index(request: Request):
 @app.get("/estado-proyecto", response_class=HTMLResponse)
 def estado_proyecto(request: Request):
     return templates.TemplateResponse("project.html", {"request": request})
+
+
+@app.get("/projects/{project_code}/indicators", response_class=HTMLResponse)
+def project_indicators(request: Request, project_code: str):
+    return templates.TemplateResponse(
+        "indicators.html",
+        {"request": request, "project_code": project_code},
+    )
 
 @app.get("/importacion", response_class=HTMLResponse)
 def importacion(request: Request):
@@ -355,6 +375,100 @@ def project_details(project_code: str):
         "project_comment": normalize_comment(project_comment),
         "excel_comments": normalize_comment(excel_comments),
     }
+
+
+@app.get("/projects/{project_code}/metrics/weekly")
+def project_weekly_metrics(project_code: str):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id
+                FROM projects
+                WHERE project_code = %s
+                """,
+                (project_code,),
+            )
+            project_row = cur.fetchone()
+            if not project_row:
+                raise HTTPException(status_code=404, detail="Project not found")
+            project_id = project_row[0]
+
+            cur.execute(
+                """
+                SELECT snapshot_year, snapshot_week,
+                       progress_w, desviacion_pct,
+                       real_hours, horas_teoricas,
+                       progress_w_delta, real_hours_delta,
+                       horas_teoricas_delta, desviacion_pct_delta
+                FROM project_snapshot
+                WHERE project_id = %s
+                ORDER BY snapshot_year ASC, snapshot_week ASC
+                """,
+                (project_id,),
+            )
+            rows = cur.fetchall()
+
+    return [
+        {
+            "year": r[0],
+            "week": r[1],
+            "progress_w": to_float(r[2]),
+            "desviacion_pct": to_float(r[3]),
+            "real_hours": to_float(r[4]),
+            "horas_teoricas": to_float(r[5]),
+            "progress_w_delta": to_float(r[6]),
+            "real_hours_delta": to_float(r[7]),
+            "horas_teoricas_delta": to_float(r[8]),
+            "desviacion_pct_delta": to_float(r[9]),
+        }
+        for r in rows
+    ]
+
+
+@app.get("/projects/{project_code}/metrics/phases")
+def project_phase_history(project_code: str):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id
+                FROM projects
+                WHERE project_code = %s
+                """,
+                (project_code,),
+            )
+            project_row = cur.fetchone()
+            if not project_row:
+                raise HTTPException(status_code=404, detail="Project not found")
+            project_id = project_row[0]
+
+            cur.execute(
+                """
+                SELECT snapshot_year, snapshot_week,
+                       date_kickoff, date_design, date_validation,
+                       date_golive, date_reception, date_end
+                FROM project_snapshot
+                WHERE project_id = %s
+                ORDER BY snapshot_year ASC, snapshot_week ASC
+                """,
+                (project_id,),
+            )
+            rows = cur.fetchall()
+
+    return [
+        {
+            "year": r[0],
+            "week": r[1],
+            "date_kickoff": to_date_iso(r[2]),
+            "date_design": to_date_iso(r[3]),
+            "date_validation": to_date_iso(r[4]),
+            "date_golive": to_date_iso(r[5]),
+            "date_reception": to_date_iso(r[6]),
+            "date_end": to_date_iso(r[7]),
+        }
+        for r in rows
+    ]
 
 
 @app.post("/projects/{project_id}/assigned-hours/phase")

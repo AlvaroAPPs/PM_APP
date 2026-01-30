@@ -1,6 +1,7 @@
 ﻿const API = "http://127.0.0.1:8000";
 const $ = (id) => document.getElementById(id);
 let currentProjectId = null;
+let currentProjectCode = null;
 
 function isEmpty(v) {
   return v === null || v === undefined || v === "" || v === "NaT";
@@ -84,6 +85,7 @@ function setActionsEnabled(isEnabled) {
 
 function resetUI() {
   currentProjectId = null;
+  currentProjectCode = null;
   // ocultar secciones
   ["projectHeader", "datesRow", "kpis", "excelCommentsCard", "detailsSection"].forEach(hide);
 
@@ -150,6 +152,7 @@ async function loadProject(code) {
     return;
   }
   currentProjectId = s.project.id;
+  currentProjectCode = s.project.project_code;
 
   // Header (cabecera)
   show("projectHeader");
@@ -389,7 +392,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const actCharts = $("actCharts");
   if (actCharts) {
     actCharts.addEventListener("click", () => {
-      alert("Pendiente: Gráficas proyecto (siguiente paso).");
+      if (!currentProjectCode) {
+        alert("Carga un proyecto antes de continuar.");
+        return;
+      }
+      window.location.href = `/projects/${encodeURIComponent(currentProjectCode)}/indicators`;
     });
   }
 
