@@ -223,6 +223,20 @@ def project_state(project_code: str, weeks_back: int = 20):
 
             cur.execute(
                 """
+                SELECT comments
+                FROM project_snapshot
+                WHERE project_id = %s
+                  AND comments IS NOT NULL
+                  AND comments <> ''
+                ORDER BY snapshot_year DESC, snapshot_week DESC, snapshot_at DESC
+                LIMIT 1
+                """,
+                (project_id,),
+            )
+            latest_comment_row = cur.fetchone()
+
+            cur.execute(
+                """
                 SELECT snapshot_year, snapshot_week, snapshot_at,
                        progress_c, deviation_cd, payment_pending,
                        dist_c, dist_pm, dist_e
@@ -332,7 +346,7 @@ def project_details(project_code: str):
     }
 
     project_comment = p[9] if p[9] is not None else latest_dict.get("comments")
-    excel_comments = latest_dict.get("comments")
+    excel_comments = latest_comment_row[0] if latest_comment_row else latest_dict.get("comments")
     return {
         "project": project,
         "latest": latest_dict,
