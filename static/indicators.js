@@ -375,7 +375,7 @@ function buildSCurveChart(ctx, labels, actualData, projectedData) {
       labels,
       datasets: [
         {
-          label: "Real",
+          label: "Horas reales",
           data: actualData,
           borderColor: "#2563eb",
           backgroundColor: "#2563eb",
@@ -398,76 +398,107 @@ function buildSCurveChart(ctx, labels, actualData, projectedData) {
         legend: { display: true },
       },
       scales: {
+        x: {
+          title: {
+            display: true,
+            text: "Semana",
+          },
+        },
         y: {
           beginAtZero: true,
-          max: 100,
+          title: {
+            display: true,
+            text: "Horas del proyecto",
+          },
         },
       },
     },
   });
 }
 
-function buildProjection(weekly, labels, cumulativeActual) {
-  if (!weekly.length) {
-    return { labels, actual: cumulativeActual, projected: [] };
+function computeTotalProgress(series) {
+  let total = 0;
+  series.forEach((item) => {
+    const value = toNumber(item.progress_w);
+    if (value !== null) {
+      total = Math.min(100, total + value);
+    }
+  });
+  return total;
+}
+
+function buildProjectionForHours(series, visibleSeries, labels, actualData) {
+  if (!series.length || !visibleSeries.length) {
+    return { labels, actual: actualData, projected: [] };
   }
 
-  const recent = weekly.slice(-4);
-  const productivityRates = recent
-    .map((item) => {
-      const progress = toNumber(item.progress_w);
-      const hours = toNumber(item.real_hours);
-      if (progress === null || hours === null || hours <= 0) return null;
-      return progress / hours;
-    })
-    .filter((value) => value !== null);
+  const recent = visibleSeries.slice(-4);
+  const first = recent[0];
+  const last = recent[recent.length - 1];
+  const windowSize = Math.max(1, recent.length - 1);
 
-  const fallbackRates = recent
-    .map((item) => {
-      const progress = toNumber(item.progress_w);
-      const hours = toNumber(item.horas_teoricas);
-      if (progress === null || hours === null || hours <= 0) return null;
-      return progress / hours;
-    })
-    .filter((value) => value !== null);
+  const firstReal = toNumber(first.real_hours);
+  const lastReal = toNumber(last.real_hours);
+  const firstTheoretical = toNumber(first.horas_teoricas);
+  const lastTheoretical = toNumber(last.horas_teoricas);
 
-  const capacityReal = recent
-    .map((item) => toNumber(item.real_hours))
-    .filter((value) => value !== null && value > 0);
-  const capacityTheoretical = recent
-    .map((item) => toNumber(item.horas_teoricas))
-    .filter((value) => value !== null && value > 0);
+  if (
+    firstReal === null ||
+    lastReal === null ||
+    firstTheoretical === null ||
+    lastTheoretical === null
+  ) {
+    return { labels, actual: actualData, projected: [] };
+  }
 
-  const productivityRate = average(productivityRates) ?? average(fallbackRates);
-  const weeklyCapacity = average(capacityReal) ?? average(capacityTheoretical);
+  const realRate = (lastReal - firstReal) / windowSize;
+  const theoreticalRate = (lastTheoretical - firstTheoretical) / windowSize;
 
-  if (!productivityRate || !weeklyCapacity) {
-    return { labels, actual: cumulativeActual, projected: [] };
+  if (realRate <= 0 || theoreticalRate <= 0) {
+    return { labels, actual: actualData, projected: [] };
+  }
+
+  const totalProgress = computeTotalProgress(series);
+  if (totalProgress <= 0) {
+    return { labels, actual: actualData, projected: [] };
+  }
+
+  const totalTheoretical = lastTheoretical / (totalProgress / 100);
+  const remainingTheoretical = Math.max(0, totalTheoretical - lastTheoretical);
+  const paceRatio = realRate / theoreticalRate;
+  const remainingReal = remainingTheoretical * paceRatio;
+
+  if (!Number.isFinite(remainingReal) || remainingReal <= 0) {
+    return { labels, actual: actualData, projected: [] };
   }
 
   const projectedLabels = [...labels];
   const projectedData = new Array(labels.length).fill(null);
-  const actualData = [...cumulativeActual];
+  const adjustedActual = [...actualData];
 
-  let projectedProgress = cumulativeActual[cumulativeActual.length - 1] ?? 0;
-  let remaining = 100 - projectedProgress;
-  let currentYear = weekly[weekly.length - 1].year;
-  let currentWeek = weekly[weekly.length - 1].week;
+  let projectedHours = lastReal;
+  let currentYear = last.year;
+  let currentWeek = last.week;
+  const remainingWeeks = Math.ceil(remainingReal / realRate);
 
-  let guard = 0;
-  while (remaining > 0 && guard < 60) {
-    guard += 1;
+  for (let i = 0; i < remainingWeeks && i < 60; i += 1) {
     [currentYear, currentWeek] = addWeek(currentYear, currentWeek);
-    const weeklyProgress = weeklyCapacity * productivityRate;
-    projectedProgress = Math.min(100, projectedProgress + weeklyProgress);
-    remaining = 100 - projectedProgress;
+    projectedHours += realRate;
     projectedLabels.push(formatWeekLabel(currentYear, currentWeek));
-    projectedData.push(projectedProgress);
-    actualData.push(null);
-    if (projectedProgress >= 100) break;
+    projectedData.push(projectedHours);
+    adjustedActual.push(null);
   }
 
-  return { labels: projectedLabels, actual: actualData, projected: projectedData };
+  if (projectedLabels.length > MAX_CHART_POINTS) {
+    const start = projectedLabels.length - MAX_CHART_POINTS;
+    return {
+      labels: projectedLabels.slice(start),
+      actual: adjustedActual.slice(start),
+      projected: projectedData.slice(start),
+    };
+  }
+
+  return { labels: projectedLabels, actual: adjustedActual, projected: projectedData };
 }
 
 function renderCharts(weekly) {
@@ -532,17 +563,8 @@ function renderCharts(weekly) {
     hoursCompareDomain
   );
 
-  const cumulativeActual = [];
-  let cumulative = 0;
-  visibleWeekly.forEach((item) => {
-    const progress = toNumber(item.progress_w);
-    if (progress !== null) {
-      cumulative = Math.min(100, cumulative + progress);
-    }
-    cumulativeActual.push(cumulative);
-  });
-
-  const projection = buildProjection(visibleWeekly, labels, cumulativeActual);
+  const actualHours = visibleWeekly.map((item) => toNumber(item.real_hours));
+  const projection = buildProjectionForHours(weekly, visibleWeekly, labels, actualHours);
   buildSCurveChart(
     $("chartSCurve"),
     projection.labels,
