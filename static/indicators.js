@@ -1,5 +1,6 @@
 const $ = (id) => document.getElementById(id);
 
+const MAX_CHART_POINTS = 25;
 const STATUS_CLASSES = {
   red: "status-red",
   amber: "status-amber",
@@ -61,6 +62,24 @@ function formatDate(value) {
   if (!value) return "—";
   const d = new Date(`${value}T00:00:00`);
   return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString("es-ES");
+}
+
+function windowSeries(series, maxPoints = MAX_CHART_POINTS) {
+  if (series.length <= maxPoints) return series;
+  return series.slice(series.length - maxPoints);
+}
+
+function calculateDomain(values) {
+  const cleanValues = values.filter((value) => Number.isFinite(value));
+  if (!cleanValues.length) return null;
+  let min = Math.min(...cleanValues);
+  let max = Math.max(...cleanValues);
+  if (min === max) {
+    const pad = min === 0 ? 1 : Math.abs(min * 0.05);
+    return { min: min - pad, max: max + pad };
+  }
+  const pad = (max - min) * 0.05;
+  return { min: min - pad, max: max + pad };
 }
 
 function addWeek(year, week) {
@@ -295,7 +314,7 @@ function renderPhaseChangesTable(phasesHistory) {
   });
 }
 
-function buildLineChart(ctx, labels, datasetLabel, data, color) {
+function buildLineChart(ctx, labels, datasetLabel, data, color, domain) {
   return new Chart(ctx, {
     type: "line",
     data: {
@@ -319,6 +338,8 @@ function buildLineChart(ctx, labels, datasetLabel, data, color) {
       },
       scales: {
         y: {
+          min: domain?.min,
+          max: domain?.max,
           ticks: { callback: (value) => value.toString() },
         },
       },
@@ -326,7 +347,7 @@ function buildLineChart(ctx, labels, datasetLabel, data, color) {
   });
 }
 
-function buildBarChart(ctx, labels, datasets) {
+function buildBarChart(ctx, labels, datasets, domain) {
   return new Chart(ctx, {
     type: "bar",
     data: {
@@ -337,7 +358,11 @@ function buildBarChart(ctx, labels, datasets) {
       responsive: true,
       maintainAspectRatio: false,
       scales: {
-        y: { beginAtZero: true },
+        y: {
+          beginAtZero: true,
+          min: domain?.min,
+          max: domain?.max,
+        },
       },
     },
   });
@@ -446,50 +471,70 @@ function buildProjection(weekly, labels, cumulativeActual) {
 }
 
 function renderCharts(weekly) {
-  const labels = weekly.map((item) => formatWeekLabel(item.year, item.week));
-  const progressData = weekly.map((item) => toNumber(item.progress_w));
-  const deviationData = weekly.map((item) => toNumber(item.desviacion_pct));
-  const realHoursData = weekly.map((item) => toNumber(item.real_hours));
-  const theoreticalHoursData = weekly.map((item) => toNumber(item.horas_teoricas));
+  const visibleWeekly = windowSeries(weekly);
+  const labels = visibleWeekly.map((item) =>
+    formatWeekLabel(item.year, item.week)
+  );
+  const progressData = visibleWeekly.map((item) => toNumber(item.progress_w));
+  const deviationData = visibleWeekly.map((item) => toNumber(item.desviacion_pct));
+  const realHoursData = visibleWeekly.map((item) => toNumber(item.real_hours));
+  const theoreticalHoursData = visibleWeekly.map((item) =>
+    toNumber(item.horas_teoricas)
+  );
+
+  const progressDomain = calculateDomain(progressData);
+  const deviationDomain = calculateDomain(deviationData);
+  const realHoursDomain = calculateDomain(realHoursData);
+  const hoursCompareDomain = calculateDomain(
+    realHoursData.concat(theoreticalHoursData)
+  );
 
   buildLineChart(
     $("chartProgress"),
     labels,
     "Progreso semanal",
     progressData,
-    "#2563eb"
+    "#2563eb",
+    progressDomain
   );
   buildLineChart(
     $("chartDeviation"),
     labels,
     "Desviación %",
     deviationData,
-    "#dc2626"
+    "#dc2626",
+    deviationDomain
   );
   buildLineChart(
     $("chartRealHours"),
     labels,
     "Horas reales",
     realHoursData,
-    "#0ea5e9"
+    "#0ea5e9",
+    realHoursDomain
   );
 
-  buildBarChart($("chartHoursCompare"), labels, [
-    {
-      label: "Horas reales",
-      data: realHoursData,
-      backgroundColor: "#1d4ed8",
-    },
-    {
-      label: "Horas teóricas",
-      data: theoreticalHoursData,
-      backgroundColor: "#93c5fd",
-    },
-  ]);
+  buildBarChart(
+    $("chartHoursCompare"),
+    labels,
+    [
+      {
+        label: "Horas reales",
+        data: realHoursData,
+        backgroundColor: "#1d4ed8",
+      },
+      {
+        label: "Horas teóricas",
+        data: theoreticalHoursData,
+        backgroundColor: "#93c5fd",
+      },
+    ],
+    hoursCompareDomain
+  );
 
   const cumulativeActual = [];
   let cumulative = 0;
-  weekly.forEach((item) => {
+  visibleWeekly.forEach((item) => {
     const progress = toNumber(item.progress_w);
     if (progress !== null) {
       cumulative = Math.min(100, cumulative + progress);
@@ -497,7 +542,7 @@ function renderCharts(weekly) {
     cumulativeActual.push(cumulative);
   });
 
-  const projection = buildProjection(weekly, labels, cumulativeActual);
+  const projection = buildProjection(visibleWeekly, labels, cumulativeActual);
   buildSCurveChart(
     $("chartSCurve"),
     projection.labels,

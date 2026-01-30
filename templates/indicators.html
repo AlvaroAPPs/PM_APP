@@ -19,7 +19,9 @@
     .indicator-card.status-green { border-left-color: #16a34a; }
     .indicator-card.status-orange { border-left-color: #fb923c; }
     .indicator-badge { text-transform: uppercase; font-weight: 700; }
-    .chart-card { min-height: 360px; }
+    .chart-card { height: 360px; }
+    .chart-card .card-body { height: 100%; display: flex; flex-direction: column; }
+    .chart-card canvas { flex: 1 1 auto; }
     .table td, .table th { vertical-align: top; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
   </style>
