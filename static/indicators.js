@@ -770,9 +770,11 @@ async function init() {
   const projectNameEl = $("projectName");
   const projectCodeEl = $("projectCode");
   const backLink = $("backToProjects");
+  const pathMatch = window.location.pathname.match(/\/projects\/([^/]+)\/indicators/);
   const projectCode =
     projectCodeParam ||
     window.PROJECT_CODE ||
+    (pathMatch ? decodeURIComponent(pathMatch[1]) : "") ||
     (projectCodeEl ? projectCodeEl.textContent.trim() : "");
   if (projectCodeEl && projectCode) {
     projectCodeEl.textContent = projectCode;
