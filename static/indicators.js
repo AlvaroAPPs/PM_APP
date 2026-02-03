@@ -795,8 +795,8 @@ async function init() {
       projectName = "";
     }
   }
-  if (projectNameEl) {
-    projectNameEl.textContent = projectName ? ` · ${projectName}` : "";
+  if (projectNameEl && projectName) {
+    projectNameEl.textContent = ` · ${projectName}`;
   }
 
   activeProjectCode = projectCode;
