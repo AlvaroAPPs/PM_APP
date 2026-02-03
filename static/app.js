@@ -39,7 +39,11 @@ function fmtFixed2(v) {
 }
 function fmtDateISO(v) {
   if (isEmpty(v)) return "—";
-  const d = new Date(v + "T00:00:00");
+  const direct = new Date(v);
+  if (!Number.isNaN(direct.getTime())) {
+    return direct.toLocaleDateString("es-ES");
+  }
+  const d = new Date(`${v}T00:00:00`);
   return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString("es-ES");
 }
 function fmtDateTime(v) {
