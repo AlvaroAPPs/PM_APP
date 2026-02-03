@@ -92,11 +92,15 @@ def _to_bool(v) -> Optional[bool]:
 def normalize_excel_date(v) -> Optional[date]:
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return None
+    if isinstance(v, str) and v.strip() == "":
+        return None
     if isinstance(v, date) and not isinstance(v, datetime):
         return v
     if isinstance(v, datetime):
         return v.date()
     if isinstance(v, (int, float)) and not isinstance(v, bool):
+        if v == 0:
+            return None
         try:
             d = pd.to_datetime(v, unit="D", origin="1899-12-30", errors="coerce")
             if pd.isna(d):
