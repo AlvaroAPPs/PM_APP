@@ -1,6 +1,9 @@
 ﻿const API = "http://127.0.0.1:8000";
 const $ = (id) => document.getElementById(id);
 let currentProjectId = null;
+let currentProjectCode = null;
+let currentProjectName = null;
+let currentProjectTotalHours = null;
 
 function isEmpty(v) {
   return v === null || v === undefined || v === "" || v === "NaT";
@@ -36,7 +39,20 @@ function fmtFixed2(v) {
 }
 function fmtDateISO(v) {
   if (isEmpty(v)) return "—";
-  const d = new Date(v + "T00:00:00");
+  if (v instanceof Date) {
+    return Number.isNaN(v.getTime()) ? "—" : v.toLocaleDateString("es-ES");
+  }
+  if (typeof v === "number") {
+    const numeric = new Date(v);
+    return Number.isNaN(numeric.getTime())
+      ? "—"
+      : numeric.toLocaleDateString("es-ES");
+  }
+  const direct = new Date(v);
+  if (!Number.isNaN(direct.getTime())) {
+    return direct.toLocaleDateString("es-ES");
+  }
+  const d = new Date(`${v}T00:00:00`);
   return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString("es-ES");
 }
 function fmtDateTime(v) {
@@ -84,6 +100,9 @@ function setActionsEnabled(isEnabled) {
 
 function resetUI() {
   currentProjectId = null;
+  currentProjectCode = null;
+  currentProjectName = null;
+  currentProjectTotalHours = null;
   // ocultar secciones
   ["projectHeader", "datesRow", "kpis", "excelCommentsCard", "detailsSection"].forEach(hide);
 
@@ -150,6 +169,8 @@ async function loadProject(code) {
     return;
   }
   currentProjectId = s.project.id;
+  currentProjectCode = s.project.project_code;
+  currentProjectName = s.project.project_name;
 
   // Header (cabecera)
   show("projectHeader");
@@ -190,6 +211,7 @@ async function loadProject(code) {
   const horasProyecto = !isEmpty(l.ordered_total)
     ? Number(l.ordered_total)
     : Number(l.ordered_n || 0) + Number(l.ordered_e || 0);
+  currentProjectTotalHours = Number.isFinite(horasProyecto) ? horasProyecto : null;
 
   const horasTeoricas = !isEmpty(l.horas_teoricas)
     ? Number(l.horas_teoricas)
@@ -378,6 +400,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  const urlParams = new URLSearchParams(window.location.search);
+  const prefill = urlParams.get("q");
+  if (prefill && input) {
+    input.value = prefill;
+    loadProject(prefill);
+  }
+
   // Sidebar actions (no rompe si no existen)
   const actNewData = $("actNewData");
   if (actNewData) {
@@ -389,7 +418,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const actCharts = $("actCharts");
   if (actCharts) {
     actCharts.addEventListener("click", () => {
-      alert("Pendiente: Gráficas proyecto (siguiente paso).");
+      if (!currentProjectCode) {
+        alert("Carga un proyecto antes de continuar.");
+        return;
+      }
+      const params = new URLSearchParams();
+      params.set("code", currentProjectCode);
+      if (currentProjectName) params.set("name", currentProjectName);
+      if (Number.isFinite(currentProjectTotalHours)) {
+        params.set("totalHours", String(currentProjectTotalHours));
+      }
+      window.location.href = `/projects/${encodeURIComponent(currentProjectCode)}/indicators?${params.toString()}`;
     });
   }
 

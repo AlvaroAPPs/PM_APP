@@ -313,6 +313,16 @@ def upsert_snapshot(
     fields: Dict[str, Any],
 ) -> int:
     payload = dict(fields)
+    for key in (
+        "date_kickoff",
+        "date_design",
+        "date_validation",
+        "date_golive",
+        "date_reception",
+        "date_end",
+    ):
+        if payload.get(key) == "":
+            payload[key] = None
     payload.update({
         "project_id": project_id,
         "import_file_id": import_file_id,
