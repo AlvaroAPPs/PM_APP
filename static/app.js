@@ -402,7 +402,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   const urlParams = new URLSearchParams(window.location.search);
-  const prefill = urlParams.get("q");
+  const prefillRaw = urlParams.get("q");
+  const prefill = prefillRaw ? prefillRaw.trim() : "";
   const header = $("projectHeader");
   const shouldAutoLoad =
     prefill &&
@@ -462,7 +463,8 @@ window.addEventListener("pageshow", () => {
   const input = $("q");
   if (!input) return;
   const urlParams = new URLSearchParams(window.location.search);
-  const prefill = urlParams.get("q");
+  const prefillRaw = urlParams.get("q");
+  const prefill = prefillRaw ? prefillRaw.trim() : "";
   if (!prefill) return;
   const header = $("projectHeader");
   const shouldAutoLoad =
