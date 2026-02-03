@@ -763,18 +763,19 @@ async function loadIndicators() {
 
 async function init() {
   const urlParams = new URLSearchParams(window.location.search);
-  const projectCode = urlParams.get("code") || window.PROJECT_CODE;
-  const projectName = urlParams.get("name");
+  const projectCodeParam = urlParams.get("code");
+  const projectNameParam = urlParams.get("name");
   const totalHoursParam = urlParams.get("totalHours");
   const totalHours = totalHoursParam ? Number(totalHoursParam) : DEFAULT_TOTAL_HOURS;
   const projectNameEl = $("projectName");
   const projectCodeEl = $("projectCode");
   const backLink = $("backToProjects");
+  const projectCode =
+    projectCodeParam ||
+    window.PROJECT_CODE ||
+    (projectCodeEl ? projectCodeEl.textContent.trim() : "");
   if (projectCodeEl && projectCode) {
     projectCodeEl.textContent = projectCode;
-  }
-  if (projectNameEl) {
-    projectNameEl.textContent = projectName ? ` · ${projectName}` : "";
   }
   if (backLink && projectCode) {
     const params = new URLSearchParams();
@@ -782,6 +783,21 @@ async function init() {
     backLink.href = `/estado-proyecto?${params.toString()}`;
   }
   if (!projectCode) return;
+
+  let projectName = projectNameParam;
+  if (!projectName) {
+    try {
+      const details = await fetchJson(
+        `/projects/${encodeURIComponent(projectCode)}/details`
+      );
+      projectName = details?.project?.project_name;
+    } catch (err) {
+      projectName = "";
+    }
+  }
+  if (projectNameEl) {
+    projectNameEl.textContent = projectName ? ` · ${projectName}` : "";
+  }
 
   activeProjectCode = projectCode;
   activeTotalHours = totalHours;
