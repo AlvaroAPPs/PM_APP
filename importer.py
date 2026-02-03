@@ -284,7 +284,8 @@ def fetch_prev_snapshot(
 ) -> Optional[Dict[str, Any]]:
     sql = """
     SELECT
-      progress_w, real_hours, ordered_total, horas_teoricas, desviacion_pct
+      progress_w, real_hours, ordered_total, horas_teoricas, desviacion_pct,
+      date_kickoff, date_design, date_validation, date_golive, date_reception, date_end
     FROM project_snapshot
     WHERE project_id = %s
       AND (snapshot_year, snapshot_week) < (%s, %s)
@@ -301,6 +302,12 @@ def fetch_prev_snapshot(
         "ordered_total": row[2],
         "horas_teoricas": row[3],
         "desviacion_pct": row[4],
+        "date_kickoff": row[5],
+        "date_design": row[6],
+        "date_validation": row[7],
+        "date_golive": row[8],
+        "date_reception": row[9],
+        "date_end": row[10],
     }
 
 
@@ -566,6 +573,17 @@ def compute_deltas(
     prev = fetch_prev_snapshot(cur, project_id, snapshot_year, snapshot_week)
     if not prev:
         return snap_fields
+
+    for key in (
+        "date_kickoff",
+        "date_design",
+        "date_validation",
+        "date_golive",
+        "date_reception",
+        "date_end",
+    ):
+        if snap_fields.get(key) is None and prev.get(key) is not None:
+            snap_fields[key] = prev.get(key)
 
     snap_fields["progress_w_delta"] = _delta(snap_fields.get("progress_w"), prev.get("progress_w"))
     snap_fields["real_hours_delta"] = _delta(snap_fields.get("real_hours"), prev.get("real_hours"))
