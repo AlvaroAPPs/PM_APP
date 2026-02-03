@@ -4,6 +4,7 @@ let currentProjectId = null;
 let currentProjectCode = null;
 let currentProjectName = null;
 let currentProjectTotalHours = null;
+let lastAutoLoadedQuery = null;
 
 function isEmpty(v) {
   return v === null || v === undefined || v === "" || v === "NaT";
@@ -402,8 +403,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const urlParams = new URLSearchParams(window.location.search);
   const prefill = urlParams.get("q");
-  if (prefill && input) {
+  if (prefill && input && lastAutoLoadedQuery !== prefill) {
     input.value = prefill;
+    lastAutoLoadedQuery = prefill;
     loadProject(prefill);
   }
 

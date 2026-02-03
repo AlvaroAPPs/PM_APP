@@ -780,7 +780,12 @@ async function init() {
   if (backLink && projectCode) {
     const params = new URLSearchParams();
     params.set("q", projectCode);
-    backLink.href = `/estado-proyecto?${params.toString()}`;
+    const targetUrl = `/estado-proyecto?${params.toString()}`;
+    backLink.href = targetUrl;
+    backLink.addEventListener("click", (event) => {
+      event.preventDefault();
+      window.location.href = targetUrl;
+    });
   }
   if (!projectCode) return;
 

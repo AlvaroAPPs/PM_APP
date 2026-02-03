@@ -31,14 +31,14 @@
   <div class="container py-4">
       <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
         <div class="d-flex align-items-center gap-2">
-        <a href="/estado-proyecto{% if project_code %}?q={{ project_code }}{% endif %}" class="btn btn-outline-secondary" id="backToProjects">
+        <a href="/estado-proyecto" class="btn btn-outline-secondary" id="backToProjects">
           <i class="bi bi-arrow-left me-1"></i> Volver
         </a>
         <div>
           <h1 class="fw-bold mb-0">Indicadores y Evolución</h1>
           <div class="muted">
             Proyecto <span class="fw-semibold" id="projectCode">{{ project_code }}</span>
-            <span class="fw-semibold" id="projectName">{% if project_name %} · {{ project_name }}{% endif %}</span>
+            <span class="fw-semibold" id="projectName"></span>
           </div>
         </div>
       </div>

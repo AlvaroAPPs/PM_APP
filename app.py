@@ -89,26 +89,9 @@ def estado_proyecto(request: Request):
 
 @app.get("/projects/{project_code}/indicators", response_class=HTMLResponse)
 def project_indicators(request: Request, project_code: str):
-    project_name = None
-    try:
-        with psycopg.connect(DB_DSN) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT project_name
-                    FROM projects
-                    WHERE project_code = %s
-                    """,
-                    (project_code,),
-                )
-                row = cur.fetchone()
-                if row:
-                    project_name = row[0]
-    except Exception:
-        project_name = None
     return templates.TemplateResponse(
         "indicators.html",
-        {"request": request, "project_code": project_code, "project_name": project_name},
+        {"request": request, "project_code": project_code},
     )
 
 @app.get("/importacion", response_class=HTMLResponse)
