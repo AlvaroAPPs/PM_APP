@@ -450,12 +450,12 @@ def upsert_snapshot(
       payment_pending = COALESCE(EXCLUDED.payment_pending, project_snapshot.payment_pending),
       payment_q = COALESCE(EXCLUDED.payment_q, project_snapshot.payment_q),
 
-      date_kickoff = COALESCE(EXCLUDED.date_kickoff, project_snapshot.date_kickoff),
-      date_design = COALESCE(EXCLUDED.date_design, project_snapshot.date_design),
-      date_validation = COALESCE(EXCLUDED.date_validation, project_snapshot.date_validation),
-      date_golive = COALESCE(EXCLUDED.date_golive, project_snapshot.date_golive),
-      date_reception = COALESCE(EXCLUDED.date_reception, project_snapshot.date_reception),
-      date_end = COALESCE(EXCLUDED.date_end, project_snapshot.date_end),
+      date_kickoff = EXCLUDED.date_kickoff,
+      date_design = EXCLUDED.date_design,
+      date_validation = EXCLUDED.date_validation,
+      date_golive = EXCLUDED.date_golive,
+      date_reception = EXCLUDED.date_reception,
+      date_end = EXCLUDED.date_end,
 
       team = COALESCE(EXCLUDED.team, project_snapshot.team),
       project_manager = COALESCE(EXCLUDED.project_manager, project_snapshot.project_manager),
@@ -615,17 +615,6 @@ def compute_deltas(
     prev = fetch_prev_snapshot(cur, project_id, snapshot_year, snapshot_week)
     if not prev:
         return snap_fields
-
-    for key in (
-        "date_kickoff",
-        "date_design",
-        "date_validation",
-        "date_golive",
-        "date_reception",
-        "date_end",
-    ):
-        if snap_fields.get(key) is None and prev.get(key) is not None:
-            snap_fields[key] = prev.get(key)
 
     snap_fields["progress_w_delta"] = _delta(snap_fields.get("progress_w"), prev.get("progress_w"))
     snap_fields["real_hours_delta"] = _delta(snap_fields.get("real_hours"), prev.get("real_hours"))
