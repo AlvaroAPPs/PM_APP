@@ -89,6 +89,30 @@ def _to_bool(v) -> Optional[bool]:
     return None
 
 
+def normalize_excel_date(v) -> Optional[date]:
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return None
+    if isinstance(v, date) and not isinstance(v, datetime):
+        return v
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        try:
+            d = pd.to_datetime(v, unit="D", origin="1899-12-30", errors="coerce")
+            if pd.isna(d):
+                return None
+            return d.date()
+        except Exception:
+            return None
+    try:
+        d = pd.to_datetime(v, errors="coerce", dayfirst=True)
+        if pd.isna(d):
+            return None
+        return d.date()
+    except Exception:
+        return None
+
+
 def _to_date(v) -> Optional[date]:
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return None
@@ -518,12 +542,12 @@ def map_row(row: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "payment_pending": _to_float(row.get("payment_pending")),
         "payment_q": _to_float(row.get("payment_q")),
 
-        "date_kickoff": _to_date(row.get("date_kickoff")),
-        "date_design": _to_date(row.get("date_design")),
-        "date_validation": _to_date(row.get("date_validation")),
-        "date_golive": _to_date(row.get("date_golive")),
-        "date_reception": _to_date(row.get("date_reception")),
-        "date_end": _to_date(row.get("date_end")),
+        "date_kickoff": normalize_excel_date(row.get("date_kickoff")),
+        "date_design": normalize_excel_date(row.get("date_design")),
+        "date_validation": normalize_excel_date(row.get("date_validation")),
+        "date_golive": normalize_excel_date(row.get("date_golive")),
+        "date_reception": normalize_excel_date(row.get("date_reception")),
+        "date_end": normalize_excel_date(row.get("date_end")),
 
         "team": row.get("team"),
         "project_manager": row.get("project_manager"),
