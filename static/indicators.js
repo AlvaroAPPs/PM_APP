@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 
 const MAX_CHART_POINTS = 25;
+const DEFAULT_TOTAL_HOURS = null;
 const STATUS_CLASSES = {
   red: "status-red",
   amber: "status-amber",
@@ -64,6 +65,11 @@ function formatDate(value) {
   return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString("es-ES");
 }
 
+function formatInt(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "N/A";
+  return `${Math.round(value)}`;
+}
+
 function windowSeries(series, maxPoints = MAX_CHART_POINTS) {
   if (series.length <= maxPoints) return series;
   return series.slice(series.length - maxPoints);
@@ -80,6 +86,55 @@ function calculateDomain(values) {
   }
   const pad = (max - min) * 0.05;
   return { min: min - pad, max: max + pad };
+}
+
+function isLikelyCumulative(values) {
+  if (values.length < 3) return false;
+  let nonDecreasing = 0;
+  let negative = 0;
+  let diffs = [];
+  for (let i = 1; i < values.length; i += 1) {
+    const prev = values[i - 1];
+    const curr = values[i];
+    if (!Number.isFinite(prev) || !Number.isFinite(curr)) continue;
+    const diff = curr - prev;
+    diffs.push(Math.abs(diff));
+    if (diff >= 0) nonDecreasing += 1;
+    if (diff < 0) negative += 1;
+  }
+  const effectiveDiffs = diffs.length || 1;
+  const avgDiff = diffs.reduce((sum, v) => sum + v, 0) / effectiveDiffs;
+  const last = values[values.length - 1];
+  const first = values[0];
+  const mostlyNonDecreasing = negative <= Math.max(1, Math.floor(effectiveDiffs * 0.2));
+  return mostlyNonDecreasing && Number.isFinite(last) && Number.isFinite(first) && last >= first && last >= avgDiff * 2;
+}
+
+function toDeltaSeries(values) {
+  if (!values.length) return [];
+  return values.map((value, index) => {
+    if (!Number.isFinite(value)) return null;
+    if (index === 0) return value;
+    const prev = values[index - 1];
+    if (!Number.isFinite(prev)) return null;
+    return value - prev;
+  });
+}
+
+function safeWeeklySeries(values) {
+  if (!values.length) return [];
+  const numericValues = values.map((value) => (Number.isFinite(value) ? value : null));
+  if (isLikelyCumulative(numericValues)) {
+    return toDeltaSeries(numericValues);
+  }
+  return numericValues;
+}
+
+function sortByWeek(list) {
+  return [...list].sort((a, b) => {
+    if (a.year !== b.year) return a.year - b.year;
+    return a.week - b.week;
+  });
 }
 
 function addWeek(year, week) {
@@ -268,47 +323,29 @@ function renderPhaseChangesTable(phasesHistory) {
   if (!tbody) return;
   tbody.innerHTML = "";
 
-  const changesByPhase = {};
-  PHASES.forEach((phase) => {
-    changesByPhase[phase.key] = [];
-  });
-
-  for (let i = 1; i < phasesHistory.length; i += 1) {
-    const prev = phasesHistory[i - 1];
-    const curr = phasesHistory[i];
-    const snapshotLabel = formatWeekLabel(curr.year, curr.week);
-    PHASES.forEach((phase) => {
-      const prevDate = prev[phase.key] || null;
-      const currDate = curr[phase.key] || null;
-      if (prevDate !== currDate) {
-        changesByPhase[phase.key].push({
-          snapshot: snapshotLabel,
-          oldDate: prevDate,
-          newDate: currDate,
-        });
-      }
-    });
+  if (phasesHistory.length < 2) {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td colspan="4" class="muted">Sin historial suficiente</td>
+    `;
+    tbody.appendChild(row);
+    return;
   }
 
+  const prev = phasesHistory[phasesHistory.length - 2];
+  const curr = phasesHistory[phasesHistory.length - 1];
+
   PHASES.forEach((phase) => {
-    const changes = changesByPhase[phase.key];
-    const lastChanges = changes.slice(-5).reverse();
-    const changesHtml =
-      lastChanges.length === 0
-        ? "<div class=\"muted\">Sin cambios</div>"
-        : lastChanges
-            .map(
-              (change) =>
-                `<div><span class="mono">${change.snapshot}</span> · ${formatDate(
-                  change.oldDate
-                )} → ${formatDate(change.newDate)}</div>`
-            )
-            .join("");
+    const prevDate = prev[phase.key] || null;
+    const currDate = curr[phase.key] || null;
+    const changed =
+      (prevDate || currDate) && prevDate !== currDate ? 1 : 0;
     const row = document.createElement("tr");
     row.innerHTML = `
       <td class="fw-semibold">${phase.label}</td>
-      <td>${changesHtml}</td>
-      <td>${changes.length}</td>
+      <td>${formatDate(prevDate)}</td>
+      <td>${formatDate(currDate)}</td>
+      <td>${changed}</td>
     `;
     tbody.appendChild(row);
   });
@@ -335,12 +372,17 @@ function buildLineChart(ctx, labels, datasetLabel, data, color, domain) {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context) => formatInt(context.parsed.y),
+          },
+        },
       },
       scales: {
         y: {
           min: domain?.min,
           max: domain?.max,
-          ticks: { callback: (value) => value.toString() },
+          ticks: { callback: (value) => formatInt(value) },
         },
       },
     },
@@ -357,37 +399,46 @@ function buildBarChart(ctx, labels, datasets, domain) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: (context) => formatInt(context.parsed.y),
+          },
+        },
+      },
       scales: {
         y: {
           beginAtZero: true,
           min: domain?.min,
           max: domain?.max,
+          ticks: { callback: (value) => formatInt(value) },
         },
       },
     },
   });
 }
 
-function buildSCurveChart(ctx, labels, actualData, projectedData) {
+function buildSCurveChart(ctx, actualPoints, projectedPoints) {
   return new Chart(ctx, {
     type: "line",
     data: {
-      labels,
       datasets: [
         {
           label: "Horas reales",
-          data: actualData,
+          data: actualPoints,
           borderColor: "#2563eb",
           backgroundColor: "#2563eb",
           tension: 0.25,
+          parsing: false,
         },
         {
           label: "Proyección",
-          data: projectedData,
+          data: projectedPoints,
           borderColor: "#f97316",
           backgroundColor: "#f97316",
           borderDash: [6, 6],
           tension: 0.25,
+          parsing: false,
         },
       ],
     },
@@ -396,12 +447,22 @@ function buildSCurveChart(ctx, labels, actualData, projectedData) {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: true },
+        tooltip: {
+          callbacks: {
+            label: (context) =>
+              `${formatInt(context.parsed.x)}%, ${formatInt(context.parsed.y)} h`,
+          },
+        },
       },
       scales: {
         x: {
+          type: "linear",
           title: {
             display: true,
-            text: "Semana",
+            text: "Progreso (%)",
+          },
+          ticks: {
+            callback: (value) => formatInt(value),
           },
         },
         y: {
@@ -409,6 +470,9 @@ function buildSCurveChart(ctx, labels, actualData, projectedData) {
           title: {
             display: true,
             text: "Horas del proyecto",
+          },
+          ticks: {
+            callback: (value) => formatInt(value),
           },
         },
       },
@@ -427,104 +491,127 @@ function computeTotalProgress(series) {
   return total;
 }
 
-function buildProjectionForHours(series, visibleSeries, labels, actualData) {
-  if (!series.length || !visibleSeries.length) {
-    return { labels, actual: actualData, projected: [] };
-  }
-
-  const recent = visibleSeries.slice(-4);
-  const first = recent[0];
-  const last = recent[recent.length - 1];
-  const windowSize = Math.max(1, recent.length - 1);
-
-  const firstReal = toNumber(first.real_hours);
-  const lastReal = toNumber(last.real_hours);
-  const firstTheoretical = toNumber(first.horas_teoricas);
-  const lastTheoretical = toNumber(last.horas_teoricas);
-
-  if (
-    firstReal === null ||
-    lastReal === null ||
-    firstTheoretical === null ||
-    lastTheoretical === null
-  ) {
-    return { labels, actual: actualData, projected: [] };
-  }
-
-  const realRate = (lastReal - firstReal) / windowSize;
-  const theoreticalRate = (lastTheoretical - firstTheoretical) / windowSize;
-
-  if (realRate <= 0 || theoreticalRate <= 0) {
-    return { labels, actual: actualData, projected: [] };
-  }
-
-  const totalProgress = computeTotalProgress(series);
-  if (totalProgress <= 0) {
-    return { labels, actual: actualData, projected: [] };
-  }
-
-  const totalTheoretical = lastTheoretical / (totalProgress / 100);
-  const remainingTheoretical = Math.max(0, totalTheoretical - lastTheoretical);
-  const paceRatio = realRate / theoreticalRate;
-  const remainingReal = remainingTheoretical * paceRatio;
-
-  if (!Number.isFinite(remainingReal) || remainingReal <= 0) {
-    return { labels, actual: actualData, projected: [] };
-  }
-
-  const projectedLabels = [...labels];
-  const projectedData = new Array(labels.length).fill(null);
-  const adjustedActual = [...actualData];
-
-  let projectedHours = lastReal;
-  let currentYear = last.year;
-  let currentWeek = last.week;
-  const remainingWeeks = Math.ceil(remainingReal / realRate);
-
-  for (let i = 0; i < remainingWeeks && i < 60; i += 1) {
-    [currentYear, currentWeek] = addWeek(currentYear, currentWeek);
-    projectedHours += realRate;
-    projectedLabels.push(formatWeekLabel(currentYear, currentWeek));
-    projectedData.push(projectedHours);
-    adjustedActual.push(null);
-  }
-
-  if (projectedLabels.length > MAX_CHART_POINTS) {
-    const start = projectedLabels.length - MAX_CHART_POINTS;
+function buildProjectionForHours(progressCumulative, realCumulative, weekLabels) {
+  if (!progressCumulative.length || !realCumulative.length) {
     return {
-      labels: projectedLabels.slice(start),
-      actual: adjustedActual.slice(start),
-      projected: projectedData.slice(start),
+      actualPoints: [],
+      projectedPoints: [],
+      projectedHoursAtClose: null,
+      finishingWeekLabel: "N/A",
     };
   }
 
-  return { labels: projectedLabels, actual: adjustedActual, projected: projectedData };
+  const latestProgress = progressCumulative[progressCumulative.length - 1];
+  const latestReal = realCumulative[realCumulative.length - 1];
+
+  if (!Number.isFinite(latestProgress) || latestProgress <= 0 || !Number.isFinite(latestReal)) {
+    return {
+      actualPoints: [],
+      projectedPoints: [],
+      projectedHoursAtClose: null,
+      finishingWeekLabel: "N/A",
+    };
+  }
+
+  const projectedHoursAtClose = latestReal / (latestProgress / 100);
+
+  const actualPoints = progressCumulative
+    .map((value, index) => ({
+      x: value,
+      y: realCumulative[index],
+    }))
+    .filter(
+      (point) => Number.isFinite(point.x) && Number.isFinite(point.y)
+    );
+
+  const projectedPoints = [
+    { x: latestProgress, y: latestReal },
+    { x: 100, y: projectedHoursAtClose },
+  ];
+
+  const progressDeltas = toDeltaSeries(progressCumulative);
+  const positiveDeltas = progressDeltas.filter((value, index) => index > 0 && Number.isFinite(value) && value > 0);
+  const avgWeeklyProgress = positiveDeltas.length
+    ? positiveDeltas.reduce((sum, v) => sum + v, 0) / positiveDeltas.length
+    : null;
+
+  let finishingWeekLabel = "N/A";
+  if (avgWeeklyProgress && avgWeeklyProgress > 0) {
+    const weeksRemaining = Math.ceil((100 - latestProgress) / avgWeeklyProgress);
+    if (weekLabels.length) {
+      let [currentYear, currentWeek] = weekLabels[weekLabels.length - 1];
+      for (let i = 0; i < weeksRemaining; i += 1) {
+        [currentYear, currentWeek] = addWeek(currentYear, currentWeek);
+      }
+      finishingWeekLabel = formatWeekLabel(currentYear, currentWeek);
+    }
+  }
+
+  return {
+    actualPoints,
+    projectedPoints,
+    projectedHoursAtClose,
+    finishingWeekLabel,
+  };
 }
 
-function renderCharts(weekly) {
+function renderCharts(weekly, totalHours) {
   const visibleWeekly = windowSeries(weekly);
   const labels = visibleWeekly.map((item) =>
     formatWeekLabel(item.year, item.week)
   );
   const progressData = visibleWeekly.map((item) => toNumber(item.progress_w));
   const deviationData = visibleWeekly.map((item) => toNumber(item.desviacion_pct));
-  const realHoursData = visibleWeekly.map((item) => toNumber(item.real_hours));
-  const theoreticalHoursData = visibleWeekly.map((item) =>
-    toNumber(item.horas_teoricas)
+  const realHoursRaw = visibleWeekly.map((item) => toNumber(item.real_hours));
+  const realHoursDeltaRaw = visibleWeekly.map((item) =>
+    toNumber(item.real_hours_delta)
   );
+  const theoreticalDeltaRaw = visibleWeekly.map((item) =>
+    toNumber(item.horas_teoricas_delta)
+  );
+  const theoreticalRaw = visibleWeekly.map((item) => toNumber(item.horas_teoricas));
+  const realWeeklyHours = realHoursDeltaRaw.every((value) => value !== null)
+    ? realHoursDeltaRaw
+    : safeWeeklySeries(realHoursRaw);
+
+  const fullProgressCumulative = [];
+  let progressTotal = 0;
+  weekly.forEach((item) => {
+    const progress = toNumber(item.progress_w);
+    if (progress !== null) {
+      progressTotal = Math.min(100, progressTotal + progress);
+    }
+    fullProgressCumulative.push(progressTotal);
+  });
+  const progressCumulative = fullProgressCumulative.slice(
+    Math.max(0, fullProgressCumulative.length - visibleWeekly.length)
+  );
+
+  const progressDeltas = safeWeeklySeries(progressCumulative);
+  const theoreticalWeeklyHours = Number.isFinite(totalHours)
+    ? progressDeltas.map((value) =>
+        Number.isFinite(value) ? Math.round((value / 100) * totalHours) : null
+      )
+    : theoreticalDeltaRaw.every((value) => value !== null)
+    ? theoreticalDeltaRaw.map((value) =>
+        Number.isFinite(value) ? Math.round(value) : null
+      )
+    : safeWeeklySeries(theoreticalRaw).map((value) =>
+        Number.isFinite(value) ? Math.round(value) : null
+      );
 
   const progressDomain = calculateDomain(progressData);
   const deviationDomain = calculateDomain(deviationData);
-  const realHoursDomain = calculateDomain(realHoursData);
+  const realHoursDomain = calculateDomain(realWeeklyHours);
   const hoursCompareDomain = calculateDomain(
-    realHoursData.concat(theoreticalHoursData)
+    realWeeklyHours.concat(theoreticalWeeklyHours)
   );
 
   buildLineChart(
     $("chartProgress"),
     labels,
     "Progreso semanal",
-    progressData,
+    progressData.map((value) => (value === null ? null : Math.round(value))),
     "#2563eb",
     progressDomain
   );
@@ -532,7 +619,7 @@ function renderCharts(weekly) {
     $("chartDeviation"),
     labels,
     "Desviación %",
-    deviationData,
+    deviationData.map((value) => (value === null ? null : Math.round(value))),
     "#dc2626",
     deviationDomain
   );
@@ -540,7 +627,9 @@ function renderCharts(weekly) {
     $("chartRealHours"),
     labels,
     "Horas reales",
-    realHoursData,
+    realWeeklyHours.map((value) =>
+      value === null ? null : Math.round(value)
+    ),
     "#0ea5e9",
     realHoursDomain
   );
@@ -551,37 +640,96 @@ function renderCharts(weekly) {
     [
       {
         label: "Horas reales",
-        data: realHoursData,
+        data: realWeeklyHours.map((value) =>
+          value === null ? null : Math.round(value)
+        ),
         backgroundColor: "#1d4ed8",
       },
       {
         label: "Horas teóricas",
-        data: theoreticalHoursData,
+        data: theoreticalWeeklyHours,
         backgroundColor: "#93c5fd",
       },
     ],
     hoursCompareDomain
   );
 
-  const actualHours = visibleWeekly.map((item) => toNumber(item.real_hours));
-  const projection = buildProjectionForHours(weekly, visibleWeekly, labels, actualHours);
+  const fullRealCumulative = [];
+  const rawCumulative = weekly.map((item) => toNumber(item.real_hours));
+  if (isLikelyCumulative(rawCumulative)) {
+    rawCumulative.forEach((value) => fullRealCumulative.push(value));
+  } else {
+    let total = 0;
+    const fallbackWeekly = weekly.map((item) => toNumber(item.real_hours_delta));
+    const weeklyHours = fallbackWeekly.every((value) => value !== null)
+      ? fallbackWeekly
+      : safeWeeklySeries(rawCumulative);
+    weeklyHours.forEach((value) => {
+      if (Number.isFinite(value)) {
+        total += value;
+      }
+      fullRealCumulative.push(total);
+    });
+  }
+
+  const realCumulative = fullRealCumulative.slice(
+    Math.max(0, fullRealCumulative.length - visibleWeekly.length)
+  );
+  const weekOrder = visibleWeekly.map((item) => [item.year, item.week]);
+  const projection = buildProjectionForHours(
+    progressCumulative,
+    realCumulative,
+    weekOrder
+  );
   buildSCurveChart(
     $("chartSCurve"),
-    projection.labels,
-    projection.actual,
-    projection.projected
+    projection.actualPoints,
+    projection.projectedPoints
   );
+
+  const projectionHours = $("projectionHours");
+  if (projectionHours) {
+    projectionHours.textContent =
+      projection.projectedHoursAtClose !== null
+        ? `${formatInt(projection.projectedHoursAtClose)} h`
+        : "N/A";
+  }
+  const projectionWeek = $("projectionWeek");
+  if (projectionWeek) {
+    projectionWeek.textContent = projection.finishingWeekLabel;
+  }
 }
 
 async function init() {
-  const projectCode = window.PROJECT_CODE;
+  const urlParams = new URLSearchParams(window.location.search);
+  const projectCode = urlParams.get("code") || window.PROJECT_CODE;
+  const projectName = urlParams.get("name");
+  const totalHoursParam = urlParams.get("totalHours");
+  const totalHours = totalHoursParam ? Number(totalHoursParam) : DEFAULT_TOTAL_HOURS;
+  const projectNameEl = $("projectName");
+  const projectCodeEl = $("projectCode");
+  const backLink = $("backToProjects");
+  if (projectCodeEl && projectCode) {
+    projectCodeEl.textContent = projectCode;
+  }
+  if (projectNameEl) {
+    projectNameEl.textContent = projectName ? ` · ${projectName}` : "";
+  }
+  if (backLink && projectCode) {
+    const params = new URLSearchParams();
+    params.set("q", projectCode);
+    backLink.href = `/estado-proyecto?${params.toString()}`;
+  }
   if (!projectCode) return;
 
   try {
-    const [weekly, phases] = await Promise.all([
+    const [weeklyRaw, phasesRaw] = await Promise.all([
       fetchJson(`/projects/${encodeURIComponent(projectCode)}/metrics/weekly`),
       fetchJson(`/projects/${encodeURIComponent(projectCode)}/metrics/phases`),
     ]);
+
+    const weekly = sortByWeek(weeklyRaw);
+    const phases = sortByWeek(phasesRaw);
 
     if (!weekly.length || !phases.length) {
       const noData = $("noDataMessage");
@@ -620,7 +768,7 @@ async function init() {
       });
     }
 
-    renderCharts(weekly);
+    renderCharts(weekly, totalHours);
     renderPhaseChangesTable(phases);
   } catch (err) {
     const noData = $("noDataMessage");

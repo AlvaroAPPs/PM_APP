@@ -2,6 +2,8 @@
 const $ = (id) => document.getElementById(id);
 let currentProjectId = null;
 let currentProjectCode = null;
+let currentProjectName = null;
+let currentProjectTotalHours = null;
 
 function isEmpty(v) {
   return v === null || v === undefined || v === "" || v === "NaT";
@@ -86,6 +88,8 @@ function setActionsEnabled(isEnabled) {
 function resetUI() {
   currentProjectId = null;
   currentProjectCode = null;
+  currentProjectName = null;
+  currentProjectTotalHours = null;
   // ocultar secciones
   ["projectHeader", "datesRow", "kpis", "excelCommentsCard", "detailsSection"].forEach(hide);
 
@@ -153,6 +157,7 @@ async function loadProject(code) {
   }
   currentProjectId = s.project.id;
   currentProjectCode = s.project.project_code;
+  currentProjectName = s.project.project_name;
 
   // Header (cabecera)
   show("projectHeader");
@@ -193,6 +198,7 @@ async function loadProject(code) {
   const horasProyecto = !isEmpty(l.ordered_total)
     ? Number(l.ordered_total)
     : Number(l.ordered_n || 0) + Number(l.ordered_e || 0);
+  currentProjectTotalHours = Number.isFinite(horasProyecto) ? horasProyecto : null;
 
   const horasTeoricas = !isEmpty(l.horas_teoricas)
     ? Number(l.horas_teoricas)
@@ -381,6 +387,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  const urlParams = new URLSearchParams(window.location.search);
+  const prefill = urlParams.get("q");
+  if (prefill && input) {
+    input.value = prefill;
+    loadProject(prefill);
+  }
+
   // Sidebar actions (no rompe si no existen)
   const actNewData = $("actNewData");
   if (actNewData) {
@@ -396,7 +409,13 @@ document.addEventListener("DOMContentLoaded", () => {
         alert("Carga un proyecto antes de continuar.");
         return;
       }
-      window.location.href = `/projects/${encodeURIComponent(currentProjectCode)}/indicators`;
+      const params = new URLSearchParams();
+      params.set("code", currentProjectCode);
+      if (currentProjectName) params.set("name", currentProjectName);
+      if (Number.isFinite(currentProjectTotalHours)) {
+        params.set("totalHours", String(currentProjectTotalHours));
+      }
+      window.location.href = `/projects/${encodeURIComponent(currentProjectCode)}/indicators?${params.toString()}`;
     });
   }
 
