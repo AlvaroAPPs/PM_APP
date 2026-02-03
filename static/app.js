@@ -403,7 +403,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const urlParams = new URLSearchParams(window.location.search);
   const prefill = urlParams.get("q");
-  if (prefill && input && lastAutoLoadedQuery !== prefill) {
+  const header = $("projectHeader");
+  const shouldAutoLoad =
+    prefill &&
+    input &&
+    (lastAutoLoadedQuery !== prefill ||
+      currentProjectCode !== prefill ||
+      (header && header.classList.contains("d-none")));
+  if (shouldAutoLoad) {
     input.value = prefill;
     lastAutoLoadedQuery = prefill;
     loadProject(prefill);
@@ -457,7 +464,12 @@ window.addEventListener("pageshow", () => {
   const urlParams = new URLSearchParams(window.location.search);
   const prefill = urlParams.get("q");
   if (!prefill) return;
-  if (currentProjectCode === prefill) return;
+  const header = $("projectHeader");
+  const shouldAutoLoad =
+    lastAutoLoadedQuery !== prefill ||
+    currentProjectCode !== prefill ||
+    (header && header.classList.contains("d-none"));
+  if (!shouldAutoLoad) return;
   input.value = prefill;
   lastAutoLoadedQuery = prefill;
   loadProject(prefill);
