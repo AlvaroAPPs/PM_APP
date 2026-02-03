@@ -2,6 +2,8 @@ const $ = (id) => document.getElementById(id);
 
 const MAX_CHART_POINTS = 25;
 const DEFAULT_TOTAL_HOURS = null;
+let activeProjectCode = null;
+let activeTotalHours = DEFAULT_TOTAL_HOURS;
 const STATUS_CLASSES = {
   red: "status-red",
   amber: "status-amber",
@@ -326,7 +328,7 @@ function renderPhaseChangesTable(phasesHistory) {
   if (phasesHistory.length < 2) {
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td colspan="4" class="muted">Sin historial suficiente</td>
+      <td colspan="3" class="muted">Sin historial suficiente</td>
     `;
     tbody.appendChild(row);
     return;
@@ -338,13 +340,12 @@ function renderPhaseChangesTable(phasesHistory) {
   PHASES.forEach((phase) => {
     const prevDate = prev[phase.key] || null;
     const currDate = curr[phase.key] || null;
-    const changed =
-      (prevDate || currDate) && prevDate !== currDate ? 1 : 0;
+    const changed = (prevDate || currDate) && prevDate !== currDate ? 1 : 0;
+    const changeText = `${formatDate(prevDate)} → ${formatDate(currDate)}`;
     const row = document.createElement("tr");
     row.innerHTML = `
       <td class="fw-semibold">${phase.label}</td>
-      <td>${formatDate(prevDate)}</td>
-      <td>${formatDate(currDate)}</td>
+      <td>${changeText}</td>
       <td>${changed}</td>
     `;
     tbody.appendChild(row);
@@ -700,6 +701,66 @@ function renderCharts(weekly, totalHours) {
   }
 }
 
+async function loadIndicators() {
+  if (!activeProjectCode) return;
+  try {
+    const [weeklyRaw, phasesRaw] = await Promise.all([
+      fetchJson(`/projects/${encodeURIComponent(activeProjectCode)}/metrics/weekly`),
+      fetchJson(`/projects/${encodeURIComponent(activeProjectCode)}/metrics/phases`),
+    ]);
+
+    const weekly = sortByWeek(weeklyRaw);
+    const phases = sortByWeek(phasesRaw);
+
+    if (!weekly.length || !phases.length) {
+      const noData = $("noDataMessage");
+      if (noData) noData.classList.remove("d-none");
+      return;
+    }
+
+    const productivity = computeProductivityIndicator(weekly);
+    setIndicator(
+      "productivity",
+      productivity.status,
+      productivity.label,
+      productivity.detail
+    );
+    const deviation = computeDeviationIndicator(weekly);
+    setIndicator("deviation", deviation.status, deviation.label, deviation.detail);
+
+    const phaseIndicator = computePhaseIndicator(phases, activeProjectCode);
+    setIndicator(
+      "phases",
+      phaseIndicator.status,
+      phaseIndicator.label,
+      phaseIndicator.detail
+    );
+
+    const resetBtn = $("phaseResetBtn");
+    if (resetBtn && phaseIndicator.resetKey) {
+      resetBtn.addEventListener("click", () => {
+        localStorage.setItem(phaseIndicator.resetKey, "true");
+        setIndicator(
+          "phases",
+          "orange",
+          "Reiniciado",
+          "Indicador reiniciado para este proyecto"
+        );
+      });
+    }
+
+    renderCharts(weekly, activeTotalHours);
+    renderPhaseChangesTable(phases);
+  } catch (err) {
+    const noData = $("noDataMessage");
+    if (noData) {
+      noData.textContent =
+        "No se pudieron cargar los datos del proyecto. Inténtalo más tarde.";
+      noData.classList.remove("d-none");
+    }
+  }
+}
+
 async function init() {
   const urlParams = new URLSearchParams(window.location.search);
   const projectCode = urlParams.get("code") || window.PROJECT_CODE;
@@ -722,62 +783,14 @@ async function init() {
   }
   if (!projectCode) return;
 
-  try {
-    const [weeklyRaw, phasesRaw] = await Promise.all([
-      fetchJson(`/projects/${encodeURIComponent(projectCode)}/metrics/weekly`),
-      fetchJson(`/projects/${encodeURIComponent(projectCode)}/metrics/phases`),
-    ]);
-
-    const weekly = sortByWeek(weeklyRaw);
-    const phases = sortByWeek(phasesRaw);
-
-    if (!weekly.length || !phases.length) {
-      const noData = $("noDataMessage");
-      if (noData) noData.classList.remove("d-none");
-      return;
-    }
-
-    const productivity = computeProductivityIndicator(weekly);
-    setIndicator(
-      "productivity",
-      productivity.status,
-      productivity.label,
-      productivity.detail
-    );
-    const deviation = computeDeviationIndicator(weekly);
-    setIndicator("deviation", deviation.status, deviation.label, deviation.detail);
-
-    const phaseIndicator = computePhaseIndicator(phases, projectCode);
-    setIndicator(
-      "phases",
-      phaseIndicator.status,
-      phaseIndicator.label,
-      phaseIndicator.detail
-    );
-
-    const resetBtn = $("phaseResetBtn");
-    if (resetBtn && phaseIndicator.resetKey) {
-      resetBtn.addEventListener("click", () => {
-        localStorage.setItem(phaseIndicator.resetKey, "true");
-        setIndicator(
-          "phases",
-          "orange",
-          "Reiniciado",
-          "Indicador reiniciado para este proyecto"
-        );
-      });
-    }
-
-    renderCharts(weekly, totalHours);
-    renderPhaseChangesTable(phases);
-  } catch (err) {
-    const noData = $("noDataMessage");
-    if (noData) {
-      noData.textContent =
-        "No se pudieron cargar los datos del proyecto. Inténtalo más tarde.";
-      noData.classList.remove("d-none");
-    }
-  }
+  activeProjectCode = projectCode;
+  activeTotalHours = totalHours;
+  await loadIndicators();
 }
 
 document.addEventListener("DOMContentLoaded", init);
+window.addEventListener("focus", () => {
+  if (activeProjectCode) {
+    loadIndicators();
+  }
+});
