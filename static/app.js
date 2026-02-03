@@ -450,3 +450,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const saveComment = $("saveProjectComment");
   if (saveComment) saveComment.addEventListener("click", saveProjectComment);
 });
+
+window.addEventListener("pageshow", () => {
+  const input = $("q");
+  if (!input) return;
+  const urlParams = new URLSearchParams(window.location.search);
+  const prefill = urlParams.get("q");
+  if (!prefill) return;
+  if (currentProjectCode === prefill) return;
+  input.value = prefill;
+  lastAutoLoadedQuery = prefill;
+  loadProject(prefill);
+});
