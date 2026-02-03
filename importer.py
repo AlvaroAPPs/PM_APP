@@ -218,6 +218,14 @@ def read_and_normalize_excel(path: str, sheet: Optional[str]) -> pd.DataFrame:
 
         # report date
         "date": "report_date",
+
+        # milestone dates (grouped under Dates)
+        "dates_k": "date_kickoff",
+        "dates_d": "date_design",
+        "dates_v": "date_validation",
+        "dates_g": "date_golive",
+        "dates_r": "date_reception",
+        "dates_e": "date_end",
     }
     for src, dst in ALIASES.items():
         if src in df.columns and dst not in df.columns:
@@ -238,6 +246,12 @@ def read_and_normalize_excel(path: str, sheet: Optional[str]) -> pd.DataFrame:
         "service_type_unnamed_25_level_1": "service_type",
         "offer_code_unnamed_26_level_1": "offer_code",
         "date_unnamed_27_level_1": "report_date",
+        "dates_k_unnamed_28_level_1": "date_kickoff",
+        "dates_d_unnamed_29_level_1": "date_design",
+        "dates_v_unnamed_30_level_1": "date_validation",
+        "dates_g_unnamed_31_level_1": "date_golive",
+        "dates_r_unnamed_32_level_1": "date_reception",
+        "dates_e_unnamed_33_level_1": "date_end",
         "kick_off_ok_unnamed_34_level_1": "kickoff_ok",
         "design_ok_unnamed_35_level_1": "design_ok",
         "validation_ok_unnamed_36_level_1": "validation_ok",
