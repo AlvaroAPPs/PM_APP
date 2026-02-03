@@ -92,8 +92,16 @@ def _to_bool(v) -> Optional[bool]:
 def normalize_excel_date(v) -> Optional[date]:
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return None
-    if isinstance(v, str) and v.strip() == "":
-        return None
+    if isinstance(v, str):
+        if v.strip() == "":
+            return None
+        if re.match(r"^\d{5,}-\d{2}-\d{2}$", v.strip()):
+            return None
+        if re.match(r"^\d{5,}$", v.strip()):
+            try:
+                v = float(v.strip())
+            except Exception:
+                return None
     if isinstance(v, date) and not isinstance(v, datetime):
         return v
     if isinstance(v, datetime):
