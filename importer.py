@@ -103,9 +103,9 @@ def normalize_excel_date(v) -> Optional[date]:
             except Exception:
                 return None
     if isinstance(v, date) and not isinstance(v, datetime):
-        return v
+        return v if 1900 <= v.year <= 2100 else None
     if isinstance(v, datetime):
-        return v.date()
+        return v.date() if 1900 <= v.year <= 2100 else None
     if isinstance(v, (int, float)) and not isinstance(v, bool):
         if v == 0:
             return None
@@ -113,14 +113,14 @@ def normalize_excel_date(v) -> Optional[date]:
             d = pd.to_datetime(v, unit="D", origin="1899-12-30", errors="coerce")
             if pd.isna(d):
                 return None
-            return d.date()
+            return d.date() if 1900 <= d.year <= 2100 else None
         except Exception:
             return None
     try:
         d = pd.to_datetime(v, errors="coerce", dayfirst=True)
         if pd.isna(d):
             return None
-        return d.date()
+        return d.date() if 1900 <= d.year <= 2100 else None
     except Exception:
         return None
 
