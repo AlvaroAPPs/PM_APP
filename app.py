@@ -79,6 +79,76 @@ def importacion(request: Request):
     return templates.TemplateResponse("import.html", {"request": request})
 
 
+@app.get("/menu-personal", response_class=HTMLResponse)
+def menu_personal(request: Request):
+    pm_name = "Alvaro Blanco Pérez"
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT p.project_name, p.project_code,
+                       s.ordered_total, s.real_hours, s.desviacion_pct,
+                       s.progress_w, s.payment_inv
+                FROM projects p
+                LEFT JOIN LATERAL (
+                    SELECT ordered_total, real_hours, desviacion_pct,
+                           progress_w, payment_inv
+                    FROM project_snapshot
+                    WHERE project_id = p.id
+                    ORDER BY snapshot_year DESC, snapshot_week DESC, snapshot_at DESC
+                    LIMIT 1
+                ) s ON true
+                WHERE p.project_manager = %s
+                ORDER BY p.project_code
+                """,
+                (pm_name,),
+            )
+            rows = cur.fetchall()
+
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No projects found for PM '{pm_name}'. "
+                "Check data normalization for exact match."
+            ),
+        )
+
+    def fmt_num(value: object) -> str:
+        if value is None:
+            return "—"
+        try:
+            return f"{float(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        except (TypeError, ValueError):
+            return str(value)
+
+    def fmt_pct(value: object) -> str:
+        if value is None:
+            return "—"
+        try:
+            return f"{float(value):.2f} %"
+        except (TypeError, ValueError):
+            return str(value)
+
+    projects = [
+        {
+            "project_name": r[0],
+            "project_code": r[1],
+            "ordered_total": fmt_num(r[2]),
+            "real_hours": fmt_num(r[3]),
+            "desviacion_pct": fmt_pct(r[4]),
+            "progress_w": fmt_pct(r[5]),
+            "payment_inv": fmt_pct(r[6]),
+            "indicator": "unknown",
+        }
+        for r in rows
+    ]
+
+    return templates.TemplateResponse(
+        "menu_personal.html",
+        {"request": request, "projects": projects, "pm_name": pm_name},
+    )
+
 # ---------- API: Import ----------
 @app.post("/imports")
 async def import_excel(
