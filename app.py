@@ -1,6 +1,7 @@
 import io
 import os
 import tempfile
+import urllib.parse
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -63,10 +64,22 @@ def to_date_iso(value: object) -> str | None:
 
 
 def fetch_deviations_results(
-    equipo: str | None = None,
-    order_phase: str | None = None,
+    teams: list[str],
+    phases: list[str],
 ) -> tuple[list[dict], list[str], set[str]]:
-    sql = """
+    where_clauses = []
+    params: list[object] = []
+    if teams:
+        where_clauses.append("s.team = ANY(%s::text[])")
+        params.append(teams)
+    if phases:
+        where_clauses.append("s.order_phase = ANY(%s::text[])")
+        params.append(phases)
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    sql = f"""
     WITH ranked AS (
         SELECT
             p.id AS project_id,
@@ -87,8 +100,7 @@ def fetch_deviations_results(
             ) AS rn
         FROM projects p
         JOIN project_snapshot s ON s.project_id = p.id
-        WHERE (%s::text IS NULL OR s.team = %s::text)
-          AND (%s::text IS NULL OR s.order_phase = %s::text)
+        {where_sql}
     )
     SELECT *
     FROM ranked
@@ -96,7 +108,7 @@ def fetch_deviations_results(
     """
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, (equipo, equipo, order_phase, order_phase))
+            cur.execute(sql, params)
             rows = cur.fetchall()
             colnames = [desc[0] for desc in cur.description]
 
@@ -116,13 +128,7 @@ def fetch_deviations_results(
     ]
     snapshot_columns = []
     for idx in range(1, 6):
-        snapshot_columns.extend(
-            [
-                f"S{idx} horas totales",
-                f"S{idx} horas reales",
-                f"S{idx} desviación",
-            ]
-        )
+        snapshot_columns.append(f"S{idx} desviación")
     columns.extend(snapshot_columns)
     numeric_columns = set(columns) - {"Proyecto", "Equipo", "Order phase", "Comentario"}
 
@@ -154,12 +160,6 @@ def fetch_deviations_results(
         snapshots_by_rn = {item["rn"]: item for item in items_sorted}
         for idx in range(1, 6):
             snapshot = snapshots_by_rn.get(idx)
-            row[f"S{idx} horas totales"] = to_float(
-                snapshot.get("ordered_total") if snapshot else None
-            )
-            row[f"S{idx} horas reales"] = to_float(
-                snapshot.get("real_hours") if snapshot else None
-            )
             row[f"S{idx} desviación"] = to_float(
                 snapshot.get("desviacion_pct") if snapshot else None
             )
@@ -324,17 +324,36 @@ def estado_proyecto(request: Request):
 
 
 @app.get("/consultas", response_class=HTMLResponse)
-def consultas(
-    request: Request,
-    equipo: str | None = None,
-    order_phase: str | None = None,
-):
-    if equipo == "":
-        equipo = None
-    if order_phase == "":
-        order_phase = None
-    results, columns, numeric_columns = fetch_deviations_results(equipo, order_phase)
+def consultas(request: Request):
+    supported_queries = {"desviaciones": "Desviaciones"}
+    consulta = request.query_params.get("consulta", "desviaciones")
+    if consulta not in supported_queries:
+        consulta = "desviaciones"
+
+    selected_teams = [
+        value for value in request.query_params.getlist("equipo") if value
+    ]
+    selected_phases = [
+        value for value in request.query_params.getlist("order_phase") if value
+    ]
+
+    if consulta == "desviaciones":
+        results, columns, numeric_columns = fetch_deviations_results(
+            selected_teams, selected_phases
+        )
+    else:
+        results, columns, numeric_columns = [], [], set()
+
     teams, phases = fetch_filter_options()
+    export_params = {"consulta": consulta}
+    if selected_teams:
+        export_params["equipo"] = selected_teams
+    if selected_phases:
+        export_params["order_phase"] = selected_phases
+    export_url = "/consultas/export"
+    if export_params:
+        export_url = f"{export_url}?{urllib.parse.urlencode(export_params, doseq=True)}"
+
     return templates.TemplateResponse(
         "queries.html",
         {
@@ -344,22 +363,30 @@ def consultas(
             "numeric_columns": numeric_columns,
             "teams": teams,
             "phases": phases,
-            "selected_team": equipo,
-            "selected_phase": order_phase,
+            "selected_teams": selected_teams,
+            "selected_phases": selected_phases,
+            "selected_query": consulta,
+            "supported_queries": supported_queries,
+            "export_url": export_url,
         },
     )
 
 
 @app.get("/consultas/export")
-def consultas_export(
-    equipo: str | None = None,
-    order_phase: str | None = None,
-):
-    if equipo == "":
-        equipo = None
-    if order_phase == "":
-        order_phase = None
-    results, columns, _numeric_columns = fetch_deviations_results(equipo, order_phase)
+def consultas_export(request: Request):
+    consulta = request.query_params.get("consulta", "desviaciones")
+    selected_teams = [
+        value for value in request.query_params.getlist("equipo") if value
+    ]
+    selected_phases = [
+        value for value in request.query_params.getlist("order_phase") if value
+    ]
+    if consulta != "desviaciones":
+        raise HTTPException(status_code=400, detail="Consulta no soportada")
+
+    results, columns, _numeric_columns = fetch_deviations_results(
+        selected_teams, selected_phases
+    )
     df = pd.DataFrame(results, columns=columns)
     buffer = io.BytesIO()
     df.to_excel(buffer, index=False, engine="openpyxl")

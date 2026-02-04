@@ -35,24 +35,32 @@
       <div class="card-body">
         <form class="row g-3 align-items-end" method="get" action="/consultas">
           <div class="col-12 col-md-4">
-            <label class="form-label">Equipo</label>
-            <select class="form-select" name="equipo">
-              <option value="">Todos</option>
-              {% for team in teams %}
-              <option value="{{ team }}" {% if team == selected_team %}selected{% endif %}>{{ team }}</option>
+            <label class="form-label">Consulta</label>
+            <select class="form-select" name="consulta">
+              {% for key, label in supported_queries.items() %}
+              <option value="{{ key }}" {% if key == selected_query %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
           </div>
           <div class="col-12 col-md-4">
-            <label class="form-label">Order phase</label>
-            <select class="form-select" name="order_phase">
-              <option value="">Todos</option>
-              {% for phase in phases %}
-              <option value="{{ phase }}" {% if phase == selected_phase %}selected{% endif %}>{{ phase }}</option>
+            <label class="form-label">Equipo</label>
+            <select class="form-select" name="equipo" multiple>
+              {% for team in teams %}
+              <option value="{{ team }}" {% if team in selected_teams %}selected{% endif %}>{{ team }}</option>
               {% endfor %}
             </select>
+            <div class="form-text">Selecciona uno o varios. Sin selección = todos.</div>
           </div>
-          <div class="col-12 col-md-4 d-flex gap-2">
+          <div class="col-12 col-md-4">
+            <label class="form-label">Order phase</label>
+            <select class="form-select" name="order_phase" multiple>
+              {% for phase in phases %}
+              <option value="{{ phase }}" {% if phase in selected_phases %}selected{% endif %}>{{ phase }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Selecciona uno o varios. Sin selección = todos.</div>
+          </div>
+          <div class="col-12 d-flex gap-2">
             <button class="btn btn-dark" type="submit">Aplicar filtros</button>
             <a class="btn btn-outline-secondary" href="/consultas">Limpiar</a>
           </div>
@@ -62,10 +70,7 @@
 
     <div class="d-flex justify-content-between align-items-center mb-2">
       <div class="fw-semibold">Consulta: Desviaciones (último y penúltimo snapshot)</div>
-      <a
-        class="btn btn-outline-success"
-        href="/consultas/export{% if selected_team or selected_phase %}?{% if selected_team %}equipo={{ selected_team|urlencode }}{% endif %}{% if selected_phase %}{% if selected_team %}&{% endif %}order_phase={{ selected_phase|urlencode }}{% endif %}{% endif %}"
-      >
+      <a class="btn btn-outline-success" href="{{ export_url }}">
         Exportar a Excel
       </a>
     </div>
