@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 
@@ -71,8 +72,32 @@ def index(request: Request):
 
 
 @app.get("/estado-proyecto", response_class=HTMLResponse)
-def estado_proyecto(request: Request):
-    return templates.TemplateResponse("project.html", {"request": request})
+def estado_proyecto(request: Request, project_code: str | None = None):
+    if not project_code:
+        return templates.TemplateResponse("project.html", {"request": request})
+
+    template_path = os.path.join(templates.directory, "project.html")
+    with open(template_path, "r", encoding="utf-8") as handle:
+        html = handle.read()
+
+    safe_code = json.dumps(project_code)
+    auto_load_script = (
+        "<script>"
+        "document.addEventListener(\"DOMContentLoaded\", () => {"
+        f"const code = {safe_code};"
+        "const input = document.getElementById(\"q\");"
+        "if (input) input.value = code;"
+        "if (typeof loadProject === \"function\") { loadProject(code); }"
+        "});"
+        "</script>"
+    )
+
+    if "</body>" in html:
+        html = html.replace("</body>", f"{auto_load_script}\n</body>", 1)
+    else:
+        html = f"{html}\n{auto_load_script}"
+
+    return HTMLResponse(html)
 
 @app.get("/importacion", response_class=HTMLResponse)
 def importacion(request: Request):
@@ -99,7 +124,7 @@ def menu_personal(request: Request):
                     LIMIT 1
                 ) s ON true
                 WHERE p.project_manager = %s
-                ORDER BY p.project_code
+                ORDER BY lower(p.project_name)
                 """,
                 (pm_name,),
             )

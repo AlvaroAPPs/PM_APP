@@ -19,6 +19,10 @@
       display: inline-block;
       background: #9ca3af;
     }
+    .table-scroll {
+      max-height: 360px;
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body>
@@ -33,7 +37,7 @@
 
     <div class="card shadow-soft">
       <div class="card-body">
-        <div class="table-responsive">
+        <div class="table-responsive table-scroll">
           <table class="table align-middle mb-0">
             <thead>
               <tr>
@@ -49,7 +53,7 @@
             </thead>
             <tbody>
               {% for project in projects %}
-              <tr class="row-link" data-href="/estado-proyecto">
+              <tr class="row-link" data-href="/estado-proyecto?project_code={{ project.project_code }}">
                 <td>
                   <!-- TODO: map real indicator fields to green/orange/red when available. -->
                   <span class="status-dot" title="{{ project.indicator }}"></span>
