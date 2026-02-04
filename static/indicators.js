@@ -646,8 +646,21 @@ function renderCharts(weekly, totalHours) {
   const progressDomain = calculateDomain(progressData);
   const deviationDomain = calculateDomain(deviationData);
   const realHoursDomain = calculateDomain(realWeeklyHours);
+  const hoursCompareWeekly = visibleWeekly.filter(
+    (item) => item.progress_w_delta !== null && item.progress_w_delta !== undefined
+  );
+  const hoursCompareLabels = hoursCompareWeekly.map((item) =>
+    formatWeekLabel(item.year, item.week)
+  );
+  const hoursCompareReal = hoursCompareWeekly.map((item) => {
+    const index = visibleWeekly.indexOf(item);
+    return index >= 0 ? realWeeklyHours[index] : null;
+  });
+  const hoursCompareTheoretical = hoursCompareWeekly.map((item) =>
+    toNumber(item.horas_teoricas_delta)
+  );
   const hoursCompareDomain = calculateDomain(
-    realWeeklyHours.concat(theoreticalWeeklyHours)
+    hoursCompareReal.concat(hoursCompareTheoretical)
   );
 
   buildLineChart(
@@ -679,19 +692,21 @@ function renderCharts(weekly, totalHours) {
 
   buildBarChart(
     $("chartHoursCompare"),
-    labels,
+    hoursCompareLabels,
     [
       {
         label: "Horas reales",
-        data: realWeeklyHours.map((value) =>
+        data: hoursCompareReal.map((value) =>
           value === null ? null : Math.round(value)
         ),
         backgroundColor: "#1d4ed8",
       },
       {
         label: "Horas teóricas",
-        data: theoreticalWeeklyHours,
-        backgroundColor: "#93c5fd",
+        data: hoursCompareTheoretical.map((value) =>
+          value === null ? null : Math.round(value)
+        ),
+        backgroundColor: "#f97316",
       },
     ],
     hoursCompareDomain
