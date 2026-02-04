@@ -419,7 +419,7 @@ function buildBarChart(ctx, labels, datasets, domain) {
   });
 }
 
-function buildSCurveChart(ctx, actualPoints, projectedPoints) {
+function buildSCurveChart(ctx, actualPoints, pendingPoints, productivityPoints) {
   return new Chart(ctx, {
     type: "line",
     data: {
@@ -433,10 +433,19 @@ function buildSCurveChart(ctx, actualPoints, projectedPoints) {
           parsing: false,
         },
         {
-          label: "Proyección",
-          data: projectedPoints,
+          label: "Pending Work (no deviation)",
+          data: pendingPoints,
           borderColor: "#f97316",
           backgroundColor: "#f97316",
+          borderDash: [6, 6],
+          tension: 0.25,
+          parsing: false,
+        },
+        {
+          label: "Work in productivity",
+          data: productivityPoints,
+          borderColor: "#7f1d1d",
+          backgroundColor: "#7f1d1d",
           borderDash: [6, 6],
           tension: 0.25,
           parsing: false,
@@ -492,29 +501,16 @@ function computeTotalProgress(series) {
   return total;
 }
 
-function buildProjectionForHours(progressCumulative, realCumulative, weekLabels) {
+function buildProjectionForHours(progressCumulative, realCumulative, weekLabels, totalHours) {
   if (!progressCumulative.length || !realCumulative.length) {
     return {
       actualPoints: [],
-      projectedPoints: [],
+      pendingPoints: [],
+      productivityPoints: [],
       projectedHoursAtClose: null,
       finishingWeekLabel: "N/A",
     };
   }
-
-  const latestProgress = progressCumulative[progressCumulative.length - 1];
-  const latestReal = realCumulative[realCumulative.length - 1];
-
-  if (!Number.isFinite(latestProgress) || latestProgress <= 0 || !Number.isFinite(latestReal)) {
-    return {
-      actualPoints: [],
-      projectedPoints: [],
-      projectedHoursAtClose: null,
-      finishingWeekLabel: "N/A",
-    };
-  }
-
-  const projectedHoursAtClose = latestReal / (latestProgress / 100);
 
   const actualPoints = progressCumulative
     .map((value, index) => ({
@@ -525,10 +521,50 @@ function buildProjectionForHours(progressCumulative, realCumulative, weekLabels)
       (point) => Number.isFinite(point.x) && Number.isFinite(point.y)
     );
 
-  const projectedPoints = [
+  if (!actualPoints.length) {
+    return {
+      actualPoints: [],
+      pendingPoints: [],
+      productivityPoints: [],
+      projectedHoursAtClose: null,
+      finishingWeekLabel: "N/A",
+    };
+  }
+
+  const lastPoint = actualPoints[actualPoints.length - 1];
+  const latestProgress = lastPoint.x;
+  const latestReal = lastPoint.y;
+
+  if (!Number.isFinite(totalHours) || totalHours <= 0) {
+    return {
+      actualPoints,
+      pendingPoints: [],
+      productivityPoints: [],
+      projectedHoursAtClose: null,
+      finishingWeekLabel: "N/A",
+    };
+  }
+
+  const pendingPercent = Math.max(0, 100 - latestProgress);
+  const pendingHours = (pendingPercent / 100) * totalHours;
+  const pendingPoints = [
     { x: latestProgress, y: latestReal },
-    { x: 100, y: projectedHoursAtClose },
+    { x: 100, y: latestReal + pendingHours },
   ];
+
+  let productivityPoints = [];
+  let projectedHoursAtClose = null;
+  const progressRatio = latestProgress / 100;
+  if (progressRatio > 0) {
+    // productivityFactor = realHours / (totalProjectHours * progressRatio)
+    const productivityFactor = latestReal / (totalHours * progressRatio);
+    const pendingAdjusted = productivityFactor * pendingHours;
+    projectedHoursAtClose = latestReal + pendingAdjusted;
+    productivityPoints = [
+      { x: latestProgress, y: latestReal },
+      { x: 100, y: projectedHoursAtClose },
+    ];
+  }
 
   const progressDeltas = toDeltaSeries(progressCumulative);
   const positiveDeltas = progressDeltas.filter((value, index) => index > 0 && Number.isFinite(value) && value > 0);
@@ -550,7 +586,8 @@ function buildProjectionForHours(progressCumulative, realCumulative, weekLabels)
 
   return {
     actualPoints,
-    projectedPoints,
+    pendingPoints,
+    productivityPoints,
     projectedHoursAtClose,
     finishingWeekLabel,
   };
@@ -680,12 +717,14 @@ function renderCharts(weekly, totalHours) {
   const projection = buildProjectionForHours(
     progressCumulative,
     realCumulative,
-    weekOrder
+    weekOrder,
+    totalHours
   );
   buildSCurveChart(
     $("chartSCurve"),
     projection.actualPoints,
-    projection.projectedPoints
+    projection.pendingPoints,
+    projection.productivityPoints
   );
 
   const projectionHours = $("projectionHours");
