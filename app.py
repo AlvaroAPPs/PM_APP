@@ -1,12 +1,14 @@
+import io
 import os
 import tempfile
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+import pandas as pd
 import psycopg
 
 from importer import read_and_normalize_excel, map_row, upsert_project, upsert_snapshot, compute_deltas
@@ -58,6 +60,137 @@ def to_date_iso(value: object) -> str | None:
     if value is None:
         return None
     return value.isoformat()
+
+
+def fetch_deviations_results(
+    equipo: str | None = None,
+    order_phase: str | None = None,
+) -> tuple[list[dict], list[str], set[str]]:
+    sql = """
+    WITH ranked AS (
+        SELECT
+            p.id AS project_id,
+            p.project_code,
+            p.project_name,
+            s.team,
+            s.order_phase,
+            s.ordered_total,
+            s.real_hours,
+            s.desviacion_pct,
+            s.comments,
+            s.snapshot_year,
+            s.snapshot_week,
+            s.snapshot_at,
+            ROW_NUMBER() OVER (
+                PARTITION BY p.id
+                ORDER BY s.snapshot_year DESC, s.snapshot_week DESC, s.snapshot_at DESC
+            ) AS rn
+        FROM projects p
+        JOIN project_snapshot s ON s.project_id = p.id
+        WHERE (%s IS NULL OR s.team = %s)
+          AND (%s IS NULL OR s.order_phase = %s)
+    )
+    SELECT *
+    FROM ranked
+    WHERE rn <= 5
+    """
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (equipo, equipo, order_phase, order_phase))
+            rows = cur.fetchall()
+            colnames = [desc[0] for desc in cur.description]
+
+    grouped: dict[int, list[dict]] = {}
+    for row in rows:
+        record = dict(zip(colnames, row))
+        grouped.setdefault(record["project_id"], []).append(record)
+
+    columns = [
+        "Proyecto",
+        "Equipo",
+        "Order phase",
+        "Horas totales",
+        "Horas reales",
+        "Desviación",
+        "Comentario",
+    ]
+    snapshot_columns = []
+    for idx in range(1, 6):
+        snapshot_columns.extend(
+            [
+                f"S{idx} horas totales",
+                f"S{idx} horas reales",
+                f"S{idx} desviación",
+            ]
+        )
+    columns.extend(snapshot_columns)
+    numeric_columns = set(columns) - {"Proyecto", "Equipo", "Order phase", "Comentario"}
+
+    results = []
+    for items in grouped.values():
+        items_sorted = sorted(items, key=lambda item: item["rn"])
+        latest = next((item for item in items_sorted if item["rn"] == 1), None)
+        prev = next((item for item in items_sorted if item["rn"] == 2), None)
+        if latest is None or prev is None:
+            continue
+        latest_dev = to_float(latest.get("desviacion_pct"))
+        prev_dev = to_float(prev.get("desviacion_pct"))
+        # A snapshot is deviated when desviacion_pct != 0.
+        if not (latest_dev is not None and latest_dev != 0):
+            continue
+        if not (prev_dev is not None and prev_dev != 0):
+            continue
+
+        row = {
+            "Proyecto": latest.get("project_name"),
+            "Equipo": latest.get("team"),
+            "Order phase": latest.get("order_phase"),
+            "Horas totales": to_float(latest.get("ordered_total")),
+            "Horas reales": to_float(latest.get("real_hours")),
+            "Desviación": latest_dev,
+            "Comentario": normalize_comment(latest.get("comments")),
+        }
+
+        snapshots_by_rn = {item["rn"]: item for item in items_sorted}
+        for idx in range(1, 6):
+            snapshot = snapshots_by_rn.get(idx)
+            row[f"S{idx} horas totales"] = to_float(
+                snapshot.get("ordered_total") if snapshot else None
+            )
+            row[f"S{idx} horas reales"] = to_float(
+                snapshot.get("real_hours") if snapshot else None
+            )
+            row[f"S{idx} desviación"] = to_float(
+                snapshot.get("desviacion_pct") if snapshot else None
+            )
+        results.append(row)
+
+    results = sorted(results, key=lambda item: (item["Proyecto"] or "").lower())
+    return results, columns, numeric_columns
+
+
+def fetch_filter_options() -> tuple[list[str], list[str]]:
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT team
+                FROM project_snapshot
+                WHERE team IS NOT NULL AND team <> ''
+                ORDER BY team
+                """
+            )
+            teams = [row[0] for row in cur.fetchall()]
+            cur.execute(
+                """
+                SELECT DISTINCT order_phase
+                FROM project_snapshot
+                WHERE order_phase IS NOT NULL AND order_phase <> ''
+                ORDER BY order_phase
+                """
+            )
+            phases = [row[0] for row in cur.fetchall()]
+    return teams, phases
 
 
 def ensure_details_columns(cur: psycopg.Cursor) -> None:
@@ -188,6 +321,60 @@ def index(request: Request):
 @app.get("/estado-proyecto", response_class=HTMLResponse)
 def estado_proyecto(request: Request):
     return templates.TemplateResponse("project.html", {"request": request})
+
+
+@app.get("/consultas", response_class=HTMLResponse)
+def consultas(
+    request: Request,
+    equipo: str | None = None,
+    order_phase: str | None = None,
+):
+    if equipo == "":
+        equipo = None
+    if order_phase == "":
+        order_phase = None
+    results, columns, numeric_columns = fetch_deviations_results(equipo, order_phase)
+    teams, phases = fetch_filter_options()
+    return templates.TemplateResponse(
+        "queries.html",
+        {
+            "request": request,
+            "results": results,
+            "columns": columns,
+            "numeric_columns": numeric_columns,
+            "teams": teams,
+            "phases": phases,
+            "selected_team": equipo,
+            "selected_phase": order_phase,
+        },
+    )
+
+
+@app.get("/consultas/export")
+def consultas_export(
+    equipo: str | None = None,
+    order_phase: str | None = None,
+):
+    if equipo == "":
+        equipo = None
+    if order_phase == "":
+        order_phase = None
+    results, columns, _numeric_columns = fetch_deviations_results(equipo, order_phase)
+    df = pd.DataFrame(results, columns=columns)
+    buffer = io.BytesIO()
+    df.to_excel(buffer, index=False, engine="openpyxl")
+    buffer.seek(0)
+    filename = "consultas_desviaciones.xlsx"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"'
+    }
+    return StreamingResponse(
+        buffer,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers=headers,
+    )
 
 
 @app.get("/projects/{project_code}/indicators", response_class=HTMLResponse)
