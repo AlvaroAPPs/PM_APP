@@ -501,8 +501,8 @@ function computeTotalProgress(series) {
   return total;
 }
 
-function buildProjectionForHours(progressWeekly, realWeekly, weekLabels, totalHours) {
-  if (!progressWeekly.length || !realWeekly.length) {
+function buildProjectionForHours(progressWeekly, realCumulative, weekLabels, totalHours) {
+  if (!progressWeekly.length || !realCumulative.length) {
     return {
       actualPoints: [],
       pendingPoints: [],
@@ -516,7 +516,7 @@ function buildProjectionForHours(progressWeekly, realWeekly, weekLabels, totalHo
   const actualPoints = progressWeekly
     .map((value, index) => ({
       x: value,
-      y: realWeekly[index],
+      y: realCumulative[index],
     }))
     .filter(
       (point) => Number.isFinite(point.x) && Number.isFinite(point.y)
@@ -719,11 +719,11 @@ function renderCharts(weekly, totalHours) {
     Math.max(0, fullRealCumulative.length - visibleWeekly.length)
   );
   const sCurveProgressWeekly = visibleWeekly.map((item) => toNumber(item.progress_w));
-  const sCurveRealWeekly = realWeeklyHours;
+  const sCurveRealCumulative = realCumulative;
   const weekOrder = visibleWeekly.map((item) => [item.year, item.week]);
   const projection = buildProjectionForHours(
     sCurveProgressWeekly,
-    sCurveRealWeekly,
+    sCurveRealCumulative,
     weekOrder,
     totalHours
   );
