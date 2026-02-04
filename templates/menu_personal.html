@@ -18,7 +18,9 @@
       display: inline-block;
       border: 1px solid #e5e7eb;
     }
-    .status-dot.status-unknown { background: #e5e7eb; }
+    .status-dot.status-red { background: #dc3545; }
+    .status-dot.status-orange { background: #f59e0b; }
+    .status-dot.status-green { background: #16a34a; }
     .project-row { cursor: pointer; }
     .project-row:hover { background: #f3f4f6; }
   </style>
@@ -55,8 +57,7 @@
               {% for project in projects %}
               <tr class="project-row" data-href="/estado-proyecto?q={{ project.project_code }}">
                 <td>
-                  <!-- TODO: connect indicator fields when available -->
-                  <span class="status-dot status-unknown" aria-label="unknown"></span>
+                  <span class="status-dot status-{{ project.indicator_status }}" aria-label="{{ project.indicator_status }}"></span>
                 </td>
                 <td>{{ project.project_name }}</td>
                 <td class="text-nowrap">{{ project.project_code }}</td>

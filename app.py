@@ -75,6 +75,109 @@ def ensure_details_columns(cur: psycopg.Cursor) -> None:
         """
     )
 
+PHASES_INFO = (
+    ("date_kickoff", "Kick-off"),
+    ("date_design", "Design"),
+    ("date_validation", "Validation"),
+    ("date_golive", "Go-live"),
+    ("date_reception", "Reception"),
+    ("date_end", "End"),
+)
+
+
+def _indicator_to_color(status: str) -> str:
+    if status == "red":
+        return "red"
+    if status in {"orange", "amber"}:
+        return "orange"
+    return "green"
+
+
+def compute_productivity_indicator(weekly: list[dict]) -> str:
+    if len(weekly) < 2:
+        return "orange"
+    latest = weekly[-1]
+    prev = weekly[-2]
+
+    latest_real = to_float(latest.get("real_hours"))
+    prev_real = to_float(prev.get("real_hours"))
+    latest_progress = to_float(latest.get("progress_w"))
+    prev_progress = to_float(prev.get("progress_w"))
+    latest_theoretical = to_float(latest.get("horas_teoricas"))
+    prev_theoretical = to_float(prev.get("horas_teoricas"))
+
+    if (
+        latest_real is None
+        or prev_real is None
+        or latest_progress is None
+        or prev_progress is None
+    ):
+        return "orange"
+
+    if latest_real > prev_real and latest_progress <= prev_progress:
+        return "red"
+
+    if latest_theoretical is not None and latest_real > latest_theoretical:
+        return "amber"
+
+    if prev_theoretical is not None and latest_real < prev_theoretical:
+        return "green"
+
+    return "orange"
+
+
+def compute_deviation_indicator(weekly: list[dict]) -> str:
+    if len(weekly) < 2:
+        return "orange"
+    latest = weekly[-1]
+    prev = weekly[-2]
+
+    latest_dev = to_float(latest.get("desviacion_pct"))
+    prev_dev = to_float(prev.get("desviacion_pct"))
+    if latest_dev is None or prev_dev is None:
+        return "orange"
+    if latest_dev > prev_dev:
+        return "red"
+    if latest_dev == prev_dev:
+        return "amber"
+    return "green"
+
+
+def compute_phase_indicator(phases_history: list[dict]) -> str:
+    changes: dict[str, dict[str, bool]] = {}
+    for key, _label in PHASES_INFO:
+        changes[key] = {"later": False, "earlier": False, "changed": False}
+
+    for i in range(1, len(phases_history)):
+        prev = phases_history[i - 1]
+        curr = phases_history[i]
+        for key, _label in PHASES_INFO:
+            prev_date = prev.get(key)
+            curr_date = curr.get(key)
+            if prev_date != curr_date:
+                changes[key]["changed"] = True
+                direction = "unknown"
+                if prev_date and curr_date:
+                    if curr_date > prev_date:
+                        direction = "later"
+                    elif curr_date < prev_date:
+                        direction = "earlier"
+                if direction == "later":
+                    changes[key]["later"] = True
+                if direction == "earlier":
+                    changes[key]["earlier"] = True
+
+    for key, _label in PHASES_INFO:
+        if changes[key]["later"]:
+            return "red"
+    for key, _label in PHASES_INFO:
+        if changes[key]["earlier"]:
+            return "green"
+    for key, _label in PHASES_INFO:
+        if changes[key]["changed"]:
+            return "orange"
+    return "orange"
+
 
 # ---------- WEB ----------
 @app.get("/", response_class=HTMLResponse)
@@ -122,7 +225,8 @@ def menu_personal(request: Request):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT p.project_code,
+                SELECT p.id,
+                       p.project_code,
                        p.project_name,
                        p.client,
                        p.team,
@@ -154,23 +258,85 @@ def menu_personal(request: Request):
             rows = cur.fetchall()
 
     projects = []
-    for row in rows:
-        ordered_total = row[4]
-        if ordered_total is None and (row[5] is not None or row[6] is not None):
-            ordered_total = (row[5] or 0) + (row[6] or 0)
-        projects.append(
-            {
-                "project_code": row[0],
-                "project_name": row[1],
-                "client": row[2],
-                "team": row[3],
-                "ordered_total": ordered_total,
-                "real_hours": row[7],
-                "desviacion_pct": row[8],
-                "progress_w": row[9],
-                "payment_inv": row[10],
-            }
-        )
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            for row in rows:
+                project_id = row[0]
+                cur.execute(
+                    """
+                    SELECT progress_w, desviacion_pct, real_hours, horas_teoricas
+                    FROM project_snapshot
+                    WHERE project_id = %s
+                    ORDER BY snapshot_year ASC, snapshot_week ASC
+                    """,
+                    (project_id,),
+                )
+                weekly_rows = cur.fetchall()
+                weekly = [
+                    {
+                        "progress_w": r[0],
+                        "desviacion_pct": r[1],
+                        "real_hours": r[2],
+                        "horas_teoricas": r[3],
+                    }
+                    for r in weekly_rows
+                ]
+
+                cur.execute(
+                    """
+                    SELECT date_kickoff, date_design, date_validation,
+                           date_golive, date_reception, date_end
+                    FROM project_snapshot
+                    WHERE project_id = %s
+                    ORDER BY snapshot_year ASC, snapshot_week ASC
+                    """,
+                    (project_id,),
+                )
+                phase_rows = cur.fetchall()
+                phases_history = [
+                    {
+                        "date_kickoff": r[0],
+                        "date_design": r[1],
+                        "date_validation": r[2],
+                        "date_golive": r[3],
+                        "date_reception": r[4],
+                        "date_end": r[5],
+                    }
+                    for r in phase_rows
+                ]
+
+                productivity_status = compute_productivity_indicator(weekly)
+                deviation_status = compute_deviation_indicator(weekly)
+                phase_status = compute_phase_indicator(phases_history)
+                indicator_statuses = [
+                    _indicator_to_color(productivity_status),
+                    _indicator_to_color(deviation_status),
+                    _indicator_to_color(phase_status),
+                ]
+                if "red" in indicator_statuses:
+                    overall_status = "red"
+                elif "orange" in indicator_statuses:
+                    overall_status = "orange"
+                else:
+                    overall_status = "green"
+
+                ordered_total = row[5]
+                if ordered_total is None and (row[6] is not None or row[7] is not None):
+                    ordered_total = (row[6] or 0) + (row[7] or 0)
+                projects.append(
+                    {
+                        "project_code": row[1],
+                        "project_name": row[2],
+                        "client": row[3],
+                        "team": row[4],
+                        "ordered_total": ordered_total,
+                        "real_hours": row[8],
+                        "desviacion_pct": row[9],
+                        "progress_w": row[10],
+                        "payment_inv": row[11],
+                        "indicator_status": overall_status,
+                    }
+                )
 
     projects = sorted(projects, key=lambda item: (item["project_name"] or "").lower())
 
