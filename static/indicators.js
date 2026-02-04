@@ -501,21 +501,22 @@ function computeTotalProgress(series) {
   return total;
 }
 
-function buildProjectionForHours(progressCumulative, realCumulative, weekLabels, totalHours) {
-  if (!progressCumulative.length || !realCumulative.length) {
+function buildProjectionForHours(progressWeekly, realWeekly, weekLabels, totalHours) {
+  if (!progressWeekly.length || !realWeekly.length) {
     return {
       actualPoints: [],
       pendingPoints: [],
       productivityPoints: [],
-      projectedHoursAtClose: null,
+      pendingHoursAtClose: null,
+      productivityHoursAtClose: null,
       finishingWeekLabel: "N/A",
     };
   }
 
-  const actualPoints = progressCumulative
+  const actualPoints = progressWeekly
     .map((value, index) => ({
       x: value,
-      y: realCumulative[index],
+      y: realWeekly[index],
     }))
     .filter(
       (point) => Number.isFinite(point.x) && Number.isFinite(point.y)
@@ -526,7 +527,8 @@ function buildProjectionForHours(progressCumulative, realCumulative, weekLabels,
       actualPoints: [],
       pendingPoints: [],
       productivityPoints: [],
-      projectedHoursAtClose: null,
+      pendingHoursAtClose: null,
+      productivityHoursAtClose: null,
       finishingWeekLabel: "N/A",
     };
   }
@@ -540,33 +542,35 @@ function buildProjectionForHours(progressCumulative, realCumulative, weekLabels,
       actualPoints,
       pendingPoints: [],
       productivityPoints: [],
-      projectedHoursAtClose: null,
+      pendingHoursAtClose: null,
+      productivityHoursAtClose: null,
       finishingWeekLabel: "N/A",
     };
   }
 
   const pendingPercent = Math.max(0, 100 - latestProgress);
   const pendingHours = (pendingPercent / 100) * totalHours;
+  const pendingHoursAtClose = latestReal + pendingHours;
   const pendingPoints = [
     { x: latestProgress, y: latestReal },
-    { x: 100, y: latestReal + pendingHours },
+    { x: 100, y: pendingHoursAtClose },
   ];
 
   let productivityPoints = [];
-  let projectedHoursAtClose = null;
+  let productivityHoursAtClose = null;
   const progressRatio = latestProgress / 100;
   if (progressRatio > 0) {
     // productivityFactor = realHours / (totalProjectHours * progressRatio)
     const productivityFactor = latestReal / (totalHours * progressRatio);
     const pendingAdjusted = productivityFactor * pendingHours;
-    projectedHoursAtClose = latestReal + pendingAdjusted;
+    productivityHoursAtClose = latestReal + pendingAdjusted;
     productivityPoints = [
       { x: latestProgress, y: latestReal },
-      { x: 100, y: projectedHoursAtClose },
+      { x: 100, y: productivityHoursAtClose },
     ];
   }
 
-  const progressDeltas = toDeltaSeries(progressCumulative);
+  const progressDeltas = toDeltaSeries(progressWeekly);
   const positiveDeltas = progressDeltas.filter((value, index) => index > 0 && Number.isFinite(value) && value > 0);
   const avgWeeklyProgress = positiveDeltas.length
     ? positiveDeltas.reduce((sum, v) => sum + v, 0) / positiveDeltas.length
@@ -588,7 +592,8 @@ function buildProjectionForHours(progressCumulative, realCumulative, weekLabels,
     actualPoints,
     pendingPoints,
     productivityPoints,
-    projectedHoursAtClose,
+    pendingHoursAtClose,
+    productivityHoursAtClose,
     finishingWeekLabel,
   };
 }
@@ -713,10 +718,12 @@ function renderCharts(weekly, totalHours) {
   const realCumulative = fullRealCumulative.slice(
     Math.max(0, fullRealCumulative.length - visibleWeekly.length)
   );
+  const sCurveProgressWeekly = visibleWeekly.map((item) => toNumber(item.progress_w));
+  const sCurveRealWeekly = realWeeklyHours;
   const weekOrder = visibleWeekly.map((item) => [item.year, item.week]);
   const projection = buildProjectionForHours(
-    progressCumulative,
-    realCumulative,
+    sCurveProgressWeekly,
+    sCurveRealWeekly,
     weekOrder,
     totalHours
   );
@@ -727,11 +734,18 @@ function renderCharts(weekly, totalHours) {
     projection.productivityPoints
   );
 
-  const projectionHours = $("projectionHours");
-  if (projectionHours) {
-    projectionHours.textContent =
-      projection.projectedHoursAtClose !== null
-        ? `${formatInt(projection.projectedHoursAtClose)} h`
+  const projectionPending = $("projectionHoursPending");
+  if (projectionPending) {
+    projectionPending.textContent =
+      projection.pendingHoursAtClose !== null
+        ? `${formatInt(projection.pendingHoursAtClose)} h`
+        : "N/A";
+  }
+  const projectionProductivity = $("projectionHoursProductivity");
+  if (projectionProductivity) {
+    projectionProductivity.textContent =
+      projection.productivityHoursAtClose !== null
+        ? `${formatInt(projection.productivityHoursAtClose)} h`
         : "N/A";
   }
   const projectionWeek = $("projectionWeek");
