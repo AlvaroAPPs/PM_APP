@@ -59,6 +59,18 @@ def to_date_iso(value: object) -> str | None:
         return None
     return value.isoformat()
 
+def normalize_indicator_status(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if normalized in {"red", "rojo"}:
+        return "red"
+    if normalized in {"orange", "amber", "ambar", "ámbar", "naranja", "amarillo"}:
+        return "orange"
+    if normalized in {"green", "verde"}:
+        return "green"
+    return None
+
 
 def ensure_details_columns(cur: psycopg.Cursor) -> None:
     cur.execute(
@@ -114,6 +126,64 @@ def project_indicators(request: Request, project_code: str):
 @app.get("/importacion", response_class=HTMLResponse)
 def importacion(request: Request):
     return templates.TemplateResponse("import.html", {"request": request})
+
+@app.get("/menu-personal", response_class=HTMLResponse)
+def menu_personal(request: Request):
+    pm_name = "Alvaro Blanco Pérez"
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT p.project_code,
+                       p.project_name,
+                       p.client,
+                       p.team,
+                       p.status,
+                       s.internal_status
+                FROM projects p
+                LEFT JOIN LATERAL (
+                    SELECT internal_status
+                    FROM project_snapshot
+                    WHERE project_id = p.id
+                    ORDER BY snapshot_year DESC, snapshot_week DESC, snapshot_at DESC
+                    LIMIT 1
+                ) s ON TRUE
+                WHERE p.project_manager = %s
+                """,
+                (pm_name,),
+            )
+            rows = cur.fetchall()
+
+    projects = []
+    for row in rows:
+        status_values = [row[4], row[5]]
+        normalized_statuses = [
+            status
+            for status in (normalize_indicator_status(value) for value in status_values)
+            if status
+        ]
+        if "red" in normalized_statuses:
+            overall_status = "red"
+        elif "orange" in normalized_statuses:
+            overall_status = "orange"
+        else:
+            overall_status = "green"
+        projects.append(
+            {
+                "project_code": row[0],
+                "project_name": row[1],
+                "client": row[2],
+                "team": row[3],
+                "status": overall_status,
+            }
+        )
+
+    projects = sorted(projects, key=lambda item: (item["project_name"] or "").lower())
+
+    return templates.TemplateResponse(
+        "menu_personal.html",
+        {"request": request, "pm_name": pm_name, "projects": projects},
+    )
 
 
 # ---------- API: Import ----------
