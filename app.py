@@ -59,18 +59,6 @@ def to_date_iso(value: object) -> str | None:
         return None
     return value.isoformat()
 
-def normalize_indicator_status(value: object) -> str | None:
-    if value is None:
-        return None
-    normalized = str(value).strip().lower()
-    if normalized in {"red", "rojo"}:
-        return "red"
-    if normalized in {"orange", "amber", "ambar", "ámbar", "naranja", "amarillo"}:
-        return "orange"
-    if normalized in {"green", "verde"}:
-        return "green"
-    return None
-
 
 def ensure_details_columns(cur: psycopg.Cursor) -> None:
     cur.execute(
@@ -138,11 +126,22 @@ def menu_personal(request: Request):
                        p.project_name,
                        p.client,
                        p.team,
-                       p.status,
-                       s.internal_status
+                       s.ordered_total,
+                       s.ordered_n,
+                       s.ordered_e,
+                       s.real_hours,
+                       s.desviacion_pct,
+                       s.progress_w,
+                       s.payment_inv
                 FROM projects p
                 LEFT JOIN LATERAL (
-                    SELECT internal_status
+                    SELECT ordered_total,
+                           ordered_n,
+                           ordered_e,
+                           real_hours,
+                           desviacion_pct,
+                           progress_w,
+                           payment_inv
                     FROM project_snapshot
                     WHERE project_id = p.id
                     ORDER BY snapshot_year DESC, snapshot_week DESC, snapshot_at DESC
@@ -156,25 +155,20 @@ def menu_personal(request: Request):
 
     projects = []
     for row in rows:
-        status_values = [row[4], row[5]]
-        normalized_statuses = [
-            status
-            for status in (normalize_indicator_status(value) for value in status_values)
-            if status
-        ]
-        if "red" in normalized_statuses:
-            overall_status = "red"
-        elif "orange" in normalized_statuses:
-            overall_status = "orange"
-        else:
-            overall_status = "green"
+        ordered_total = row[4]
+        if ordered_total is None and (row[5] is not None or row[6] is not None):
+            ordered_total = (row[5] or 0) + (row[6] or 0)
         projects.append(
             {
                 "project_code": row[0],
                 "project_name": row[1],
                 "client": row[2],
                 "team": row[3],
-                "status": overall_status,
+                "ordered_total": ordered_total,
+                "real_hours": row[7],
+                "desviacion_pct": row[8],
+                "progress_w": row[9],
+                "payment_inv": row[10],
             }
         )
 

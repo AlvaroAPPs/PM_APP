@@ -18,9 +18,7 @@
       display: inline-block;
       border: 1px solid #e5e7eb;
     }
-    .status-dot.status-red { background: #dc3545; }
-    .status-dot.status-orange { background: #f59e0b; }
-    .status-dot.status-green { background: #16a34a; }
+    .status-dot.status-unknown { background: #e5e7eb; }
     .project-row { cursor: pointer; }
     .project-row:hover { background: #f3f4f6; }
   </style>
@@ -43,27 +41,64 @@
           <table class="table table-hover align-middle mb-0">
             <thead>
               <tr>
-                <th style="width: 44px;">Estado</th>
-                <th>Código</th>
-                <th>Proyecto</th>
-                <th>Cliente</th>
-                <th>Equipo</th>
+                <th style="width: 44px;">Indicador</th>
+                <th>Nombre del proyecto</th>
+                <th>Codigo</th>
+                <th>Horas totales</th>
+                <th>Horas reales</th>
+                <th>Desviación</th>
+                <th>% Avance</th>
+                <th>% Facturación</th>
               </tr>
             </thead>
             <tbody>
               {% for project in projects %}
               <tr class="project-row" data-href="/estado-proyecto?q={{ project.project_code }}">
                 <td>
-                  <span class="status-dot status-{{ project.status }}" aria-label="{{ project.status }}"></span>
+                  <!-- TODO: connect indicator fields when available -->
+                  <span class="status-dot status-unknown" aria-label="unknown"></span>
                 </td>
-                <td class="text-nowrap">{{ project.project_code }}</td>
                 <td>{{ project.project_name }}</td>
-                <td>{{ project.client }}</td>
-                <td>{{ project.team }}</td>
+                <td class="text-nowrap">{{ project.project_code }}</td>
+                <td class="text-end">
+                  {% if project.ordered_total is not none %}
+                    {{ "%.2f"|format(project.ordered_total) }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if project.real_hours is not none %}
+                    {{ "%.2f"|format(project.real_hours) }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if project.desviacion_pct is not none %}
+                    {{ "%.2f"|format(project.desviacion_pct) }}%
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if project.progress_w is not none %}
+                    {{ "%.2f"|format(project.progress_w) }}%
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if project.payment_inv is not none %}
+                    {{ "%.2f"|format(project.payment_inv) }}%
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
               </tr>
               {% else %}
               <tr>
-                <td colspan="5" class="muted">No hay proyectos asignados.</td>
+                <td colspan="8" class="muted">No hay proyectos asignados.</td>
               </tr>
               {% endfor %}
             </tbody>
