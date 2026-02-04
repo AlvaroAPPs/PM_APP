@@ -87,8 +87,8 @@ def fetch_deviations_results(
             ) AS rn
         FROM projects p
         JOIN project_snapshot s ON s.project_id = p.id
-        WHERE (%s IS NULL OR s.team = %s)
-          AND (%s IS NULL OR s.order_phase = %s)
+        WHERE (%s::text IS NULL OR s.team = %s::text)
+          AND (%s::text IS NULL OR s.order_phase = %s::text)
     )
     SELECT *
     FROM ranked
