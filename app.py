@@ -11,6 +11,8 @@ from pydantic import BaseModel
 
 import pandas as pd
 import psycopg
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 from importer import read_and_normalize_excel, map_row, upsert_project, upsert_snapshot, compute_deltas
 
@@ -121,15 +123,28 @@ def fetch_deviations_results(
         "Proyecto",
         "Equipo",
         "Order phase",
-        "Horas totales",
-        "Horas reales",
+        "H.Total",
+        "H.Real",
         "Desviación",
-        "Comentario",
     ]
     snapshot_columns = []
+    snapshot_labels: dict[int, str] = {}
     for idx in range(1, 6):
-        snapshot_columns.append(f"S{idx} desviación")
+        label = None
+        for items in grouped.values():
+            candidate = next((item for item in items if item["rn"] == idx), None)
+            if candidate and candidate.get("snapshot_week"):
+                week_value = candidate.get("snapshot_week")
+                try:
+                    label = f"W{int(week_value):02d}"
+                except (TypeError, ValueError):
+                    label = None
+                if label:
+                    break
+        snapshot_labels[idx] = label or f"S{idx}"
+        snapshot_columns.append(f"{snapshot_labels[idx]} desviación")
     columns.extend(snapshot_columns)
+    columns.append("Comentario")
     numeric_columns = set(columns) - {"Proyecto", "Equipo", "Order phase", "Comentario"}
 
     results = []
@@ -151,18 +166,18 @@ def fetch_deviations_results(
             "Proyecto": latest.get("project_name"),
             "Equipo": latest.get("team"),
             "Order phase": latest.get("order_phase"),
-            "Horas totales": to_float(latest.get("ordered_total")),
-            "Horas reales": to_float(latest.get("real_hours")),
+            "H.Total": to_float(latest.get("ordered_total")),
+            "H.Real": to_float(latest.get("real_hours")),
             "Desviación": latest_dev,
-            "Comentario": normalize_comment(latest.get("comments")),
         }
 
         snapshots_by_rn = {item["rn"]: item for item in items_sorted}
         for idx in range(1, 6):
             snapshot = snapshots_by_rn.get(idx)
-            row[f"S{idx} desviación"] = to_float(
+            row[f"{snapshot_labels[idx]} desviación"] = to_float(
                 snapshot.get("desviacion_pct") if snapshot else None
             )
+        row["Comentario"] = normalize_comment(latest.get("comments"))
         results.append(row)
 
     results = sorted(results, key=lambda item: (item["Proyecto"] or "").lower())
@@ -389,7 +404,38 @@ def consultas_export(request: Request):
     )
     df = pd.DataFrame(results, columns=columns)
     buffer = io.BytesIO()
-    df.to_excel(buffer, index=False, engine="openpyxl")
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Consultas")
+        worksheet = writer.sheets["Consultas"]
+        header_fill = PatternFill("solid", fgColor="E5E7EB")
+        header_font = Font(bold=True)
+        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        thin = Side(border_style="thin", color="D1D5DB")
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        for col_idx, col_name in enumerate(columns, start=1):
+            cell = worksheet.cell(row=1, column=col_idx)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+            cell.border = border
+            max_len = len(str(col_name))
+            for value in df[col_name].astype(str).tolist():
+                max_len = max(max_len, len(value))
+            if col_name == "Comentario":
+                width = min(max_len + 2, 60)
+            else:
+                width = min(max_len + 2, 24)
+            worksheet.column_dimensions[get_column_letter(col_idx)].width = max(10, width)
+
+        comment_idx = columns.index("Comentario") + 1 if "Comentario" in columns else None
+        for row_idx in range(2, len(df) + 2):
+            for col_idx in range(1, len(columns) + 1):
+                cell = worksheet.cell(row=row_idx, column=col_idx)
+                cell.border = border
+                if col_idx == comment_idx:
+                    cell.alignment = Alignment(vertical="top", wrap_text=True)
+        worksheet.freeze_panes = "A2"
+        worksheet.auto_filter.ref = worksheet.dimensions
     buffer.seek(0)
     filename = "consultas_desviaciones.xlsx"
     headers = {

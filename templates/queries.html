@@ -17,6 +17,8 @@
       background: #f6f7fb;
       z-index: 1;
     }
+    .dropdown-menu { max-height: 240px; overflow-y: auto; }
+    .summary-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   </style>
 </head>
 <body>
@@ -27,7 +29,6 @@
       </a>
       <div>
         <h1 class="fw-bold mb-0">Consultas</h1>
-        <div class="muted">Desviaciones en últimos snapshots</div>
       </div>
     </div>
 
@@ -44,21 +45,61 @@
           </div>
           <div class="col-12 col-md-4">
             <label class="form-label">Equipo</label>
-            <select class="form-select" name="equipo" multiple>
-              {% for team in teams %}
-              <option value="{{ team }}" {% if team in selected_teams %}selected{% endif %}>{{ team }}</option>
-              {% endfor %}
-            </select>
-            <div class="form-text">Selecciona uno o varios. Sin selección = todos.</div>
+            <div class="dropdown w-100">
+              <button
+                class="form-select w-100 text-start d-flex justify-content-between align-items-center"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                data-summary-target="equipo"
+              >
+                <span class="summary-text">Todos</span>
+                <span class="ms-2">▾</span>
+              </button>
+              <div class="dropdown-menu w-100 p-2" data-options="equipo">
+                <div class="form-check">
+                  <input class="form-check-input select-all" type="checkbox" id="equipo_all">
+                  <label class="form-check-label" for="equipo_all">Todos</label>
+                </div>
+                <hr class="my-2">
+                {% for team in teams %}
+                <div class="form-check">
+                  <input class="form-check-input option-checkbox" type="checkbox" id="equipo_{{ loop.index }}" value="{{ team }}" {% if team in selected_teams %}checked{% endif %}>
+                  <label class="form-check-label" for="equipo_{{ loop.index }}">{{ team }}</label>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="hidden-inputs" data-inputs="equipo"></div>
           </div>
           <div class="col-12 col-md-4">
             <label class="form-label">Order phase</label>
-            <select class="form-select" name="order_phase" multiple>
-              {% for phase in phases %}
-              <option value="{{ phase }}" {% if phase in selected_phases %}selected{% endif %}>{{ phase }}</option>
-              {% endfor %}
-            </select>
-            <div class="form-text">Selecciona uno o varios. Sin selección = todos.</div>
+            <div class="dropdown w-100">
+              <button
+                class="form-select w-100 text-start d-flex justify-content-between align-items-center"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                data-summary-target="order_phase"
+              >
+                <span class="summary-text">Todos</span>
+                <span class="ms-2">▾</span>
+              </button>
+              <div class="dropdown-menu w-100 p-2" data-options="order_phase">
+                <div class="form-check">
+                  <input class="form-check-input select-all" type="checkbox" id="phase_all">
+                  <label class="form-check-label" for="phase_all">Todos</label>
+                </div>
+                <hr class="my-2">
+                {% for phase in phases %}
+                <div class="form-check">
+                  <input class="form-check-input option-checkbox" type="checkbox" id="phase_{{ loop.index }}" value="{{ phase }}" {% if phase in selected_phases %}checked{% endif %}>
+                  <label class="form-check-label" for="phase_{{ loop.index }}">{{ phase }}</label>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="hidden-inputs" data-inputs="order_phase"></div>
           </div>
           <div class="col-12 d-flex gap-2">
             <button class="btn btn-dark" type="submit">Aplicar filtros</button>
@@ -117,5 +158,89 @@
       </div>
     </div>
   </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const selectedValues = {
+      equipo: {{ selected_teams|tojson }},
+      order_phase: {{ selected_phases|tojson }},
+    };
+
+    function updateHiddenInputs(name, values) {
+      const container = document.querySelector(`[data-inputs="${name}"]`);
+      container.innerHTML = "";
+      values.forEach((value) => {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = name;
+        input.value = value;
+        container.appendChild(input);
+      });
+    }
+
+    function updateSummary(name, values, totalCount) {
+      const button = document.querySelector(`[data-summary-target="${name}"]`);
+      const summary = button.querySelector(".summary-text");
+      if (values.length === 0 || values.length === totalCount) {
+        summary.textContent = "Todos";
+      } else {
+        summary.textContent = `${values.length} seleccionados`;
+      }
+    }
+
+    function syncCheckboxes(name, values) {
+      const menu = document.querySelector(`[data-options="${name}"]`);
+      const checkboxes = menu.querySelectorAll(".option-checkbox");
+      checkboxes.forEach((checkbox) => {
+        checkbox.checked = values.includes(checkbox.value);
+      });
+      const selectAll = menu.querySelector(".select-all");
+      selectAll.checked = values.length === checkboxes.length;
+      if (values.length === 0) {
+        checkboxes.forEach((checkbox) => {
+          checkbox.checked = false;
+        });
+      }
+    }
+
+    function initMultiSelect(name) {
+      const menu = document.querySelector(`[data-options="${name}"]`);
+      if (!menu) return;
+      const checkboxes = menu.querySelectorAll(".option-checkbox");
+      const selectAll = menu.querySelector(".select-all");
+      const totalCount = checkboxes.length;
+      let values = selectedValues[name] || [];
+
+      syncCheckboxes(name, values);
+      updateSummary(name, values, totalCount);
+      updateHiddenInputs(name, values);
+
+      selectAll.addEventListener("change", () => {
+        if (selectAll.checked) {
+          values = Array.from(checkboxes).map((item) => item.value);
+        } else {
+          values = [];
+        }
+        syncCheckboxes(name, values);
+        updateSummary(name, values, totalCount);
+        updateHiddenInputs(name, values);
+      });
+
+      checkboxes.forEach((checkbox) => {
+        checkbox.addEventListener("change", () => {
+          const selected = Array.from(checkboxes)
+            .filter((item) => item.checked)
+            .map((item) => item.value);
+          values = selected;
+          syncCheckboxes(name, values);
+          updateSummary(name, values, totalCount);
+          updateHiddenInputs(name, values);
+        });
+      });
+    }
+
+    initMultiSelect("equipo");
+    initMultiSelect("order_phase");
+  </script>
 </body>
 </html>
