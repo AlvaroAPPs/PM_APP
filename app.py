@@ -259,6 +259,9 @@ def ensure_historical_storage(cur: psycopg.Cursor) -> None:
             status TEXT,
             moved_to_historical_week TEXT NOT NULL,
             progress_w NUMERIC NOT NULL DEFAULT 100,
+            ordered_total NUMERIC,
+            real_hours NUMERIC,
+            desviacion_pct NUMERIC,
             moved_to_historical_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             last_import_filename TEXT
         );
@@ -270,6 +273,34 @@ def ensure_historical_storage(cur: psycopg.Cursor) -> None:
         """
         ALTER TABLE projects_historical
         ADD COLUMN IF NOT EXISTS progress_w NUMERIC NOT NULL DEFAULT 100;
+        """
+    )
+
+    cur.execute(
+        """
+        ALTER TABLE projects_historical
+        ADD COLUMN IF NOT EXISTS ordered_total NUMERIC,
+        ADD COLUMN IF NOT EXISTS real_hours NUMERIC,
+        ADD COLUMN IF NOT EXISTS desviacion_pct NUMERIC;
+        """
+    )
+
+    cur.execute(
+        """
+        UPDATE projects_historical h
+        SET ordered_total = s.ordered_total,
+            real_hours = s.real_hours,
+            desviacion_pct = s.desviacion_pct
+        FROM projects p
+        JOIN LATERAL (
+            SELECT ordered_total, real_hours, desviacion_pct
+            FROM project_snapshot
+            WHERE project_id = p.id
+            ORDER BY snapshot_year DESC, snapshot_week DESC, snapshot_at DESC
+            LIMIT 1
+        ) s ON TRUE
+        WHERE p.project_code = h.project_code
+          AND (h.ordered_total IS NULL OR h.real_hours IS NULL OR h.desviacion_pct IS NULL);
         """
     )
 
@@ -295,11 +326,28 @@ def move_project_to_historical(
     )
     cur.execute(
         """
+        SELECT ordered_total, real_hours, desviacion_pct
+        FROM project_snapshot
+        WHERE project_id = %s
+        ORDER BY snapshot_year DESC, snapshot_week DESC, snapshot_at DESC
+        LIMIT 1
+        """,
+        (project_id,),
+    )
+    latest_snapshot = cur.fetchone()
+    ordered_total = latest_snapshot[0] if latest_snapshot else None
+    real_hours = latest_snapshot[1] if latest_snapshot else None
+    desviacion_pct = latest_snapshot[2] if latest_snapshot else None
+
+    cur.execute(
+        """
         INSERT INTO projects_historical (
             project_code, project_name, client, company, team, project_manager,
-            consultant, status, moved_to_historical_week, progress_w, moved_to_historical_at, last_import_filename
+            consultant, status, moved_to_historical_week, progress_w,
+            ordered_total, real_hours, desviacion_pct,
+            moved_to_historical_at, last_import_filename
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 100, now(), %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 100, %s, %s, %s, now(), %s)
         ON CONFLICT (project_code)
         DO UPDATE SET
             project_name = EXCLUDED.project_name,
@@ -311,6 +359,9 @@ def move_project_to_historical(
             status = EXCLUDED.status,
             moved_to_historical_week = EXCLUDED.moved_to_historical_week,
             progress_w = 100,
+            ordered_total = EXCLUDED.ordered_total,
+            real_hours = EXCLUDED.real_hours,
+            desviacion_pct = EXCLUDED.desviacion_pct,
             moved_to_historical_at = now(),
             last_import_filename = EXCLUDED.last_import_filename
         """,
@@ -324,6 +375,9 @@ def move_project_to_historical(
             project_fields.get("consultant"),
             project_fields.get("status"),
             moved_to_historical_week,
+            ordered_total,
+            real_hours,
+            desviacion_pct,
             filename,
         ),
     )
@@ -747,22 +801,10 @@ def historicals(request: Request, q: str = Query("")):
                        h.project_manager,
                        h.moved_to_historical_week,
                        h.progress_w,
-                       s.ordered_total,
-                       s.real_hours,
-                       s.desviacion_pct
+                       h.ordered_total,
+                       h.real_hours,
+                       h.desviacion_pct
                 FROM projects_historical h
-                LEFT JOIN projects p ON p.project_code = h.project_code
-                LEFT JOIN LATERAL (
-                    SELECT ordered_total, real_hours, desviacion_pct
-                    FROM project_snapshot
-                    WHERE project_id = p.id
-                      AND (snapshot_year, snapshot_week) <= (
-                        split_part(h.moved_to_historical_week, '-W', 1)::int,
-                        split_part(h.moved_to_historical_week, '-W', 2)::int
-                      )
-                    ORDER BY snapshot_year DESC, snapshot_week DESC, snapshot_at DESC
-                    LIMIT 1
-                ) s ON TRUE
                 WHERE (%s = '' OR h.project_code ILIKE %s OR h.project_name ILIKE %s)
                 ORDER BY h.moved_to_historical_week DESC, h.project_name ASC
                 """,
