@@ -179,10 +179,8 @@ def fetch_deviations_results(
             continue
         latest_dev = to_float(latest.get("desviacion_pct"))
         prev_dev = to_float(prev.get("desviacion_pct"))
-        # A snapshot is deviated when desviacion_pct != 0.
-        if not (latest_dev is not None and latest_dev != 0):
-            continue
-        if not (prev_dev is not None and prev_dev != 0):
+        # Include when at least one of the two most recent snapshots has positive deviation (> 0).
+        if not ((latest_dev is not None and latest_dev > 0) or (prev_dev is not None and prev_dev > 0)):
             continue
 
         row = {
