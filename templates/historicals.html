@@ -22,6 +22,29 @@
       </div>
     </div>
 
+    <div class="card shadow-soft mb-3">
+      <div class="card-body">
+        <form method="get" action="/historicals" class="row g-2 align-items-end">
+          <div class="col-12 col-md-8 col-lg-6">
+            <label for="q" class="form-label fw-semibold">Buscar por proyecto o código</label>
+            <input
+              id="q"
+              name="q"
+              type="text"
+              class="form-control"
+              placeholder="Ej: 123, Mecalux, ..."
+              value="{{ q or '' }}"
+            >
+            <div class="form-text">Búsqueda parcial (contiene), no hace falta escribir el código completo.</div>
+          </div>
+          <div class="col-12 col-md-auto d-flex gap-2">
+            <button class="btn btn-primary" type="submit">Buscar</button>
+            <a class="btn btn-outline-secondary" href="/historicals">Limpiar</a>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <div class="card shadow-soft">
       <div class="card-body">
         <div class="table-responsive">
@@ -35,6 +58,9 @@
                 <th>PM</th>
                 <th>Semana archivado</th>
                 <th>% Avance</th>
+                <th>Horas totales</th>
+                <th>Horas reales</th>
+                <th>Desviación</th>
               </tr>
             </thead>
             <tbody>
@@ -53,10 +79,31 @@
                     —
                   {% endif %}
                 </td>
+                <td class="text-end">
+                  {% if project.ordered_total is not none %}
+                    {{ "%.2f"|format(project.ordered_total) }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if project.real_hours is not none %}
+                    {{ "%.2f"|format(project.real_hours) }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if project.desviacion_pct is not none %}
+                    {{ "%.2f"|format(project.desviacion_pct) }}%
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
               </tr>
               {% else %}
               <tr>
-                <td colspan="7" class="muted">No hay proyectos históricos.</td>
+                <td colspan="10" class="muted">No hay proyectos históricos para la búsqueda actual.</td>
               </tr>
               {% endfor %}
             </tbody>

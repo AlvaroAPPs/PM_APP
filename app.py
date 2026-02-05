@@ -732,17 +732,41 @@ def menu_personal(request: Request):
 
 
 @app.get("/historicals", response_class=HTMLResponse)
-def historicals(request: Request):
+def historicals(request: Request, q: str = Query("")):
+    query = (q or "").strip()
+    query_like = f"%{query}%"
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             ensure_historical_storage(cur)
             cur.execute(
                 """
-                SELECT project_code, project_name, client, team, project_manager,
-                       moved_to_historical_week, progress_w
-                FROM projects_historical
-                ORDER BY moved_to_historical_week DESC, project_name ASC
-                """
+                SELECT h.project_code,
+                       h.project_name,
+                       h.client,
+                       h.team,
+                       h.project_manager,
+                       h.moved_to_historical_week,
+                       h.progress_w,
+                       s.ordered_total,
+                       s.real_hours,
+                       s.desviacion_pct
+                FROM projects_historical h
+                LEFT JOIN projects p ON p.project_code = h.project_code
+                LEFT JOIN LATERAL (
+                    SELECT ordered_total, real_hours, desviacion_pct
+                    FROM project_snapshot
+                    WHERE project_id = p.id
+                      AND (snapshot_year, snapshot_week) <= (
+                        split_part(h.moved_to_historical_week, '-W', 1)::int,
+                        split_part(h.moved_to_historical_week, '-W', 2)::int
+                      )
+                    ORDER BY snapshot_year DESC, snapshot_week DESC, snapshot_at DESC
+                    LIMIT 1
+                ) s ON TRUE
+                WHERE (%s = '' OR h.project_code ILIKE %s OR h.project_name ILIKE %s)
+                ORDER BY h.moved_to_historical_week DESC, h.project_name ASC
+                """,
+                (query, query_like, query_like),
             )
             rows = cur.fetchall()
 
@@ -755,12 +779,15 @@ def historicals(request: Request):
             "project_manager": r[4],
             "moved_to_historical_week": r[5],
             "progress_w": float(r[6]) if r[6] is not None else None,
+            "ordered_total": float(r[7]) if r[7] is not None else None,
+            "real_hours": float(r[8]) if r[8] is not None else None,
+            "desviacion_pct": float(r[9]) if r[9] is not None else None,
         }
         for r in rows
     ]
     return templates.TemplateResponse(
         "historicals.html",
-        {"request": request, "projects": projects},
+        {"request": request, "projects": projects, "q": query},
     )
 
 
