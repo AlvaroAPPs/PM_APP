@@ -288,27 +288,10 @@ def move_project_to_historical(
     cur.execute(
         """
         UPDATE projects
-        SET
-            project_name = COALESCE(%s, project_name),
-            client = COALESCE(%s, client),
-            company = COALESCE(%s, company),
-            team = COALESCE(%s, team),
-            project_manager = COALESCE(%s, project_manager),
-            consultant = COALESCE(%s, consultant),
-            status = COALESCE(%s, status),
-            is_historical = TRUE
+        SET is_historical = TRUE
         WHERE id = %s
         """,
-        (
-            project_fields.get("project_name"),
-            project_fields.get("client"),
-            project_fields.get("company"),
-            project_fields.get("team"),
-            project_fields.get("project_manager"),
-            project_fields.get("consultant"),
-            project_fields.get("status"),
-            project_id,
-        ),
+        (project_id,),
     )
     cur.execute(
         """
