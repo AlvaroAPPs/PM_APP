@@ -87,8 +87,19 @@ def fetch_deviations_results(
         params.append(phases)
     where_sql = """
     WHERE COALESCE(p.is_historical, FALSE) = FALSE
-      AND LOWER(BTRIM(COALESCE(s.project_type, ''))) = 'active projects'
-      AND LOWER(BTRIM(COALESCE(s.internal_status, ''))) = 'normal'
+      -- Keep only projects whose latest snapshot is in Active Projects and has Internal Status Normal.
+      AND EXISTS (
+            SELECT 1
+            FROM (
+                SELECT s2.project_type, s2.internal_status
+                FROM project_snapshot s2
+                WHERE s2.project_id = p.id
+                ORDER BY s2.snapshot_year DESC, s2.snapshot_week DESC, s2.snapshot_at DESC
+                LIMIT 1
+            ) latest_snapshot
+            WHERE LOWER(BTRIM(COALESCE(latest_snapshot.project_type, ''))) = 'active projects'
+              AND LOWER(BTRIM(COALESCE(latest_snapshot.internal_status, ''))) = 'normal'
+      )
       -- Include only projects where at least one of the last two snapshots has positive deviation.
       AND EXISTS (
             SELECT 1
