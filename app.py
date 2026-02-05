@@ -79,12 +79,15 @@ def fetch_deviations_results(
 ) -> tuple[list[dict], list[str], set[str]]:
     where_clauses = []
     params: list[object] = []
-    if teams:
-        where_clauses.append("s.team = ANY(%s::text[])")
-        params.append(teams)
-    if phases:
-        where_clauses.append("s.order_phase = ANY(%s::text[])")
-        params.append(phases)
+    # Normalize selected filters to avoid dropping candidates due to case/whitespace mismatches.
+    teams_filter = [str(value).strip().lower() for value in teams if str(value).strip()]
+    phases_filter = [str(value).strip().lower() for value in phases if str(value).strip()]
+    if teams_filter:
+        where_clauses.append("LOWER(BTRIM(COALESCE(s.team, ''))) = ANY(%s::text[])")
+        params.append(teams_filter)
+    if phases_filter:
+        where_clauses.append("LOWER(BTRIM(COALESCE(s.order_phase, ''))) = ANY(%s::text[])")
+        params.append(phases_filter)
     where_sql = """
     WHERE COALESCE(p.is_historical, FALSE) = FALSE
       -- Keep only projects whose latest snapshot is in Active Projects and has Internal Status Normal.
