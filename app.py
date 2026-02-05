@@ -125,25 +125,24 @@ def fetch_deviations_results(
         "Order phase",
         "H.Total",
         "H.Real",
-        "Desviación",
     ]
-    snapshot_columns = []
-    snapshot_labels: dict[int, str] = {}
-    for idx in range(1, 6):
-        label = None
-        for items in grouped.values():
-            candidate = next((item for item in items if item["rn"] == idx), None)
-            if candidate and candidate.get("snapshot_week"):
-                week_value = candidate.get("snapshot_week")
-                try:
-                    label = f"W{int(week_value):02d}"
-                except (TypeError, ValueError):
-                    label = None
-                if label:
-                    break
-        snapshot_labels[idx] = label or f"S{idx}"
-        snapshot_columns.append(f"{snapshot_labels[idx]} desviación")
-    columns.extend(snapshot_columns)
+
+    latest_snapshot = None
+    for items in grouped.values():
+        for item in items:
+            key = (item.get("snapshot_year") or 0, item.get("snapshot_week") or 0)
+            if latest_snapshot is None or key > latest_snapshot:
+                latest_snapshot = key
+
+    def prev_week_label(week: int, offset: int) -> str:
+        week_value = week - offset
+        while week_value <= 0:
+            week_value += 52
+        return f"W{week_value:02d}"
+
+    start_week = latest_snapshot[1] if latest_snapshot and latest_snapshot[1] else 5
+    snapshot_labels = [prev_week_label(int(start_week), idx) for idx in range(5)]
+    columns.extend(snapshot_labels)
     columns.append("Comentario")
     numeric_columns = set(columns) - {"Proyecto", "Equipo", "Order phase", "Comentario"}
 
@@ -168,15 +167,22 @@ def fetch_deviations_results(
             "Order phase": latest.get("order_phase"),
             "H.Total": to_float(latest.get("ordered_total")),
             "H.Real": to_float(latest.get("real_hours")),
-            "Desviación": latest_dev,
         }
 
-        snapshots_by_rn = {item["rn"]: item for item in items_sorted}
-        for idx in range(1, 6):
-            snapshot = snapshots_by_rn.get(idx)
-            row[f"{snapshot_labels[idx]} desviación"] = to_float(
-                snapshot.get("desviacion_pct") if snapshot else None
-            )
+        by_label: dict[str, float | None] = {}
+        for snapshot in items_sorted:
+            snapshot_week = snapshot.get("snapshot_week")
+            if snapshot_week is None:
+                continue
+            try:
+                label = f"W{int(snapshot_week):02d}"
+            except (TypeError, ValueError):
+                continue
+            if label not in by_label:
+                by_label[label] = to_float(snapshot.get("desviacion_pct"))
+
+        for label in snapshot_labels:
+            row[label] = by_label.get(label)
         row["Comentario"] = normalize_comment(latest.get("comments"))
         results.append(row)
 
