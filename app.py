@@ -85,7 +85,24 @@ def fetch_deviations_results(
     if phases:
         where_clauses.append("s.order_phase = ANY(%s::text[])")
         params.append(phases)
-    where_sql = "WHERE COALESCE(p.is_historical, FALSE) = FALSE"
+    where_sql = """
+    WHERE COALESCE(p.is_historical, FALSE) = FALSE
+      AND LOWER(COALESCE(p.status, '')) = 'active'
+      AND LOWER(COALESCE(s.project_type, '')) = 'active projects'
+      AND LOWER(COALESCE(s.internal_status, '')) = 'normal'
+      -- Include only projects where at least one of the last two snapshots has positive deviation.
+      AND EXISTS (
+            SELECT 1
+            FROM (
+                SELECT s2.desviacion_pct
+                FROM project_snapshot s2
+                WHERE s2.project_id = p.id
+                ORDER BY s2.snapshot_year DESC, s2.snapshot_week DESC, s2.snapshot_at DESC
+                LIMIT 2
+            ) last_two
+            WHERE COALESCE(last_two.desviacion_pct, 0) > 0
+      )
+    """
     if where_clauses:
         where_sql += " AND " + " AND ".join(where_clauses)
 
