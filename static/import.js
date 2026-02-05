@@ -9,6 +9,8 @@ function showResult(obj) {
 function clearForm() {
   $("importForm").reset();
   $("sheet").value = "Hoja1";
+  $("import_type").value = "OTS";
+  $("importTypeHint").textContent = "Importando tipo OTS.";
   $("mapping_version").value = "v1";
   $("resultCard").classList.add("d-none");
   $("result").textContent = "";
@@ -27,6 +29,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   $("btnClear").addEventListener("click", clearForm);
 
+  $("import_type").addEventListener("change", (e) => {
+    const selected = (e.target.value || "OTS").toUpperCase();
+    $("importTypeHint").textContent = `Importando tipo ${selected}.`;
+  });
+
   $("importForm").addEventListener("submit", async (e) => {
     e.preventDefault();
 
@@ -42,6 +49,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fd.append("snapshot_week", $("snapshot_week").value);
     fd.append("sheet", $("sheet").value || "");
     fd.append("mapping_version", $("mapping_version").value || "");
+    fd.append("import_type", $("import_type").value || "OTS");
 
     $("btnImport").disabled = true;
     $("btnImport").innerText = "Importando...";

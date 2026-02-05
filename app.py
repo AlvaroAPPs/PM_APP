@@ -25,6 +25,14 @@ templates = Jinja2Templates(directory="templates")
 # DB
 DB_DSN = os.environ.get("DB_DSN", "postgresql://postgres:TU_PASSWORD@localhost:5432/mecalux")
 
+
+@app.on_event("startup")
+def startup_init() -> None:
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_historical_storage(cur)
+        conn.commit()
+
 PHASES = ("design", "development", "pem", "hypercare")
 ROLES = ("pm", "consultant", "technician")
 
@@ -77,9 +85,9 @@ def fetch_deviations_results(
     if phases:
         where_clauses.append("s.order_phase = ANY(%s::text[])")
         params.append(phases)
-    where_sql = ""
+    where_sql = "WHERE COALESCE(p.is_historical, FALSE) = FALSE"
     if where_clauses:
-        where_sql = "WHERE " + " AND ".join(where_clauses)
+        where_sql += " AND " + " AND ".join(where_clauses)
 
     sql = f"""
     WITH ranked AS (
@@ -227,6 +235,132 @@ def ensure_details_columns(cur: psycopg.Cursor) -> None:
         ADD COLUMN IF NOT EXISTS hours_consultant NUMERIC DEFAULT 0,
         ADD COLUMN IF NOT EXISTS hours_technician NUMERIC DEFAULT 0;
         """
+    )
+
+
+def ensure_historical_storage(cur: psycopg.Cursor) -> None:
+    cur.execute(
+        """
+        ALTER TABLE projects
+        ADD COLUMN IF NOT EXISTS is_historical BOOLEAN NOT NULL DEFAULT FALSE;
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS projects_historical (
+            id BIGSERIAL PRIMARY KEY,
+            project_code TEXT NOT NULL UNIQUE,
+            project_name TEXT,
+            client TEXT,
+            company TEXT,
+            team TEXT,
+            project_manager TEXT,
+            consultant TEXT,
+            status TEXT,
+            moved_to_historical_week TEXT NOT NULL,
+            progress_w NUMERIC NOT NULL DEFAULT 100,
+            moved_to_historical_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_import_filename TEXT
+        );
+        """
+    )
+
+
+    cur.execute(
+        """
+        ALTER TABLE projects_historical
+        ADD COLUMN IF NOT EXISTS progress_w NUMERIC NOT NULL DEFAULT 100;
+        """
+    )
+
+
+def historical_week_label(snapshot_year: int, snapshot_week: int) -> str:
+    return f"{snapshot_year}-W{snapshot_week:02d}"
+
+
+def move_project_to_historical(
+    cur: psycopg.Cursor,
+    project_id: int,
+    project_fields: dict,
+    moved_to_historical_week: str,
+    filename: str,
+) -> None:
+    cur.execute(
+        """
+        UPDATE projects
+        SET
+            project_name = COALESCE(%s, project_name),
+            client = COALESCE(%s, client),
+            company = COALESCE(%s, company),
+            team = COALESCE(%s, team),
+            project_manager = COALESCE(%s, project_manager),
+            consultant = COALESCE(%s, consultant),
+            status = COALESCE(%s, status),
+            is_historical = TRUE
+        WHERE id = %s
+        """,
+        (
+            project_fields.get("project_name"),
+            project_fields.get("client"),
+            project_fields.get("company"),
+            project_fields.get("team"),
+            project_fields.get("project_manager"),
+            project_fields.get("consultant"),
+            project_fields.get("status"),
+            project_id,
+        ),
+    )
+    cur.execute(
+        """
+        INSERT INTO projects_historical (
+            project_code, project_name, client, company, team, project_manager,
+            consultant, status, moved_to_historical_week, progress_w, moved_to_historical_at, last_import_filename
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 100, now(), %s)
+        ON CONFLICT (project_code)
+        DO UPDATE SET
+            project_name = EXCLUDED.project_name,
+            client = EXCLUDED.client,
+            company = EXCLUDED.company,
+            team = EXCLUDED.team,
+            project_manager = EXCLUDED.project_manager,
+            consultant = EXCLUDED.consultant,
+            status = EXCLUDED.status,
+            moved_to_historical_week = EXCLUDED.moved_to_historical_week,
+            progress_w = 100,
+            moved_to_historical_at = now(),
+            last_import_filename = EXCLUDED.last_import_filename
+        """,
+        (
+            project_fields.get("project_code"),
+            project_fields.get("project_name"),
+            project_fields.get("client"),
+            project_fields.get("company"),
+            project_fields.get("team"),
+            project_fields.get("project_manager"),
+            project_fields.get("consultant"),
+            project_fields.get("status"),
+            moved_to_historical_week,
+            filename,
+        ),
+    )
+
+
+def restore_project_from_historical(cur: psycopg.Cursor, project_code: str) -> None:
+    cur.execute(
+        """
+        UPDATE projects
+        SET is_historical = FALSE
+        WHERE project_code = %s
+        """,
+        (project_code,),
+    )
+    cur.execute(
+        """
+        DELETE FROM projects_historical
+        WHERE project_code = %s
+        """,
+        (project_code,),
     )
 
 PHASES_INFO = (
@@ -467,6 +601,7 @@ def project_indicators(request: Request, project_code: str):
                     SELECT project_name
                     FROM projects
                     WHERE project_code = %s
+                      AND COALESCE(is_historical, FALSE) = FALSE
                     """,
                     (project_code,),
                 )
@@ -518,6 +653,7 @@ def menu_personal(request: Request):
                     LIMIT 1
                 ) s ON TRUE
                 WHERE p.project_manager = %s
+                  AND COALESCE(p.is_historical, FALSE) = FALSE
                 """,
                 (pm_name,),
             )
@@ -612,6 +748,39 @@ def menu_personal(request: Request):
     )
 
 
+@app.get("/historicals", response_class=HTMLResponse)
+def historicals(request: Request):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_historical_storage(cur)
+            cur.execute(
+                """
+                SELECT project_code, project_name, client, team, project_manager,
+                       moved_to_historical_week, progress_w
+                FROM projects_historical
+                ORDER BY moved_to_historical_week DESC, project_name ASC
+                """
+            )
+            rows = cur.fetchall()
+
+    projects = [
+        {
+            "project_code": r[0],
+            "project_name": r[1],
+            "client": r[2],
+            "team": r[3],
+            "project_manager": r[4],
+            "moved_to_historical_week": r[5],
+            "progress_w": float(r[6]) if r[6] is not None else None,
+        }
+        for r in rows
+    ]
+    return templates.TemplateResponse(
+        "historicals.html",
+        {"request": request, "projects": projects},
+    )
+
+
 # ---------- API: Import ----------
 @app.post("/imports")
 async def import_excel(
@@ -620,9 +789,14 @@ async def import_excel(
     snapshot_week: int = Form(...),
     sheet: str = Form(""),
     mapping_version: str = Form(""),
+    import_type: str = Form("OTS"),
 ):
     if not file.filename.lower().endswith((".xlsx", ".xls")):
         raise HTTPException(status_code=400, detail="File must be .xlsx or .xls")
+
+    import_type = (import_type or "OTS").strip().upper()
+    if import_type not in {"OTS", "ALL"}:
+        raise HTTPException(status_code=400, detail="Import type must be OTS or ALL")
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
         tmp_path = tmp.name
@@ -631,20 +805,14 @@ async def import_excel(
 
     df = read_and_normalize_excel(tmp_path, sheet)
 
-    print("DEBUG df.shape:", df.shape)
-    print("DEBUG df.columns (first 40):", list(df.columns)[:40])
-
-    # ver una muestra de la primera fila
-    first = df.iloc[0].to_dict() if len(df) else {}
-    print("DEBUG first row keys (first 40):", list(first.keys())[:40])
-    print("DEBUG first row sample:", {k: first[k] for k in list(first.keys())[:10]})
-
-
     imported = 0
     skipped = 0
+    archived = 0
+    restored = 0
 
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
+            ensure_historical_storage(cur)
             cur.execute(
                 """
                 INSERT INTO import_file (filename, snapshot_year, snapshot_week, mapping_version)
@@ -661,7 +829,6 @@ async def import_excel(
                 code = (project_fields.get("project_code") or "").strip()
                 name = project_fields.get("project_name")
 
-                # Si viene vacío, ponemos un placeholder
                 if (name is None) or (str(name).strip().lower() in ("", "nan", "none")):
                     project_fields["project_name"] = f"(SIN NOMBRE) {code}"
 
@@ -669,20 +836,60 @@ async def import_excel(
                     skipped += 1
                     continue
 
+                if import_type == "OTS":
+                    pid = upsert_project(cur, project_fields)
+                    snapshot_fields = compute_deltas(cur, pid, snapshot_year, snapshot_week, snapshot_fields)
+                    upsert_snapshot(cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields)
+                    imported += 1
+                    continue
+
+                internal_status = str(snapshot_fields.get("internal_status") or "").strip().lower()
+                moved_to_historical_week = historical_week_label(snapshot_year, snapshot_week)
                 pid = upsert_project(cur, project_fields)
-                
-                # ✅ calcular deltas SIEMPRE#
 
-                snapshot_fields = compute_deltas(cur, pid, snapshot_year, snapshot_week, snapshot_fields)
+                if internal_status in {"closed", "hided"}:
+                    move_project_to_historical(
+                        cur,
+                        pid,
+                        project_fields,
+                        moved_to_historical_week,
+                        file.filename,
+                    )
+                    archived += 1
+                    continue
 
-                # ✅ UPSERT snapshot
+                if internal_status == "normal":
+                    cur.execute(
+                        """
+                        SELECT 1
+                        FROM projects_historical
+                        WHERE project_code = %s
+                        """,
+                        (code,),
+                    )
+                    historical_row = cur.fetchone()
+                    if historical_row:
+                        restore_project_from_historical(cur, code)
+                        restored += 1
 
-                upsert_snapshot(cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields)
-                imported += 1
+                    snapshot_fields = compute_deltas(cur, pid, snapshot_year, snapshot_week, snapshot_fields)
+                    upsert_snapshot(cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields)
+                    imported += 1
+                    continue
+
+                skipped += 1
 
         conn.commit()
 
-    return {"status": "ok", "imported_rows": imported, "skipped_rows": skipped, "sheet": sheet}
+    return {
+        "status": "ok",
+        "import_type": import_type,
+        "imported_rows": imported,
+        "archived_rows": archived,
+        "restored_rows": restored,
+        "skipped_rows": skipped,
+        "sheet": sheet,
+    }
 
 
 # ---------- API: Search (opcional, por si luego quieres autocompletar) ----------
@@ -695,9 +902,10 @@ def search_projects(q: str = Query(..., min_length=1), limit: int = 20):
                 """
                 SELECT id, project_code, project_name, client, team, status
                 FROM projects
-                WHERE project_code ILIKE %s
+                WHERE COALESCE(is_historical, FALSE) = FALSE
+                  AND (project_code ILIKE %s
                    OR project_name ILIKE %s
-                   OR COALESCE(client,'') ILIKE %s
+                   OR COALESCE(client,'') ILIKE %s)
                 ORDER BY project_code
                 LIMIT %s
                 """,
@@ -728,6 +936,7 @@ def project_state(project_code: str, weeks_back: int = 20):
                 SELECT id, project_code, project_name, client, company, team, project_manager, consultant, status
                 FROM projects
                 WHERE project_code = %s
+                  AND COALESCE(is_historical, FALSE) = FALSE
                 """,
                 (project_code,),
             )
@@ -813,6 +1022,7 @@ def project_details(project_code: str):
                        hours_pm, hours_consultant, hours_technician
                 FROM projects
                 WHERE project_code = %s
+                  AND COALESCE(is_historical, FALSE) = FALSE
                 """,
                 (project_code,),
             )
@@ -899,6 +1109,7 @@ def project_weekly_metrics(project_code: str):
                 SELECT id
                 FROM projects
                 WHERE project_code = %s
+                  AND COALESCE(is_historical, FALSE) = FALSE
                 """,
                 (project_code,),
             )
@@ -948,6 +1159,7 @@ def project_phase_history(project_code: str):
                 SELECT id
                 FROM projects
                 WHERE project_code = %s
+                  AND COALESCE(is_historical, FALSE) = FALSE
                 """,
                 (project_code,),
             )

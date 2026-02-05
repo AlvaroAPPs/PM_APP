@@ -22,7 +22,7 @@
     <div class="d-flex justify-content-between align-items-end gap-3">
       <div>
         <h1 class="fw-bold mb-1">Importación</h1>
-        <div class="muted">Sube el Excel e indica el año/semana del snapshot</div>
+        <div class="muted">Sube el Excel, selecciona tipo (OTS / ALL) e indica el año/semana del snapshot</div>
       </div>
       <a class="btn btn-outline-secondary" href="/">
         <i class="bi bi-house me-1"></i>Menú
@@ -40,6 +40,15 @@
               <div class="form-text">Selecciona <span class="mono">.xlsx</span> o <span class="mono">.xls</span>.</div>
             </div>
 
+
+            <div class="col-12 col-md-3">
+              <label class="form-label fw-semibold">Tipo de importación</label>
+              <select id="import_type" name="import_type" class="form-select" required>
+                <option value="OTS" selected>OTS (flujo existente)</option>
+                <option value="ALL">ALL</option>
+              </select>
+              <div id="importTypeHint" class="form-text">Importando tipo OTS.</div>
+            </div>
             <div class="col-12 col-md-3">
               <label class="form-label fw-semibold">Año</label>
               <input id="snapshot_year" name="snapshot_year" type="number" class="form-control" min="2000" max="2100" required>
