@@ -87,9 +87,8 @@ def fetch_deviations_results(
         params.append(phases)
     where_sql = """
     WHERE COALESCE(p.is_historical, FALSE) = FALSE
-      AND LOWER(COALESCE(p.status, '')) = 'active'
-      AND LOWER(COALESCE(s.project_type, '')) = 'active projects'
-      AND LOWER(COALESCE(s.internal_status, '')) = 'normal'
+      AND LOWER(BTRIM(COALESCE(s.project_type, ''))) = 'active projects'
+      AND LOWER(BTRIM(COALESCE(s.internal_status, ''))) = 'normal'
       -- Include only projects where at least one of the last two snapshots has positive deviation.
       AND EXISTS (
             SELECT 1
