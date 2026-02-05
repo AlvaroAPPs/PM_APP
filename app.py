@@ -854,10 +854,12 @@ async def import_excel(
                     if historical_row:
                         restore_project_from_historical(cur, code)
                         restored += 1
+                        snapshot_fields = compute_deltas(cur, pid, snapshot_year, snapshot_week, snapshot_fields)
+                        upsert_snapshot(cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields)
+                        imported += 1
+                        continue
 
-                    snapshot_fields = compute_deltas(cur, pid, snapshot_year, snapshot_week, snapshot_fields)
-                    upsert_snapshot(cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields)
-                    imported += 1
+                    skipped += 1
                     continue
 
                 skipped += 1
