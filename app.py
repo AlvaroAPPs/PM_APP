@@ -139,6 +139,7 @@ def fetch_deviations_results(
 
     columns = [
         "Proyecto",
+        "Código",
         "Equipo",
         "Order phase",
         "Fecha",
@@ -167,7 +168,7 @@ def fetch_deviations_results(
         columns.append(deviation_col)
         columns.append(progress_col)
     columns.append("Comentario")
-    numeric_columns = set(columns) - {"Proyecto", "Equipo", "Order phase", "Fecha", "Comentario"}
+    numeric_columns = set(columns) - {"Proyecto", "Código", "Equipo", "Order phase", "Fecha", "Comentario"}
 
     results = []
     row_styles: list[str | None] = []
@@ -189,6 +190,7 @@ def fetch_deviations_results(
                 row_style = "success"
         row = {
             "Proyecto": latest.get("project_name"),
+            "Código": latest.get("project_code"),
             "Equipo": latest.get("team"),
             "Order phase": latest.get("order_phase"),
             "Fecha": latest.get("report_date"),
