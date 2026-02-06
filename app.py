@@ -100,6 +100,7 @@ def fetch_deviations_results(
             s.ordered_total,
             s.real_hours,
             s.desviacion_pct,
+            s.progress_w,
             s.comments,
             s.snapshot_year,
             s.snapshot_week,
@@ -158,7 +159,11 @@ def fetch_deviations_results(
 
     start_week = latest_snapshot[1] if latest_snapshot and latest_snapshot[1] else 5
     snapshot_labels = [prev_week_label(int(start_week), idx) for idx in range(5)]
-    columns.extend(snapshot_labels)
+    snapshot_deviation_columns = [f"{label} Desviación" for label in snapshot_labels]
+    snapshot_progress_columns = [f"{label} Avance" for label in snapshot_labels]
+    for deviation_col, progress_col in zip(snapshot_deviation_columns, snapshot_progress_columns):
+        columns.append(deviation_col)
+        columns.append(progress_col)
     columns.append("Comentario")
     numeric_columns = set(columns) - {"Proyecto", "Equipo", "Order phase", "Comentario"}
 
@@ -177,7 +182,7 @@ def fetch_deviations_results(
             "H.Real": to_float(latest.get("real_hours")),
         }
 
-        by_label: dict[str, float | None] = {}
+        by_label: dict[str, dict[str, float | None]] = {}
         for snapshot in items_sorted:
             snapshot_week = snapshot.get("snapshot_week")
             if snapshot_week is None:
@@ -187,10 +192,19 @@ def fetch_deviations_results(
             except (TypeError, ValueError):
                 continue
             if label not in by_label:
-                by_label[label] = to_float(snapshot.get("desviacion_pct"))
+                by_label[label] = {
+                    "deviation": to_float(snapshot.get("desviacion_pct")),
+                    "progress": to_float(snapshot.get("progress_w")),
+                }
 
-        for label in snapshot_labels:
-            row[label] = by_label.get(label)
+        for label, deviation_col, progress_col in zip(
+            snapshot_labels,
+            snapshot_deviation_columns,
+            snapshot_progress_columns,
+        ):
+            weekly_values = by_label.get(label) or {}
+            row[deviation_col] = weekly_values.get("deviation")
+            row[progress_col] = weekly_values.get("progress")
         row["Comentario"] = normalize_comment(latest.get("comments"))
         results.append(row)
 
