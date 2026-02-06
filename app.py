@@ -163,9 +163,15 @@ def fetch_deviations_results(
     start_week = latest_snapshot[1] if latest_snapshot and latest_snapshot[1] else 5
     snapshot_labels = [prev_week_label(int(start_week), idx) for idx in range(5)]
     snapshot_deviation_columns = [f"{label} Desviación" for label in snapshot_labels]
+    snapshot_real_columns = [f"{label} H.Real" for label in snapshot_labels]
     snapshot_progress_columns = [f"{label} Avance" for label in snapshot_labels]
-    for deviation_col, progress_col in zip(snapshot_deviation_columns, snapshot_progress_columns):
+    for deviation_col, real_col, progress_col in zip(
+        snapshot_deviation_columns,
+        snapshot_real_columns,
+        snapshot_progress_columns,
+    ):
         columns.append(deviation_col)
+        columns.append(real_col)
         columns.append(progress_col)
     columns.append("Comentario")
     numeric_columns = set(columns) - {"Proyecto", "Código", "Equipo", "Order phase", "Fecha", "Comentario"}
@@ -210,16 +216,19 @@ def fetch_deviations_results(
             if label not in by_label:
                 by_label[label] = {
                     "deviation": to_float(snapshot.get("desviacion_pct")),
+                    "real": to_float(snapshot.get("real_hours")),
                     "progress": to_float(snapshot.get("progress_w")),
                 }
 
-        for label, deviation_col, progress_col in zip(
+        for label, deviation_col, real_col, progress_col in zip(
             snapshot_labels,
             snapshot_deviation_columns,
+            snapshot_real_columns,
             snapshot_progress_columns,
         ):
             weekly_values = by_label.get(label) or {}
             row[deviation_col] = weekly_values.get("deviation")
+            row[real_col] = weekly_values.get("real")
             row[progress_col] = weekly_values.get("progress")
         row["Comentario"] = normalize_comment(latest.get("comments"))
         results.append(row)
