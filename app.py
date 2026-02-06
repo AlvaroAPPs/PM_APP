@@ -111,10 +111,18 @@ def fetch_deviations_results(
         FROM projects p
         JOIN project_snapshot s ON s.project_id = p.id
         {where_sql}
+    ),
+    eligible_projects AS (
+        SELECT project_id
+        FROM ranked
+        WHERE rn <= 2
+        GROUP BY project_id
+        HAVING BOOL_OR(COALESCE(desviacion_pct, 0) > 0)
     )
-    SELECT *
-    FROM ranked
-    WHERE rn <= 5
+    SELECT r.*
+    FROM ranked r
+    JOIN eligible_projects e ON e.project_id = r.project_id
+    WHERE r.rn <= 5
     """
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
@@ -161,14 +169,6 @@ def fetch_deviations_results(
         prev = next((item for item in items_sorted if item["rn"] == 2), None)
         if latest is None or prev is None:
             continue
-        latest_dev = to_float(latest.get("desviacion_pct"))
-        prev_dev = to_float(prev.get("desviacion_pct"))
-        # A snapshot is deviated when desviacion_pct != 0.
-        if not (latest_dev is not None and latest_dev != 0):
-            continue
-        if not (prev_dev is not None and prev_dev != 0):
-            continue
-
         row = {
             "Proyecto": latest.get("project_name"),
             "Equipo": latest.get("team"),
@@ -518,9 +518,10 @@ def estado_proyecto(request: Request):
 @app.get("/consultas", response_class=HTMLResponse)
 def consultas(request: Request):
     supported_queries = {"desviaciones": "Desviaciones"}
-    consulta = request.query_params.get("consulta", "desviaciones")
+    consulta = request.query_params.get("consulta")
     if consulta not in supported_queries:
-        consulta = "desviaciones"
+        consulta = None
+    applied = request.query_params.get("applied") == "1"
 
     selected_teams = [
         value for value in request.query_params.getlist("equipo") if value
@@ -529,7 +530,7 @@ def consultas(request: Request):
         value for value in request.query_params.getlist("order_phase") if value
     ]
 
-    if consulta == "desviaciones":
+    if consulta == "desviaciones" and applied:
         results, columns, numeric_columns = fetch_deviations_results(
             selected_teams, selected_phases
         )
@@ -537,7 +538,7 @@ def consultas(request: Request):
         results, columns, numeric_columns = [], [], set()
 
     teams, phases = fetch_filter_options()
-    export_params = {"consulta": consulta}
+    export_params = {"consulta": consulta} if consulta else {}
     if selected_teams:
         export_params["equipo"] = selected_teams
     if selected_phases:
@@ -560,6 +561,7 @@ def consultas(request: Request):
             "selected_query": consulta,
             "supported_queries": supported_queries,
             "export_url": export_url,
+            "show_results": consulta == "desviaciones" and applied,
         },
     )
 

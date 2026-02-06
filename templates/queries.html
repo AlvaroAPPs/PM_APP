@@ -34,15 +34,17 @@
 
     <div class="card shadow-soft mb-3">
       <div class="card-body">
-        <form class="row g-3 align-items-end" method="get" action="/consultas">
+        <form class="row g-3 align-items-end" method="get" action="/consultas" id="queries-form">
           <div class="col-12 col-md-4">
             <label class="form-label">Consulta</label>
             <select class="form-select" name="consulta">
+              <option value="" {% if not selected_query %}selected{% endif %}>Selecciona una consulta</option>
               {% for key, label in supported_queries.items() %}
               <option value="{{ key }}" {% if key == selected_query %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
           </div>
+          {% if selected_query %}
           <div class="col-12 col-md-4">
             <label class="form-label">Equipo</label>
             <div class="dropdown w-100">
@@ -102,13 +104,16 @@
             <div class="hidden-inputs" data-inputs="order_phase"></div>
           </div>
           <div class="col-12 d-flex gap-2">
+            <input type="hidden" name="applied" value="1">
             <button class="btn btn-dark" type="submit">Aplicar filtros</button>
             <a class="btn btn-outline-secondary" href="/consultas">Limpiar</a>
           </div>
+          {% endif %}
         </form>
       </div>
     </div>
 
+    {% if show_results %}
     <div class="d-flex justify-content-between align-items-center mb-2">
       <div class="fw-semibold">Consulta: Desviaciones (último y penúltimo snapshot)</div>
       <a class="btn btn-outline-success" href="{{ export_url }}">
@@ -159,6 +164,7 @@
         </div>
       </div>
     </div>
+    {% endif %}
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -243,6 +249,24 @@
 
     initMultiSelect("equipo");
     initMultiSelect("order_phase");
+
+    const form = document.getElementById("queries-form");
+    const querySelect = form ? form.querySelector('select[name="consulta"]') : null;
+    if (querySelect) {
+      querySelect.addEventListener("change", () => {
+        form.submit();
+      });
+    }
+
+    const resultsCard = document.querySelector(".table-wrapper")?.closest(".card");
+    if (form && resultsCard) {
+      form.querySelectorAll('input, select, button').forEach((element) => {
+        if (element.type === "submit") return;
+        element.addEventListener("change", () => {
+          resultsCard.classList.add("d-none");
+        });
+      });
+    }
   </script>
 </body>
 </html>
