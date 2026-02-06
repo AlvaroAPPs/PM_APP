@@ -134,7 +134,8 @@
             </thead>
             <tbody>
               {% for row in results %}
-              <tr>
+              {% set row_style = row_styles[loop.index0] if loop.index0 < row_styles|length else None %}
+              <tr class="{% if row_style == 'danger' %}table-danger{% elif row_style == 'warning' %}table-warning{% elif row_style == 'success' %}table-success{% endif %}">
                 {% for col in columns %}
                 {% set value = row.get(col) %}
                 <td>

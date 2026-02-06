@@ -76,7 +76,7 @@ def to_date_iso(value: object) -> str | None:
 def fetch_deviations_results(
     teams: list[str],
     phases: list[str],
-) -> tuple[list[dict], list[str], set[str]]:
+) -> tuple[list[dict], list[str], set[str], list[str | None]]:
     where_clauses = []
     params: list[object] = []
     if teams:
@@ -168,12 +168,23 @@ def fetch_deviations_results(
     numeric_columns = set(columns) - {"Proyecto", "Equipo", "Order phase", "Comentario"}
 
     results = []
+    row_styles: list[str | None] = []
     for items in grouped.values():
         items_sorted = sorted(items, key=lambda item: item["rn"])
         latest = next((item for item in items_sorted if item["rn"] == 1), None)
         prev = next((item for item in items_sorted if item["rn"] == 2), None)
         if latest is None or prev is None:
             continue
+        latest_dev = to_float(latest.get("desviacion_pct"))
+        prev_dev = to_float(prev.get("desviacion_pct"))
+        row_style = None
+        if latest_dev is not None and prev_dev is not None:
+            if latest_dev > prev_dev:
+                row_style = "danger"
+            elif latest_dev == prev_dev:
+                row_style = "warning"
+            else:
+                row_style = "success"
         row = {
             "Proyecto": latest.get("project_name"),
             "Equipo": latest.get("team"),
@@ -207,9 +218,19 @@ def fetch_deviations_results(
             row[progress_col] = weekly_values.get("progress")
         row["Comentario"] = normalize_comment(latest.get("comments"))
         results.append(row)
+        row_styles.append(row_style)
 
-    results = sorted(results, key=lambda item: (item["Proyecto"] or "").lower())
-    return results, columns, numeric_columns
+    sorted_pairs = sorted(
+        zip(results, row_styles),
+        key=lambda item: (item[0].get("Proyecto") or "").lower(),
+    )
+    if sorted_pairs:
+        results = [pair[0] for pair in sorted_pairs]
+        row_styles = [pair[1] for pair in sorted_pairs]
+    else:
+        results = []
+        row_styles = []
+    return results, columns, numeric_columns, row_styles
 
 
 def fetch_filter_options() -> tuple[list[str], list[str]]:
@@ -545,11 +566,11 @@ def consultas(request: Request):
     ]
 
     if consulta == "desviaciones" and applied:
-        results, columns, numeric_columns = fetch_deviations_results(
+        results, columns, numeric_columns, row_styles = fetch_deviations_results(
             selected_teams, selected_phases
         )
     else:
-        results, columns, numeric_columns = [], [], set()
+        results, columns, numeric_columns, row_styles = [], [], set(), []
 
     teams, phases = fetch_filter_options()
     export_params = {"consulta": consulta} if consulta else {}
@@ -576,6 +597,7 @@ def consultas(request: Request):
             "supported_queries": supported_queries,
             "export_url": export_url,
             "show_results": consulta == "desviaciones" and applied,
+            "row_styles": row_styles,
         },
     )
 
@@ -592,7 +614,7 @@ def consultas_export(request: Request):
     if consulta != "desviaciones":
         raise HTTPException(status_code=400, detail="Consulta no soportada")
 
-    results, columns, _numeric_columns = fetch_deviations_results(
+    results, columns, _numeric_columns, row_styles = fetch_deviations_results(
         selected_teams, selected_phases
     )
     df = pd.DataFrame(results, columns=columns)
@@ -622,9 +644,19 @@ def consultas_export(request: Request):
 
         comment_idx = columns.index("Comentario") + 1 if "Comentario" in columns else None
         for row_idx in range(2, len(df) + 2):
+            excel_row_style = row_styles[row_idx - 2] if row_idx - 2 < len(row_styles) else None
+            fill = None
+            if excel_row_style == "danger":
+                fill = PatternFill("solid", fgColor="F8D7DA")
+            elif excel_row_style == "warning":
+                fill = PatternFill("solid", fgColor="FFF3CD")
+            elif excel_row_style == "success":
+                fill = PatternFill("solid", fgColor="D1E7DD")
             for col_idx in range(1, len(columns) + 1):
                 cell = worksheet.cell(row=row_idx, column=col_idx)
                 cell.border = border
+                if fill is not None:
+                    cell.fill = fill
                 if col_idx == comment_idx:
                     cell.alignment = Alignment(vertical="top", wrap_text=True)
         worksheet.freeze_panes = "A2"
