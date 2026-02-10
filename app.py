@@ -1373,6 +1373,32 @@ def list_project_tasks(
     ]
 
 
+@app.get("/project-tasks/open-projects")
+def list_open_task_projects():
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_tasks_storage(cur)
+            cur.execute(
+                """
+                SELECT DISTINCT p.id, p.project_code, p.project_name
+                FROM project_tasks t
+                JOIN projects p ON p.id = t.project_id
+                WHERE COALESCE(p.is_historical, FALSE) = FALSE
+                  AND t.status <> 'CLOSED'
+                ORDER BY p.project_name ASC, p.project_code ASC
+                """
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "project_id": r[0],
+            "project_code": r[1],
+            "project_name": r[2],
+        }
+        for r in rows
+    ]
+
+
 @app.patch("/project-tasks/{task_id}/status")
 def update_project_task_status(task_id: int, payload: ProjectTaskStatusIn):
     status = (payload.status or "").strip().upper()

@@ -32,6 +32,37 @@ function getListFilters() {
   };
 }
 
+async function setupTasksProjectFilter() {
+  const select = $("tasksProjectFilter");
+  if (!select) return;
+
+  const listFilters = getListFilters();
+  const res = await fetch(`${API}/project-tasks/open-projects`);
+  const rows = res.ok ? await res.json() : [];
+
+  for (const row of rows) {
+    const opt = document.createElement("option");
+    opt.value = String(row.project_id);
+    opt.textContent = `${row.project_code || "—"} - ${row.project_name || "—"}`;
+    select.appendChild(opt);
+  }
+
+  if (listFilters.projectId) {
+    select.value = String(listFilters.projectId);
+  }
+
+  select.addEventListener("change", loadTasks);
+}
+
+function getActiveProjectFilterId() {
+  const select = $("tasksProjectFilter");
+  if (select && select.value) {
+    const selected = Number(select.value);
+    if (Number.isFinite(selected) && selected > 0) return selected;
+  }
+  return getListFilters().projectId;
+}
+
 function buildProjectDetailLink(projectCode) {
   const returnTo = `${window.location.pathname}${window.location.search}`;
   const params = new URLSearchParams();
@@ -101,7 +132,8 @@ async function loadTasks() {
   const filters = getListFilters();
   const params = new URLSearchParams();
   params.set("include_closed", showClosed);
-  if (filters.projectId) params.set("project_id", String(filters.projectId));
+  const activeProjectId = getActiveProjectFilterId();
+  if (activeProjectId) params.set("project_id", String(activeProjectId));
   if (filters.type) params.set("type", filters.type);
 
   const res = await fetch(`${API}/project-tasks?${params.toString()}`);
@@ -263,6 +295,7 @@ async function setupProjectPicker() {
 document.addEventListener("DOMContentLoaded", async () => {
   newTaskModal = new bootstrap.Modal($("newTaskModal"));
   await setupProjectPicker();
+  await setupTasksProjectFilter();
   await loadTasks();
 
   $("showClosed")?.addEventListener("change", loadTasks);
