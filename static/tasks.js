@@ -1,9 +1,9 @@
 const API = "http://127.0.0.1:8000";
 const $ = (id) => document.getElementById(id);
 
-let projectOptions = [];
 let lockedProject = false;
 let newTaskModal = null;
+let editingTaskId = null;
 
 function fmtDate(v) {
   if (!v) return "—";
@@ -20,6 +20,14 @@ function typeLabel(type) {
   return type === "PP" ? "PP" : "Tarea";
 }
 
+function goBack() {
+  if (window.history.length > 1) {
+    window.history.back();
+    return;
+  }
+  window.location.href = "/";
+}
+
 async function searchProjects(query) {
   if (!query || query.trim().length < 1) return [];
   const res = await fetch(`${API}/projects/search?q=${encodeURIComponent(query.trim())}`);
@@ -28,7 +36,6 @@ async function searchProjects(query) {
 }
 
 function renderProjectOptions(options) {
-  projectOptions = options;
   const select = $("projectSelect");
   if (!select) return;
   select.innerHTML = "";
@@ -42,7 +49,14 @@ function renderProjectOptions(options) {
 
 async function loadTasks() {
   const showClosed = $("showClosed")?.checked ? "true" : "false";
-  const res = await fetch(`${API}/project-tasks?include_closed=${showClosed}`);
+  const q = ($("listProjectFilter")?.value || "").trim();
+  const status = $("listStatusFilter")?.value || "";
+  const params = new URLSearchParams();
+  params.set("include_closed", showClosed);
+  if (q) params.set("q", q);
+  if (status) params.set("status", status);
+
+  const res = await fetch(`${API}/project-tasks?${params.toString()}`);
   const rows = res.ok ? await res.json() : [];
   const body = $("tasksBody");
   if (!body) return;
@@ -55,8 +69,12 @@ async function loadTasks() {
 
   for (const row of rows) {
     const tr = document.createElement("tr");
+    const projectLink = `/estado-proyecto?q=${encodeURIComponent(row.project_code || "")}`;
     tr.innerHTML = `
-      <td><div>${row.project_name || "—"}</div><div class="text-muted small">${row.project_code || "—"}</div></td>
+      <td>
+        <div><a href="${projectLink}" class="text-decoration-none">${row.project_name || "—"}</a></div>
+        <div class="text-muted small">${row.project_code || "—"}</div>
+      </td>
       <td>${typeLabel(row.type)}</td>
       <td>${row.owner_role}</td>
       <td>${fmtDate(row.planned_date)}</td>
@@ -66,9 +84,29 @@ async function loadTasks() {
     `;
 
     const actionsTd = tr.querySelector("td:last-child");
-    if (row.status === "CLOSED") {
+
+    const edit = document.createElement("button");
+    edit.className = "btn btn-sm btn-outline-secondary me-1";
+    edit.textContent = "Editar";
+    edit.addEventListener("click", () => openEditModal(row));
+    actionsTd.appendChild(edit);
+
+    if (row.status !== "CLOSED") {
+      const close = document.createElement("button");
+      close.className = "btn btn-sm btn-outline-danger me-1";
+      close.textContent = "Cerrar";
+      close.addEventListener("click", async () => {
+        await fetch(`${API}/project-tasks/${row.id}/status`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "CLOSED" }),
+        });
+        loadTasks();
+      });
+      actionsTd.appendChild(close);
+    } else {
       const reopen = document.createElement("button");
-      reopen.className = "btn btn-sm btn-outline-primary";
+      reopen.className = "btn btn-sm btn-outline-primary me-1";
       reopen.textContent = "Reabrir";
       reopen.addEventListener("click", async () => {
         await fetch(`${API}/project-tasks/${row.id}/status`, {
@@ -80,8 +118,33 @@ async function loadTasks() {
       });
       actionsTd.appendChild(reopen);
     }
-    body.appendChild(tr);
   }
+}
+
+function setModalDefaults() {
+  editingTaskId = null;
+  $("taskModalTitle").textContent = "Nueva Tarea / PP";
+  $("saveTask").textContent = "Guardar";
+  $("taskStatus").value = "OPEN";
+  $("taskType").value = "TASK";
+  $("ownerRole").value = "PM";
+  $("plannedDate").value = "";
+  $("taskDescription").value = "";
+  $("taskFormError").textContent = "";
+}
+
+function openEditModal(row) {
+  editingTaskId = row.id;
+  $("taskModalTitle").textContent = "Editar Tarea / PP";
+  $("saveTask").textContent = "Guardar cambios";
+  $("projectSelect").value = String(row.project_id);
+  $("taskType").value = row.type || "TASK";
+  $("ownerRole").value = row.owner_role || "PM";
+  $("plannedDate").value = row.planned_date || "";
+  $("taskStatus").value = row.status || "OPEN";
+  $("taskDescription").value = row.description || "";
+  $("taskFormError").textContent = "";
+  newTaskModal.show();
 }
 
 async function submitTask() {
@@ -100,8 +163,11 @@ async function submitTask() {
     return;
   }
 
-  const res = await fetch(`${API}/project-tasks`, {
-    method: "POST",
+  const method = editingTaskId ? "PUT" : "POST";
+  const url = editingTaskId ? `${API}/project-tasks/${editingTaskId}` : `${API}/project-tasks`;
+
+  const res = await fetch(url, {
+    method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
@@ -111,8 +177,7 @@ async function submitTask() {
     return;
   }
 
-  $("taskFormError").textContent = "";
-  $("taskDescription").value = "";
+  setModalDefaults();
   newTaskModal.hide();
   loadTasks();
 }
@@ -131,8 +196,7 @@ async function setupProjectPicker() {
     searchInput.disabled = true;
   }
 
-  const baseQuery = preProjectCode || "";
-  const initial = await searchProjects(baseQuery || " ");
+  const initial = await searchProjects(preProjectCode || "a");
   renderProjectOptions(initial);
 
   if (preProjectId && $("projectSelect")) {
@@ -157,14 +221,25 @@ async function setupProjectPicker() {
 document.addEventListener("DOMContentLoaded", async () => {
   newTaskModal = new bootstrap.Modal($("newTaskModal"));
   await setupProjectPicker();
+  setModalDefaults();
   await loadTasks();
 
+  $("goBackButton")?.addEventListener("click", goBack);
   $("showClosed")?.addEventListener("change", loadTasks);
+  $("listStatusFilter")?.addEventListener("change", loadTasks);
+  $("listProjectFilter")?.addEventListener("input", () => {
+    clearTimeout(window.__taskFilterTimer);
+    window.__taskFilterTimer = setTimeout(loadTasks, 250);
+  });
   $("saveTask")?.addEventListener("click", submitTask);
-  $("openNewTaskModal")?.addEventListener("click", () => newTaskModal.show());
+  $("openNewTaskModal")?.addEventListener("click", () => {
+    setModalDefaults();
+    newTaskModal.show();
+  });
 
   const params = new URLSearchParams(window.location.search);
   if (params.get("new") === "1") {
+    setModalDefaults();
     newTaskModal.show();
   }
 });
