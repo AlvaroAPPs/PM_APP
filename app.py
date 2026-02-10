@@ -1320,7 +1320,7 @@ def create_project_task(payload: ProjectTaskCreateIn):
 @app.get("/project-tasks")
 def list_project_tasks(
     project_id: int | None = None,
-    include_closed: bool = True,
+    include_closed: bool = False,
     q: str | None = None,
     status: str | None = None,
 ):
