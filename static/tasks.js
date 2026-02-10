@@ -61,15 +61,7 @@ function renderProjectOptions(options) {
 }
 
 async function loadTasks() {
-  const showClosed = $("showClosed")?.checked ? "true" : "false";
-  const q = ($("listProjectFilter")?.value || "").trim();
-  const status = $("listStatusFilter")?.value || "";
-  const params = new URLSearchParams();
-  params.set("include_closed", showClosed);
-  if (q) params.set("q", q);
-  if (status) params.set("status", status);
-
-  const requestUrl = `${API}/project-tasks?${params.toString()}`;
+  const requestUrl = `${API}/project-tasks`;
   console.info("[tasks] loading", requestUrl);
   const body = $("tasksBody");
   if (!body) return;
@@ -270,12 +262,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadTasks();
 
   $("goBackButton")?.addEventListener("click", goBack);
-  $("showClosed")?.addEventListener("change", loadTasks);
-  $("listStatusFilter")?.addEventListener("change", loadTasks);
-  $("listProjectFilter")?.addEventListener("input", () => {
-    clearTimeout(window.__taskFilterTimer);
-    window.__taskFilterTimer = setTimeout(loadTasks, 250);
-  });
   $("saveTask")?.addEventListener("click", submitTask);
   $("openNewTaskModal")?.addEventListener("click", () => {
     setModalDefaults();
