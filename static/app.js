@@ -146,6 +146,7 @@ function resetUI() {
     "openPpCount",
   ];
   idsToClear.forEach((id) => setText(id, "—"));
+  updateTaskCounterLinks();
   setKpiColor("kpi_desviacion_pct", 0);
   setValue("phase_design", "");
   setValue("phase_development", "");
@@ -157,6 +158,33 @@ function resetUI() {
   setValue("project_comment_input", "");
 }
 
+
+function updateTaskCounterLinks() {
+  const taskLink = $("openTaskCountLink");
+  const ppLink = $("openPpCountLink");
+  if (!taskLink || !ppLink) return;
+  if (!currentProjectId || !currentProjectCode) {
+    taskLink.href = "/tasks";
+    ppLink.href = "/tasks";
+    return;
+  }
+  const base = new URLSearchParams();
+  base.set("project_id", String(currentProjectId));
+  base.set("project_code", currentProjectCode);
+  taskLink.href = `/tasks?${base.toString()}&type=TASK`;
+  ppLink.href = `/tasks?${base.toString()}&type=PP`;
+}
+
+function configureTopBackButton() {
+  const btn = $("topBackBtn");
+  if (!btn) return;
+  const params = new URLSearchParams(window.location.search);
+  const returnTo = params.get("return_to");
+  if (returnTo) {
+    btn.href = returnTo;
+    btn.innerHTML = '<i class="bi bi-arrow-left me-1"></i> Atrás';
+  }
+}
 
 async function loadTaskCounters(code) {
   if (!code) return;
@@ -298,6 +326,7 @@ async function loadProject(code) {
   setValue("role_technician", toInputValue(roleValues.technician ?? 0));
 
   setValue("project_comment_input", s.project_comment ?? "");
+  updateTaskCounterLinks();
   loadTaskCounters(currentProjectCode);
 }
 
@@ -406,6 +435,7 @@ function onLoadClick() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  configureTopBackButton();
   resetUI(); // todo en blanco al entrar
   currentProjectId = null;
 

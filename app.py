@@ -1320,12 +1320,21 @@ def create_project_task(payload: ProjectTaskCreateIn):
 def list_project_tasks(
     project_id: int | None = None,
     include_closed: bool = False,
+    task_type: str | None = Query(default=None, alias="type"),
 ):
     where = ["COALESCE(p.is_historical, FALSE) = FALSE"]
     params: list[object] = []
     if project_id is not None:
         where.append("t.project_id = %s")
         params.append(project_id)
+
+    normalized_type = (task_type or "").strip().upper()
+    if normalized_type:
+        if normalized_type not in TASK_TYPES:
+            raise HTTPException(status_code=400, detail="Invalid task type")
+        where.append("t.type = %s")
+        params.append(normalized_type)
+
     if not include_closed:
         where.append("t.status <> 'CLOSED'")
 

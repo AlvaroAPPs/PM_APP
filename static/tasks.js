@@ -21,6 +21,25 @@ function typeLabel(type) {
   return type === "PP" ? "PP" : "Tarea";
 }
 
+function getListFilters() {
+  const params = new URLSearchParams(window.location.search);
+  const projectId = Number(params.get("project_id") || 0);
+  const type = (params.get("type") || "").trim().toUpperCase();
+  return {
+    projectId: Number.isFinite(projectId) && projectId > 0 ? projectId : null,
+    type: type === "TASK" || type === "PP" ? type : null,
+    projectCode: params.get("project_code") || "",
+  };
+}
+
+function buildProjectDetailLink(projectCode) {
+  const returnTo = `${window.location.pathname}${window.location.search}`;
+  const params = new URLSearchParams();
+  params.set("q", projectCode || "");
+  params.set("return_to", returnTo);
+  return `/?${params.toString()}`;
+}
+
 async function searchProjects(query) {
   if (!query || query.trim().length < 1) return [];
   const res = await fetch(`${API}/projects/search?q=${encodeURIComponent(query.trim())}`);
@@ -79,7 +98,13 @@ async function closeTask(taskId) {
 
 async function loadTasks() {
   const showClosed = $("showClosed")?.checked ? "true" : "false";
-  const res = await fetch(`${API}/project-tasks?include_closed=${showClosed}`);
+  const filters = getListFilters();
+  const params = new URLSearchParams();
+  params.set("include_closed", showClosed);
+  if (filters.projectId) params.set("project_id", String(filters.projectId));
+  if (filters.type) params.set("type", filters.type);
+
+  const res = await fetch(`${API}/project-tasks?${params.toString()}`);
   const rows = res.ok ? await res.json() : [];
   const body = $("tasksBody");
   if (!body) return;
@@ -103,6 +128,12 @@ async function loadTasks() {
     `;
 
     const actionsTd = tr.querySelector("td:last-child");
+
+    const linkBtn = document.createElement("a");
+    linkBtn.className = "btn btn-sm btn-outline-primary me-1";
+    linkBtn.textContent = "Link";
+    linkBtn.href = buildProjectDetailLink(row.project_code);
+    actionsTd.appendChild(linkBtn);
 
     const editBtn = document.createElement("button");
     editBtn.className = "btn btn-sm btn-outline-secondary me-1";
@@ -233,6 +264,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     newTaskModal.show();
   });
   $("newTaskModal")?.addEventListener("hidden.bs.modal", resetTaskForm);
+  $("goBackBtn")?.addEventListener("click", () => window.history.back());
 
   const params = new URLSearchParams(window.location.search);
   if (params.get("new") === "1") {
