@@ -93,8 +93,10 @@ function setKpiColor(id, sign) {
 }
 
 function setActionsEnabled(isEnabled) {
+  const actNewTask = $("actNewTask");
   const actCharts = $("actCharts");
   const actReport = $("actReport");
+  if (actNewTask) actNewTask.disabled = !isEnabled;
   if (actCharts) actCharts.disabled = !isEnabled;
   if (actReport) actReport.disabled = !isEnabled;
 }
@@ -140,6 +142,8 @@ function resetUI() {
     "economic_total",
     "economic_pending",
     "economic_paid_pct",
+    "openTaskCount",
+    "openPpCount",
   ];
   idsToClear.forEach((id) => setText(id, "—"));
   setKpiColor("kpi_desviacion_pct", 0);
@@ -151,6 +155,20 @@ function resetUI() {
   setValue("role_consultant", "");
   setValue("role_technician", "");
   setValue("project_comment_input", "");
+}
+
+
+async function loadTaskCounters(code) {
+  if (!code) return;
+  try {
+    const res = await fetch(`${API}/projects/${encodeURIComponent(code)}/task-counters`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setText("openTaskCount", fmtNum(data.task_open_count));
+    setText("openPpCount", fmtNum(data.pp_open_count));
+  } catch (_err) {
+    // no-op
+  }
 }
 
 async function loadProject(code) {
@@ -280,6 +298,7 @@ async function loadProject(code) {
   setValue("role_technician", toInputValue(roleValues.technician ?? 0));
 
   setValue("project_comment_input", s.project_comment ?? "");
+  loadTaskCounters(currentProjectCode);
 }
 
 async function postJson(url, payload) {
@@ -422,6 +441,22 @@ document.addEventListener("DOMContentLoaded", () => {
   if (actNewData) {
     actNewData.addEventListener("click", () => {
       window.location.href = "/importacion";
+    });
+  }
+
+  const actNewTask = $("actNewTask");
+  if (actNewTask) {
+    actNewTask.addEventListener("click", () => {
+      if (!currentProjectId || !currentProjectCode) {
+        alert("Carga un proyecto antes de continuar.");
+        return;
+      }
+      const params = new URLSearchParams();
+      params.set("new", "1");
+      params.set("lock_project", "1");
+      params.set("project_id", String(currentProjectId));
+      params.set("project_code", currentProjectCode);
+      window.location.href = `/tasks?${params.toString()}`;
     });
   }
 

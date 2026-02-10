@@ -31,6 +31,7 @@ def startup_init() -> None:
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             ensure_historical_storage(cur)
+            ensure_project_tasks_storage(cur)
         conn.commit()
 
 PHASES = ("design", "development", "pem", "hypercare")
@@ -49,6 +50,24 @@ class AssignedHoursRoleIn(BaseModel):
 
 class ProjectCommentIn(BaseModel):
     comment_text: str | None = None
+
+
+TASK_TYPES = {"TASK", "PP"}
+TASK_OWNER_ROLES = {"PM", "CONSULTORIA", "TECH", "COMERCIAL", "CLIENTE"}
+TASK_STATUSES = {"OPEN", "IN_PROGRESS", "PAUSED", "CLOSED"}
+
+
+class ProjectTaskCreateIn(BaseModel):
+    project_id: int
+    type: str
+    owner_role: str
+    planned_date: str | None = None
+    status: str = "OPEN"
+    description: str
+
+
+class ProjectTaskStatusIn(BaseModel):
+    status: str
 
 
 def normalize_comment(value: object) -> str | None:
@@ -350,6 +369,30 @@ def ensure_historical_storage(cur: psycopg.Cursor) -> None:
         ) s ON TRUE
         WHERE p.project_code = h.project_code
           AND (h.ordered_total IS NULL OR h.real_hours IS NULL OR h.desviacion_pct IS NULL);
+        """
+    )
+
+
+def ensure_project_tasks_storage(cur: psycopg.Cursor) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS project_tasks (
+            id BIGSERIAL PRIMARY KEY,
+            project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            type TEXT NOT NULL CHECK (type IN ('TASK', 'PP')),
+            owner_role TEXT NOT NULL CHECK (owner_role IN ('PM', 'CONSULTORIA', 'TECH', 'COMERCIAL', 'CLIENTE')),
+            planned_date DATE,
+            status TEXT NOT NULL CHECK (status IN ('OPEN', 'IN_PROGRESS', 'PAUSED', 'CLOSED')) DEFAULT 'OPEN',
+            description TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_project_tasks_project_status
+        ON project_tasks (project_id, status);
         """
     )
 
@@ -847,6 +890,11 @@ def menu_personal(request: Request):
     )
 
 
+@app.get("/tasks", response_class=HTMLResponse)
+def tasks_view(request: Request):
+    return templates.TemplateResponse("tasks.html", {"request": request})
+
+
 @app.get("/historicals", response_class=HTMLResponse)
 def historicals(request: Request, q: str = Query("")):
     query = (q or "").strip()
@@ -1213,6 +1261,165 @@ def project_details(project_code: str):
         "assigned_hours_role": assigned_hours_role,
         "project_comment": normalize_comment(project_comment),
         "excel_comments": normalize_comment(excel_comments),
+    }
+
+
+@app.post("/project-tasks")
+def create_project_task(payload: ProjectTaskCreateIn):
+    task_type = (payload.type or "").strip().upper()
+    owner_role = (payload.owner_role or "").strip().upper()
+    status = (payload.status or "OPEN").strip().upper()
+    description = (payload.description or "").strip()
+
+    if task_type not in TASK_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid task type")
+    if owner_role not in TASK_OWNER_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid owner role")
+    if status not in TASK_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    if not description:
+        raise HTTPException(status_code=400, detail="Description is required")
+
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_tasks_storage(cur)
+            cur.execute(
+                """
+                SELECT id
+                FROM projects
+                WHERE id = %s
+                  AND COALESCE(is_historical, FALSE) = FALSE
+                """,
+                (payload.project_id,),
+            )
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Project not found")
+
+            cur.execute(
+                """
+                INSERT INTO project_tasks (project_id, type, owner_role, planned_date, status, description)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (payload.project_id, task_type, owner_role, payload.planned_date, status, description),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    return {"id": row[0], "status": "ok"}
+
+
+@app.get("/project-tasks")
+def list_project_tasks(
+    project_id: int | None = None,
+    include_closed: bool = False,
+):
+    where = ["COALESCE(p.is_historical, FALSE) = FALSE"]
+    params: list[object] = []
+    if project_id is not None:
+        where.append("t.project_id = %s")
+        params.append(project_id)
+    if not include_closed:
+        where.append("t.status <> 'CLOSED'")
+
+    where_sql = " AND ".join(where)
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_tasks_storage(cur)
+            cur.execute(
+                f"""
+                SELECT t.id, t.project_id, p.project_code, p.project_name,
+                       t.type, t.owner_role, t.planned_date, t.status, t.description,
+                       t.created_at, t.updated_at
+                FROM project_tasks t
+                JOIN projects p ON p.id = t.project_id
+                WHERE {where_sql}
+                ORDER BY t.created_at DESC, t.id DESC
+                """,
+                params,
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "id": r[0],
+            "project_id": r[1],
+            "project_code": r[2],
+            "project_name": r[3],
+            "type": r[4],
+            "owner_role": r[5],
+            "planned_date": to_date_iso(r[6]),
+            "status": r[7],
+            "description": r[8],
+            "created_at": r[9].isoformat() if r[9] else None,
+            "updated_at": r[10].isoformat() if r[10] else None,
+        }
+        for r in rows
+    ]
+
+
+@app.patch("/project-tasks/{task_id}/status")
+def update_project_task_status(task_id: int, payload: ProjectTaskStatusIn):
+    status = (payload.status or "").strip().upper()
+    if status not in TASK_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid status")
+
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_tasks_storage(cur)
+            cur.execute(
+                """
+                UPDATE project_tasks t
+                SET status = %s,
+                    updated_at = now()
+                FROM projects p
+                WHERE t.id = %s
+                  AND p.id = t.project_id
+                  AND COALESCE(p.is_historical, FALSE) = FALSE
+                RETURNING t.id
+                """,
+                (status, task_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Task not found")
+        conn.commit()
+    return {"status": "ok"}
+
+
+@app.get("/projects/{project_code}/task-counters")
+def project_task_counters(project_code: str):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_tasks_storage(cur)
+            cur.execute(
+                """
+                SELECT p.id
+                FROM projects p
+                WHERE p.project_code = %s
+                  AND COALESCE(p.is_historical, FALSE) = FALSE
+                """,
+                (project_code,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Project not found")
+            project_id = row[0]
+
+            cur.execute(
+                """
+                SELECT type, COUNT(*)
+                FROM project_tasks
+                WHERE project_id = %s
+                  AND status <> 'CLOSED'
+                GROUP BY type
+                """,
+                (project_id,),
+            )
+            counts = {r[0]: int(r[1]) for r in cur.fetchall()}
+
+    return {
+        "project_id": project_id,
+        "task_open_count": counts.get("TASK", 0),
+        "pp_open_count": counts.get("PP", 0),
     }
 
 
