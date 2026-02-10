@@ -130,9 +130,17 @@ async function loadTasks() {
     const actionsTd = tr.querySelector("td:last-child");
 
     const linkBtn = document.createElement("a");
+    const projectCode = (row.project_code || filters.projectCode || "").trim();
     linkBtn.className = "btn btn-sm btn-outline-primary me-1";
     linkBtn.textContent = "Link";
-    linkBtn.href = buildProjectDetailLink(row.project_code);
+    if (projectCode) {
+      linkBtn.href = buildProjectDetailLink(projectCode);
+    } else {
+      linkBtn.href = "#";
+      linkBtn.classList.add("disabled");
+      linkBtn.setAttribute("aria-disabled", "true");
+      linkBtn.title = "Sin código de proyecto";
+    }
     actionsTd.appendChild(linkBtn);
 
     const editBtn = document.createElement("button");
