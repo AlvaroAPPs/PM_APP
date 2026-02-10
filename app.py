@@ -70,6 +70,14 @@ class ProjectTaskStatusIn(BaseModel):
     status: str
 
 
+class ProjectTaskUpdateIn(BaseModel):
+    type: str
+    owner_role: str
+    planned_date: str | None = None
+    status: str
+    description: str
+
+
 def normalize_comment(value: object) -> str | None:
     if value is None:
         return None
@@ -1377,6 +1385,49 @@ def update_project_task_status(task_id: int, payload: ProjectTaskStatusIn):
                 RETURNING t.id
                 """,
                 (status, task_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Task not found")
+        conn.commit()
+    return {"status": "ok"}
+
+
+@app.put("/project-tasks/{task_id}")
+def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
+    task_type = (payload.type or "").strip().upper()
+    owner_role = (payload.owner_role or "").strip().upper()
+    status = (payload.status or "").strip().upper()
+    description = (payload.description or "").strip()
+
+    if task_type not in TASK_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid task type")
+    if owner_role not in TASK_OWNER_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid owner role")
+    if status not in TASK_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    if not description:
+        raise HTTPException(status_code=400, detail="Description is required")
+
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_tasks_storage(cur)
+            cur.execute(
+                """
+                UPDATE project_tasks t
+                SET type = %s,
+                    owner_role = %s,
+                    planned_date = %s,
+                    status = %s,
+                    description = %s,
+                    updated_at = now()
+                FROM projects p
+                WHERE t.id = %s
+                  AND p.id = t.project_id
+                  AND COALESCE(p.is_historical, FALSE) = FALSE
+                RETURNING t.id
+                """,
+                (task_type, owner_role, payload.planned_date, status, description, task_id),
             )
             row = cur.fetchone()
             if not row:

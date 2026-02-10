@@ -4,6 +4,7 @@ const $ = (id) => document.getElementById(id);
 let projectOptions = [];
 let lockedProject = false;
 let newTaskModal = null;
+let editingTaskId = null;
 
 function fmtDate(v) {
   if (!v) return "—";
@@ -40,6 +41,42 @@ function renderProjectOptions(options) {
   }
 }
 
+function resetTaskForm() {
+  editingTaskId = null;
+  $("taskModalTitle").textContent = "Nueva Tarea / PP";
+  $("saveTask").textContent = "Guardar";
+  $("taskFormError").textContent = "";
+  $("taskType").value = "TASK";
+  $("ownerRole").value = "PM";
+  $("plannedDate").value = "";
+  $("taskStatus").value = "OPEN";
+  $("taskDescription").value = "";
+}
+
+function fillTaskForm(task) {
+  editingTaskId = task.id;
+  $("taskModalTitle").textContent = "Editar Tarea / PP";
+  $("saveTask").textContent = "Actualizar";
+  $("taskType").value = task.type || "TASK";
+  $("ownerRole").value = task.owner_role || "PM";
+  $("plannedDate").value = task.planned_date || "";
+  $("taskStatus").value = task.status || "OPEN";
+  $("taskDescription").value = task.description || "";
+  if ($("projectSelect")) {
+    $("projectSelect").value = String(task.project_id);
+  }
+  $("taskFormError").textContent = "";
+}
+
+async function closeTask(taskId) {
+  await fetch(`${API}/project-tasks/${taskId}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "CLOSED" }),
+  });
+  loadTasks();
+}
+
 async function loadTasks() {
   const showClosed = $("showClosed")?.checked ? "true" : "false";
   const res = await fetch(`${API}/project-tasks?include_closed=${showClosed}`);
@@ -66,6 +103,16 @@ async function loadTasks() {
     `;
 
     const actionsTd = tr.querySelector("td:last-child");
+
+    const editBtn = document.createElement("button");
+    editBtn.className = "btn btn-sm btn-outline-secondary me-1";
+    editBtn.textContent = "Editar";
+    editBtn.addEventListener("click", () => {
+      fillTaskForm(row);
+      newTaskModal.show();
+    });
+    actionsTd.appendChild(editBtn);
+
     if (row.status === "CLOSED") {
       const reopen = document.createElement("button");
       reopen.className = "btn btn-sm btn-outline-primary";
@@ -79,7 +126,14 @@ async function loadTasks() {
         loadTasks();
       });
       actionsTd.appendChild(reopen);
+    } else {
+      const closeBtn = document.createElement("button");
+      closeBtn.className = "btn btn-sm btn-outline-danger";
+      closeBtn.textContent = "Cerrar";
+      closeBtn.addEventListener("click", async () => closeTask(row.id));
+      actionsTd.appendChild(closeBtn);
     }
+
     body.appendChild(tr);
   }
 }
@@ -100,19 +154,32 @@ async function submitTask() {
     return;
   }
 
-  const res = await fetch(`${API}/project-tasks`, {
-    method: "POST",
+  const endpoint = editingTaskId ? `${API}/project-tasks/${editingTaskId}` : `${API}/project-tasks`;
+  const method = editingTaskId ? "PUT" : "POST";
+  const updatePayload = editingTaskId
+    ? {
+        type: payload.type,
+        owner_role: payload.owner_role,
+        planned_date: payload.planned_date,
+        status: payload.status,
+        description: payload.description,
+      }
+    : payload;
+
+  const res = await fetch(endpoint, {
+    method,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(updatePayload),
   });
 
   if (!res.ok) {
-    $("taskFormError").textContent = "No se pudo guardar la tarea.";
+    $("taskFormError").textContent = editingTaskId
+      ? "No se pudo actualizar la tarea."
+      : "No se pudo guardar la tarea.";
     return;
   }
 
-  $("taskFormError").textContent = "";
-  $("taskDescription").value = "";
+  resetTaskForm();
   newTaskModal.hide();
   loadTasks();
 }
@@ -161,10 +228,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   $("showClosed")?.addEventListener("change", loadTasks);
   $("saveTask")?.addEventListener("click", submitTask);
-  $("openNewTaskModal")?.addEventListener("click", () => newTaskModal.show());
+  $("openNewTaskModal")?.addEventListener("click", () => {
+    resetTaskForm();
+    newTaskModal.show();
+  });
+  $("newTaskModal")?.addEventListener("hidden.bs.modal", resetTaskForm);
 
   const params = new URLSearchParams(window.location.search);
   if (params.get("new") === "1") {
+    resetTaskForm();
     newTaskModal.show();
   }
 });
