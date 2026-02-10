@@ -37,7 +37,7 @@ function buildProjectDetailLink(projectCode) {
   const params = new URLSearchParams();
   params.set("q", projectCode || "");
   params.set("return_to", returnTo);
-  return `/?${params.toString()}`;
+  return `/estado-proyecto?${params.toString()}`;
 }
 
 async function searchProjects(query) {
