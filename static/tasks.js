@@ -165,9 +165,9 @@ async function loadTasks() {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><div>${row.project_name || "—"}</div><div class="text-muted small">${row.project_code || "—"}</div></td>
-      <td>${typeLabel(row.type)}</td>
-      <td><span class="badge text-bg-light border">${statusLabel(row.status)}</span></td>
       <td>${row.title || ""}</td>
+      <td><span class="badge text-bg-light border">${statusLabel(row.status)}</span></td>
+      <td>${typeLabel(row.type)}</td>
       <td class="text-end"></td>
     `;
 
