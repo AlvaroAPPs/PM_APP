@@ -33,9 +33,9 @@
     <!-- Top header: Back + Title -->
     <div class="content-top mb-3">
       <div class="d-flex align-items-center gap-2">
-        <a id="topBackBtn" href="/" class="btn btn-outline-secondary">
-          <i class="bi bi-arrow-left me-1"></i> Menú
-        </a>
+        <button id="topBackBtn" type="button" class="btn btn-outline-secondary">
+          <i class="bi bi-arrow-left me-1"></i> Volver
+        </button>
         <div>
           <h1 class="fw-bold mb-0">Estado proyecto</h1>
           <div class="muted">Cargar por código · Snapshots semanales</div>
@@ -69,12 +69,32 @@
             <div class="fw-bold mb-2">Acciones</div>
 
             <div class="list-group list-group-flush">
-              <button id="actNewData" class="list-group-item list-group-item-action">
+              <button id="actCharts" class="list-group-item list-group-item-action" disabled>
                 <div class="d-flex align-items-center gap-2">
-                  <i class="bi bi-upload"></i>
+                  <i class="bi bi-graph-up"></i>
                   <div>
-                    <div class="action-title">Nuevos datos</div>
-                    <div class="muted small">Ir a importación (semana/año)</div>
+                    <div class="action-title">Indicadores</div>
+                    <div class="muted small">Evolución y distribución</div>
+                  </div>
+                </div>
+              </button>
+
+              <button id="actReport" class="list-group-item list-group-item-action" disabled>
+                <div class="d-flex align-items-center gap-2">
+                  <i class="bi bi-file-earmark-text"></i>
+                  <div>
+                    <div class="action-title">Generar informes</div>
+                    <div class="muted small">PDF con KPIs y gráficos</div>
+                  </div>
+                </div>
+              </button>
+
+              <button id="actTasks" class="list-group-item list-group-item-action" disabled>
+                <div class="d-flex align-items-center gap-2">
+                  <i class="bi bi-list-check"></i>
+                  <div>
+                    <div class="action-title">Tareas</div>
+                    <div class="muted small">Ver tareas y PP del proyecto</div>
                   </div>
                 </div>
               </button>
@@ -89,6 +109,16 @@
                 </div>
               </a>
 
+              <a href="/" class="list-group-item list-group-item-action">
+                <div class="d-flex align-items-center gap-2">
+                  <i class="bi bi-house"></i>
+                  <div>
+                    <div class="action-title">Menú principal</div>
+                    <div class="muted small">Ir al inicio de la aplicación</div>
+                  </div>
+                </div>
+              </a>
+
               <a href="/consultas" class="list-group-item list-group-item-action">
                 <div class="d-flex align-items-center gap-2">
                   <i class="bi bi-search"></i>
@@ -99,32 +129,12 @@
                 </div>
               </a>
 
-              <button id="actNewTask" class="list-group-item list-group-item-action" disabled>
+              <button id="actNewData" class="list-group-item list-group-item-action">
                 <div class="d-flex align-items-center gap-2">
-                  <i class="bi bi-plus-square"></i>
+                  <i class="bi bi-upload"></i>
                   <div>
-                    <div class="action-title">Nueva Tarea / PP</div>
-                    <div class="muted small">Crear para este proyecto</div>
-                  </div>
-                </div>
-              </button>
-
-              <button id="actCharts" class="list-group-item list-group-item-action" disabled>
-                <div class="d-flex align-items-center gap-2">
-                  <i class="bi bi-graph-up"></i>
-                  <div>
-                    <div class="action-title">Indicadores y Evolución</div>
-                    <div class="muted small">Evolución y distribución</div>
-                  </div>
-                </div>
-              </button>
-
-              <button id="actReport" class="list-group-item list-group-item-action" disabled>
-                <div class="d-flex align-items-center gap-2">
-                  <i class="bi bi-file-earmark-text"></i>
-                  <div>
-                    <div class="action-title">Generar informe</div>
-                    <div class="muted small">PDF con KPIs y gráficos</div>
+                    <div class="action-title">Nuevos datos</div>
+                    <div class="muted small">Ir a importación (semana/año)</div>
                   </div>
                 </div>
               </button>

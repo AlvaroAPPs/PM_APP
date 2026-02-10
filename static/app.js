@@ -93,10 +93,10 @@ function setKpiColor(id, sign) {
 }
 
 function setActionsEnabled(isEnabled) {
-  const actNewTask = $("actNewTask");
+  const actTasks = $("actTasks");
   const actCharts = $("actCharts");
   const actReport = $("actReport");
-  if (actNewTask) actNewTask.disabled = !isEnabled;
+  if (actTasks) actTasks.disabled = !isEnabled;
   if (actCharts) actCharts.disabled = !isEnabled;
   if (actReport) actReport.disabled = !isEnabled;
 }
@@ -178,12 +178,13 @@ function updateTaskCounterLinks() {
 function configureTopBackButton() {
   const btn = $("topBackBtn");
   if (!btn) return;
-  const params = new URLSearchParams(window.location.search);
-  const returnTo = params.get("return_to");
-  if (returnTo) {
-    btn.href = returnTo;
-    btn.innerHTML = '<i class="bi bi-arrow-left me-1"></i> Atrás';
-  }
+  btn.addEventListener("click", () => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      window.location.href = "/";
+    }
+  });
 }
 
 async function loadTaskCounters(code) {
@@ -474,16 +475,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  const actNewTask = $("actNewTask");
-  if (actNewTask) {
-    actNewTask.addEventListener("click", () => {
+  const actTasks = $("actTasks");
+  if (actTasks) {
+    actTasks.addEventListener("click", () => {
       if (!currentProjectId || !currentProjectCode) {
         alert("Carga un proyecto antes de continuar.");
         return;
       }
       const params = new URLSearchParams();
-      params.set("new", "1");
-      params.set("lock_project", "1");
       params.set("project_id", String(currentProjectId));
       params.set("project_code", currentProjectCode);
       window.location.href = `/tasks?${params.toString()}`;
