@@ -35,6 +35,19 @@ async function searchProjects(query) {
   return res.json();
 }
 
+
+function setTasksLoadError(message) {
+  const errorBox = $("tasksLoadError");
+  if (!errorBox) return;
+  if (message) {
+    errorBox.textContent = message;
+    errorBox.classList.remove("d-none");
+  } else {
+    errorBox.textContent = "";
+    errorBox.classList.add("d-none");
+  }
+}
+
 function renderProjectOptions(options) {
   const select = $("projectSelect");
   if (!select) return;
@@ -56,11 +69,43 @@ async function loadTasks() {
   if (q) params.set("q", q);
   if (status) params.set("status", status);
 
-  const res = await fetch(`${API}/project-tasks?${params.toString()}`);
-  const rows = res.ok ? await res.json() : [];
+  const requestUrl = `${API}/project-tasks?${params.toString()}`;
+  console.info("[tasks] loading", requestUrl);
   const body = $("tasksBody");
   if (!body) return;
   body.innerHTML = "";
+  setTasksLoadError("");
+
+  let rows = [];
+  try {
+    const res = await fetch(requestUrl);
+    if (!res.ok) {
+      let detail = "";
+      try {
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          const data = await res.json();
+          detail = data?.detail ? String(data.detail) : JSON.stringify(data);
+        } else {
+          detail = (await res.text() || "").trim();
+        }
+      } catch (_parseErr) {
+        detail = "";
+      }
+      const message = `Error cargando tareas (HTTP ${res.status})${detail ? `: ${detail}` : ""}`;
+      setTasksLoadError(message);
+      console.error("[tasks] load failed", { requestUrl, status: res.status, detail });
+      body.innerHTML = '<tr><td colspan="7" class="muted">No se pudieron cargar las tareas.</td></tr>';
+      return;
+    }
+    rows = await res.json();
+  } catch (err) {
+    const message = `Error de conexión al cargar tareas: ${err?.message || "desconocido"}`;
+    setTasksLoadError(message);
+    console.error("[tasks] load error", { requestUrl, err });
+    body.innerHTML = '<tr><td colspan="7" class="muted">No se pudieron cargar las tareas.</td></tr>';
+    return;
+  }
 
   if (!rows.length) {
     body.innerHTML = '<tr><td colspan="7" class="muted">No hay tareas.</td></tr>';
