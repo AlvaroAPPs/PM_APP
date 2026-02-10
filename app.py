@@ -1324,7 +1324,7 @@ def list_project_tasks(
     q: str | None = None,
     status: str | None = None,
 ):
-    where = ["COALESCE(p.is_historical, FALSE) = FALSE"]
+    where = ["1=1"]
     params: list[object] = []
     if project_id is not None:
         where.append("t.project_id = %s")
@@ -1334,7 +1334,7 @@ def list_project_tasks(
     if normalized_status:
         if normalized_status not in TASK_STATUSES:
             raise HTTPException(status_code=400, detail="Invalid status")
-        where.append("t.status = %s")
+        where.append("UPPER(t.status) = %s")
         params.append(normalized_status)
     elif not include_closed:
         where.append("t.status <> 'CLOSED'")
@@ -1351,11 +1351,13 @@ def list_project_tasks(
             ensure_project_tasks_storage(cur)
             cur.execute(
                 f"""
-                SELECT t.id, t.project_id, p.project_code, p.project_name,
+                SELECT t.id, t.project_id,
+                       COALESCE(p.project_code, '(sin código)') AS project_code,
+                       COALESCE(p.project_name, '(proyecto no disponible)') AS project_name,
                        t.type, t.owner_role, t.planned_date, t.status, t.description,
                        t.created_at, t.updated_at
                 FROM project_tasks t
-                JOIN projects p ON p.id = t.project_id
+                LEFT JOIN projects p ON p.id = t.project_id
                 WHERE {where_sql}
                 ORDER BY t.created_at DESC, t.id DESC
                 """,
