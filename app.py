@@ -63,6 +63,7 @@ class ProjectTaskCreateIn(BaseModel):
     owner_role: str
     planned_date: str | None = None
     status: str = "OPEN"
+    title: str
     description: str
 
 
@@ -75,6 +76,7 @@ class ProjectTaskUpdateIn(BaseModel):
     owner_role: str
     planned_date: str | None = None
     status: str
+    title: str
     description: str
 
 
@@ -391,10 +393,24 @@ def ensure_project_tasks_storage(cur: psycopg.Cursor) -> None:
             owner_role TEXT NOT NULL CHECK (owner_role IN ('PM', 'CONSULTORIA', 'TECH', 'COMERCIAL', 'CLIENTE')),
             planned_date DATE,
             status TEXT NOT NULL CHECK (status IN ('OPEN', 'IN_PROGRESS', 'PAUSED', 'CLOSED')) DEFAULT 'OPEN',
+            title TEXT,
             description TEXT NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
+        """
+    )
+    cur.execute(
+        """
+        ALTER TABLE project_tasks
+        ADD COLUMN IF NOT EXISTS title TEXT;
+        """
+    )
+    cur.execute(
+        """
+        UPDATE project_tasks
+        SET title = LEFT(description, 120)
+        WHERE title IS NULL OR BTRIM(title) = '';
         """
     )
     cur.execute(
@@ -1277,6 +1293,7 @@ def create_project_task(payload: ProjectTaskCreateIn):
     task_type = (payload.type or "").strip().upper()
     owner_role = (payload.owner_role or "").strip().upper()
     status = (payload.status or "OPEN").strip().upper()
+    title = (payload.title or "").strip()
     description = (payload.description or "").strip()
 
     if task_type not in TASK_TYPES:
@@ -1285,6 +1302,8 @@ def create_project_task(payload: ProjectTaskCreateIn):
         raise HTTPException(status_code=400, detail="Invalid owner role")
     if status not in TASK_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
+    if not title:
+        raise HTTPException(status_code=400, detail="Title is required")
     if not description:
         raise HTTPException(status_code=400, detail="Description is required")
 
@@ -1305,11 +1324,11 @@ def create_project_task(payload: ProjectTaskCreateIn):
 
             cur.execute(
                 """
-                INSERT INTO project_tasks (project_id, type, owner_role, planned_date, status, description)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO project_tasks (project_id, type, owner_role, planned_date, status, title, description)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (payload.project_id, task_type, owner_role, payload.planned_date, status, description),
+                (payload.project_id, task_type, owner_role, payload.planned_date, status, title, description),
             )
             row = cur.fetchone()
         conn.commit()
@@ -1345,7 +1364,7 @@ def list_project_tasks(
             cur.execute(
                 f"""
                 SELECT t.id, t.project_id, p.project_code, p.project_name,
-                       t.type, t.owner_role, t.planned_date, t.status, t.description,
+                       t.type, t.owner_role, t.planned_date, t.status, t.title, t.description,
                        t.created_at, t.updated_at
                 FROM project_tasks t
                 JOIN projects p ON p.id = t.project_id
@@ -1365,9 +1384,10 @@ def list_project_tasks(
             "owner_role": r[5],
             "planned_date": to_date_iso(r[6]),
             "status": r[7],
-            "description": r[8],
-            "created_at": r[9].isoformat() if r[9] else None,
-            "updated_at": r[10].isoformat() if r[10] else None,
+            "title": r[8],
+            "description": r[9],
+            "created_at": r[10].isoformat() if r[10] else None,
+            "updated_at": r[11].isoformat() if r[11] else None,
         }
         for r in rows
     ]
@@ -1433,6 +1453,7 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
     task_type = (payload.type or "").strip().upper()
     owner_role = (payload.owner_role or "").strip().upper()
     status = (payload.status or "").strip().upper()
+    title = (payload.title or "").strip()
     description = (payload.description or "").strip()
 
     if task_type not in TASK_TYPES:
@@ -1441,6 +1462,8 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
         raise HTTPException(status_code=400, detail="Invalid owner role")
     if status not in TASK_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
+    if not title:
+        raise HTTPException(status_code=400, detail="Title is required")
     if not description:
         raise HTTPException(status_code=400, detail="Description is required")
 
@@ -1454,6 +1477,7 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
                     owner_role = %s,
                     planned_date = %s,
                     status = %s,
+                    title = %s,
                     description = %s,
                     updated_at = now()
                 FROM projects p
@@ -1462,7 +1486,7 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
                   AND COALESCE(p.is_historical, FALSE) = FALSE
                 RETURNING t.id
                 """,
-                (task_type, owner_role, payload.planned_date, status, description, task_id),
+                (task_type, owner_role, payload.planned_date, status, title, description, task_id),
             )
             row = cur.fetchone()
             if not row:

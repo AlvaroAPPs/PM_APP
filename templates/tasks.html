@@ -45,10 +45,8 @@
               <tr>
                 <th>Proyecto</th>
                 <th>Tipo</th>
-                <th>Responsable</th>
-                <th>Fecha prevista</th>
                 <th>Estado</th>
-                <th>Descripción</th>
+                <th>Título</th>
                 <th></th>
               </tr>
             </thead>
@@ -73,6 +71,10 @@
             <select id="projectSelect" class="form-select mt-2"></select>
           </div>
           <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Título</label>
+              <input id="taskTitle" class="form-control" placeholder="Título de la tarea" />
+            </div>
             <div class="col-md-6">
               <label class="form-label">Tipo</label>
               <select id="taskType" class="form-select">
@@ -113,6 +115,41 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
           <button id="saveTask" type="button" class="btn btn-dark">Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="taskDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Detalle de tarea</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <dl class="row mb-0">
+            <dt class="col-sm-3">Proyecto</dt>
+            <dd id="detailProject" class="col-sm-9">—</dd>
+
+            <dt class="col-sm-3">Tipo</dt>
+            <dd id="detailType" class="col-sm-9">—</dd>
+
+            <dt class="col-sm-3">Estado</dt>
+            <dd id="detailStatus" class="col-sm-9">—</dd>
+
+            <dt class="col-sm-3">Título</dt>
+            <dd id="detailTitle" class="col-sm-9">—</dd>
+
+            <dt class="col-sm-3">Responsable</dt>
+            <dd id="detailOwner" class="col-sm-9">—</dd>
+
+            <dt class="col-sm-3">Fecha prevista</dt>
+            <dd id="detailPlannedDate" class="col-sm-9">—</dd>
+
+            <dt class="col-sm-3">Descripción</dt>
+            <dd id="detailDescription" class="col-sm-9" style="white-space: pre-wrap;">—</dd>
+          </dl>
         </div>
       </div>
     </div>

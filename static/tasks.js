@@ -4,6 +4,7 @@ const $ = (id) => document.getElementById(id);
 let projectOptions = [];
 let lockedProject = false;
 let newTaskModal = null;
+let taskDetailModal = null;
 let editingTaskId = null;
 
 function fmtDate(v) {
@@ -71,6 +72,17 @@ function buildProjectDetailLink(projectCode) {
   return `/estado-proyecto?${params.toString()}`;
 }
 
+function openTaskDetail(task) {
+  $("detailProject").textContent = `${task.project_code || "—"} - ${task.project_name || "—"}`;
+  $("detailType").textContent = typeLabel(task.type);
+  $("detailStatus").textContent = statusLabel(task.status);
+  $("detailTitle").textContent = task.title || "—";
+  $("detailOwner").textContent = task.owner_role || "—";
+  $("detailPlannedDate").textContent = fmtDate(task.planned_date);
+  $("detailDescription").textContent = task.description || "—";
+  taskDetailModal.show();
+}
+
 async function searchProjects(query) {
   if (!query || query.trim().length < 1) return [];
   const res = await fetch(`${API}/projects/search?q=${encodeURIComponent(query.trim())}`);
@@ -96,6 +108,7 @@ function resetTaskForm() {
   $("taskModalTitle").textContent = "Nueva Tarea / PP";
   $("saveTask").textContent = "Guardar";
   $("taskFormError").textContent = "";
+  $("taskTitle").value = "";
   $("taskType").value = "TASK";
   $("ownerRole").value = "PM";
   $("plannedDate").value = "";
@@ -107,6 +120,7 @@ function fillTaskForm(task) {
   editingTaskId = task.id;
   $("taskModalTitle").textContent = "Editar Tarea / PP";
   $("saveTask").textContent = "Actualizar";
+  $("taskTitle").value = task.title || "";
   $("taskType").value = task.type || "TASK";
   $("ownerRole").value = task.owner_role || "PM";
   $("plannedDate").value = task.planned_date || "";
@@ -143,7 +157,7 @@ async function loadTasks() {
   body.innerHTML = "";
 
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="7" class="muted">No hay tareas.</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" class="muted">No hay tareas.</td></tr>';
     return;
   }
 
@@ -152,14 +166,18 @@ async function loadTasks() {
     tr.innerHTML = `
       <td><div>${row.project_name || "—"}</div><div class="text-muted small">${row.project_code || "—"}</div></td>
       <td>${typeLabel(row.type)}</td>
-      <td>${row.owner_role}</td>
-      <td>${fmtDate(row.planned_date)}</td>
       <td><span class="badge text-bg-light border">${statusLabel(row.status)}</span></td>
-      <td>${row.description || ""}</td>
+      <td>${row.title || ""}</td>
       <td class="text-end"></td>
     `;
 
     const actionsTd = tr.querySelector("td:last-child");
+
+    const detailBtn = document.createElement("button");
+    detailBtn.className = "btn btn-sm btn-outline-dark me-1";
+    detailBtn.textContent = "Detalle";
+    detailBtn.addEventListener("click", () => openTaskDetail(row));
+    actionsTd.appendChild(detailBtn);
 
     const linkBtn = document.createElement("a");
     const projectCode = (row.project_code || filters.projectCode || "").trim();
@@ -213,6 +231,7 @@ async function submitTask() {
   const projectId = Number($("projectSelect")?.value || 0);
   const payload = {
     project_id: projectId,
+    title: ($("taskTitle")?.value || "").trim(),
     type: $("taskType")?.value,
     owner_role: $("ownerRole")?.value,
     planned_date: $("plannedDate")?.value || null,
@@ -220,8 +239,8 @@ async function submitTask() {
     description: ($("taskDescription")?.value || "").trim(),
   };
 
-  if (!payload.project_id || !payload.type || !payload.status || !payload.description) {
-    $("taskFormError").textContent = "Proyecto, tipo, estado y descripción son obligatorios.";
+  if (!payload.project_id || !payload.title || !payload.type || !payload.status || !payload.description) {
+    $("taskFormError").textContent = "Proyecto, título, tipo, estado y descripción son obligatorios.";
     return;
   }
 
@@ -229,6 +248,7 @@ async function submitTask() {
   const method = editingTaskId ? "PUT" : "POST";
   const updatePayload = editingTaskId
     ? {
+        title: payload.title,
         type: payload.type,
         owner_role: payload.owner_role,
         planned_date: payload.planned_date,
@@ -294,6 +314,7 @@ async function setupProjectPicker() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   newTaskModal = new bootstrap.Modal($("newTaskModal"));
+  taskDetailModal = new bootstrap.Modal($("taskDetailModal"));
   await setupProjectPicker();
   await setupTasksProjectFilter();
   await loadTasks();
