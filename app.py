@@ -367,26 +367,23 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
 
     content: list[str] = []
     _pdf_rect(content, 20, 20, 555, 802, fill_rgb=(0.96, 0.97, 0.98), stroke_rgb=(0.93, 0.94, 0.97), line_width=0.5)
-    _pdf_rect(content, 32, 772, 531, 40, fill_rgb=(0.11, 0.24, 0.43), stroke_rgb=(0.11, 0.24, 0.43))
-    _pdf_text(content, 42, 786, f"Proyecto: {project.get('project_name') or 'N/A'}", size=11, bold=True)
-    _pdf_text(content, 42, 774, f"Semana: {snapshot_label}", size=9)
-    _pdf_text(content, 430, 774, f"Codigo: {project.get('project_code') or 'N/A'}", size=8)
 
     _pdf_rect(content, 32, 686, 531, 78, fill_rgb=(0.89, 0.90, 0.92), stroke_rgb=(0.80, 0.83, 0.88))
-    _pdf_text(content, 40, 752, "Cabecera del proyecto", size=10, bold=True)
-    _pdf_text(content, 40, 736, f"{project.get('project_name') or 'N/A'}", size=13, bold=True)
+    _pdf_text(content, 40, 744, f"Proyecto: {project.get('project_name') or 'N/A'}", size=13, bold=True)
     header_lines = [
+        f"Semana: {snapshot_label}",
         f"Codigo / ID: {project.get('project_code') or 'N/A'}",
         f"Cliente: {project.get('client') or 'N/A'}",
         f"Equipo: {project.get('team') or 'N/A'}",
         f"Project Manager: {project.get('project_manager') or 'N/A'}",
         f"Consultor: {project.get('consultant') or 'N/A'}",
     ]
-    _pdf_text(content, 40, 719, header_lines[0], size=8)
-    _pdf_text(content, 200, 719, header_lines[1], size=8)
-    _pdf_text(content, 40, 704, header_lines[2], size=8, bold=True)
-    _pdf_text(content, 200, 704, header_lines[3], size=8, bold=True)
-    _pdf_text(content, 390, 704, header_lines[4], size=8, bold=True)
+    _pdf_text(content, 40, 727, header_lines[0], size=8)
+    _pdf_text(content, 200, 727, header_lines[1], size=8)
+    _pdf_text(content, 390, 727, header_lines[2], size=8)
+    _pdf_text(content, 40, 711, header_lines[3], size=8, bold=True)
+    _pdf_text(content, 220, 711, header_lines[4], size=8, bold=True)
+    _pdf_text(content, 420, 711, header_lines[5], size=8, bold=True)
 
     _pdf_text(content, 32, 674, "HITOS", size=10, bold=True)
     latest_phase = phases[-1] if phases else {}
