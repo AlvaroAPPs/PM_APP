@@ -2,6 +2,7 @@ import io
 import os
 import tempfile
 import urllib.parse
+from datetime import date
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -919,6 +920,11 @@ def tasks_view(request: Request):
     return templates.TemplateResponse("tasks.html", {"request": request})
 
 
+@app.get("/calendar", response_class=HTMLResponse)
+def calendar_view(request: Request):
+    return templates.TemplateResponse("calendar.html", {"request": request})
+
+
 @app.get("/historicals", response_class=HTMLResponse)
 def historicals(request: Request, q: str = Query("")):
     query = (q or "").strip()
@@ -1340,6 +1346,8 @@ def list_project_tasks(
     project_id: int | None = None,
     include_closed: bool = False,
     task_type: str | None = Query(default=None, alias="type"),
+    start_date: str | None = None,
+    end_date: str | None = None,
 ):
     where = ["COALESCE(p.is_historical, FALSE) = FALSE"]
     params: list[object] = []
@@ -1356,6 +1364,27 @@ def list_project_tasks(
 
     if not include_closed:
         where.append("t.status <> 'CLOSED'")
+
+    parsed_start: date | None = None
+    parsed_end: date | None = None
+    if start_date:
+        try:
+            parsed_start = date.fromisoformat(start_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid start_date")
+    if end_date:
+        try:
+            parsed_end = date.fromisoformat(end_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid end_date")
+    if parsed_start and parsed_end and parsed_end < parsed_start:
+        raise HTTPException(status_code=400, detail="Invalid date range")
+    if parsed_start:
+        where.append("t.planned_date >= %s")
+        params.append(parsed_start)
+    if parsed_end:
+        where.append("t.planned_date <= %s")
+        params.append(parsed_end)
 
     where_sql = " AND ".join(where)
     with psycopg.connect(DB_DSN) as conn:
