@@ -96,9 +96,11 @@ function setActionsEnabled(isEnabled) {
   const actTasks = $("actTasks");
   const actCharts = $("actCharts");
   const actReport = $("actReport");
+  const btnExportPdf = $("btnExportPdf");
   if (actTasks) actTasks.disabled = !isEnabled;
   if (actCharts) actCharts.disabled = !isEnabled;
   if (actReport) actReport.disabled = !isEnabled;
+  if (btnExportPdf) btnExportPdf.disabled = !isEnabled;
 }
 
 function resetUI() {
@@ -435,6 +437,14 @@ function onLoadClick() {
   loadProject(code);
 }
 
+function exportSnapshotPdf() {
+  if (!currentProjectCode) {
+    alert("Carga un proyecto antes de exportar.");
+    return;
+  }
+  window.location.href = `${API}/projects/${encodeURIComponent(currentProjectCode)}/report.pdf`;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   configureTopBackButton();
   resetUI(); // todo en blanco al entrar
@@ -509,7 +519,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const actReport = $("actReport");
   if (actReport) {
     actReport.addEventListener("click", () => {
-      alert("Pendiente: Generar informe (siguiente paso).");
+      exportSnapshotPdf();
+    });
+  }
+
+  const btnExportPdf = $("btnExportPdf");
+  if (btnExportPdf) {
+    btnExportPdf.addEventListener("click", () => {
+      exportSnapshotPdf();
     });
   }
 

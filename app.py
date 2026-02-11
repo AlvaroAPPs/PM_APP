@@ -3,6 +3,7 @@ import os
 import tempfile
 import urllib.parse
 from datetime import date
+import re
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -101,6 +102,183 @@ def to_date_iso(value: object) -> str | None:
     if value is None:
         return None
     return value.isoformat()
+
+
+def _pdf_escape(value: object) -> str:
+    text = "" if value is None else str(value)
+    text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    return re.sub(r"[^\x20-\x7E]", "?", text)
+
+
+def _pdf_line_chart(stream: list[str], x: float, y: float, w: float, h: float, values: list[float | None], title: str) -> None:
+    stream.append("0.85 0.87 0.91 RG 0.6 w")
+    stream.append(f"{x:.2f} {y:.2f} {w:.2f} {h:.2f} re S")
+    stream.append("BT /F1 8 Tf 0 0 0 rg")
+    stream.append(f"1 0 0 1 {x + 4:.2f} {y + h - 12:.2f} Tm ({_pdf_escape(title)}) Tj")
+    stream.append("ET")
+    numeric = [v for v in values if v is not None]
+    if len(numeric) < 2:
+        return
+    vmin = min(numeric)
+    vmax = max(numeric)
+    if vmin == vmax:
+        vmin -= 1
+        vmax += 1
+    inner_left = x + 6
+    inner_bottom = y + 6
+    inner_w = w - 12
+    inner_h = h - 20
+    points: list[tuple[float, float]] = []
+    for idx, value in enumerate(values):
+        if value is None:
+            continue
+        px = inner_left + (inner_w * idx / max(1, len(values) - 1))
+        py = inner_bottom + ((value - vmin) / (vmax - vmin)) * inner_h
+        points.append((px, py))
+    if len(points) < 2:
+        return
+    stream.append("0.20 0.46 0.80 RG 1.2 w")
+    p0x, p0y = points[0]
+    stream.append(f"{p0x:.2f} {p0y:.2f} m")
+    for px, py in points[1:]:
+        stream.append(f"{px:.2f} {py:.2f} l")
+    stream.append("S")
+
+
+def build_snapshot_report_pdf(payload: dict) -> bytes:
+    project = payload["project"]
+    latest = payload["latest"]
+    weekly = payload["weekly"]
+    phases = payload["phases"]
+
+    snapshot_label = f"{latest.get('snapshot_year')}-W{int(latest.get('snapshot_week') or 0):02d}"
+    ordered_total = latest.get("ordered_total")
+    if ordered_total is None and (latest.get("ordered_n") is not None or latest.get("ordered_e") is not None):
+        ordered_total = float(latest.get("ordered_n") or 0) + float(latest.get("ordered_e") or 0)
+    progress = to_float(latest.get("progress_w"))
+    real_hours = to_float(latest.get("real_hours"))
+    theoretical = to_float(latest.get("horas_teoricas"))
+    deviation = to_float(latest.get("desviacion_pct"))
+    if theoretical is None and ordered_total is not None and progress is not None:
+        theoretical = float(ordered_total) * (progress / 100.0)
+    if deviation is None and theoretical not in (None, 0) and real_hours is not None:
+        deviation = ((real_hours - theoretical) / theoretical) * 100.0
+
+    def fmt_num(val: float | None) -> str:
+        return "N/A" if val is None else f"{val:.2f}"
+
+    content: list[str] = []
+    y = 810
+    content.extend([
+        "BT /F2 16 Tf 0 0 0 rg",
+        f"1 0 0 1 40 {y} Tm (Reporte Snapshot Proyecto) Tj",
+        "ET",
+    ])
+    y -= 22
+    content.extend([
+        "BT /F1 10 Tf 0 0 0 rg",
+        f"1 0 0 1 40 {y} Tm (Cabecera del proyecto) Tj",
+        "ET",
+    ])
+    y -= 14
+    header_lines = [
+        f"Proyecto: {project.get('project_name')}",
+        f"Codigo/ID: {project.get('project_code')}",
+        f"Cliente: {project.get('client')}",
+        f"Equipo: {project.get('team')}",
+        f"Project Manager: {project.get('project_manager')}",
+        f"Consultor: {project.get('consultant')}",
+        f"Snapshot: {snapshot_label}",
+    ]
+    for line in header_lines:
+        content.extend(["BT /F1 9 Tf", f"1 0 0 1 40 {y} Tm ({_pdf_escape(line)}) Tj", "ET"])
+        y -= 12
+
+    y -= 4
+    content.extend(["BT /F1 10 Tf", f"1 0 0 1 40 {y} Tm (Fechas y KPIs) Tj", "ET"])
+    y -= 14
+    latest_phase = phases[-1] if phases else {}
+    for key, label in PHASES_INFO:
+        phase_value = latest_phase.get(key) or "N/A"
+        phase_line = f"{label}: {phase_value}"
+        content.extend(["BT /F1 9 Tf", f"1 0 0 1 40 {y} Tm ({_pdf_escape(phase_line)}) Tj", "ET"])
+        y -= 12
+    kpi_lines = [
+        f"Avance %: {fmt_num(progress)}",
+        f"Horas proyecto: {fmt_num(to_float(ordered_total))}",
+        f"Horas teoricas: {fmt_num(theoretical)}",
+        f"Horas reales: {fmt_num(real_hours)}",
+        f"Desviacion %: {fmt_num(deviation)}",
+    ]
+    for line in kpi_lines:
+        content.extend(["BT /F1 9 Tf", f"1 0 0 1 300 {y} Tm ({_pdf_escape(line)}) Tj", "ET"])
+        y -= 12
+
+    y -= 4
+    comment = normalize_comment(payload.get("comment")) or ""
+    content.extend(["BT /F1 10 Tf", f"1 0 0 1 40 {y} Tm (Comentario) Tj", "ET"])
+    y -= 12
+    for line in (comment.splitlines() or ["N/A"])[:4]:
+        content.extend(["BT /F1 9 Tf", f"1 0 0 1 40 {y} Tm ({_pdf_escape(line)}) Tj", "ET"])
+        y -= 11
+
+    y -= 4
+    content.extend(["BT /F1 10 Tf", f"1 0 0 1 40 {y} Tm (Charts e indicadores) Tj", "ET"])
+    y -= 14
+    indicators = payload.get("indicators") or {}
+    indicator_text = (
+        f"Tres indicadores: productividad={indicators.get('productivity')}, "
+        f"desviacion={indicators.get('deviation')}, fases={indicators.get('phase')}"
+    )
+    content.extend(["BT /F1 9 Tf", f"1 0 0 1 40 {y} Tm ({_pdf_escape(indicator_text)}) Tj", "ET"])
+    y -= 10
+
+    progress_series = [to_float(item.get("progress_w")) for item in weekly]
+    deviation_series = [to_float(item.get("desviacion_pct")) for item in weekly]
+    real_series = [to_float(item.get("real_hours")) for item in weekly]
+    theor_series = [to_float(item.get("horas_teoricas")) for item in weekly]
+    _pdf_line_chart(content, 40, y - 95, 250, 90, progress_series, "Grafica Progreso")
+    _pdf_line_chart(content, 310, y - 95, 250, 90, deviation_series, "Grafica Desviacion")
+    _pdf_line_chart(content, 40, y - 195, 250, 90, real_series, "Grafica Horas reales")
+    compare_values = []
+    for rv, tv in zip(real_series, theor_series):
+        compare_values.append((rv or 0) - (tv or 0) if rv is not None and tv is not None else None)
+    _pdf_line_chart(content, 310, y - 195, 250, 90, compare_values, "Grafica Horas reales vs Teoricas")
+    cumulative = []
+    running = 0.0
+    for val in progress_series:
+        if val is None:
+            cumulative.append(None)
+            continue
+        running += val
+        cumulative.append(running)
+    _pdf_line_chart(content, 40, y - 295, 520, 90, cumulative, "Grafica S con proyeccion")
+
+    stream = "\n".join(content).encode("latin-1", errors="replace")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
+        f"<< /Length {len(stream)} >>\nstream\n".encode("ascii") + stream + b"\nendstream",
+    ]
+    pdf = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for idx, obj in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{idx} 0 obj\n".encode("ascii"))
+        pdf.extend(obj)
+        pdf.extend(b"\nendobj\n")
+    xref_pos = len(pdf)
+    pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    pdf.extend(b"0000000000 65535 f \n")
+    for off in offsets[1:]:
+        pdf.extend(f"{off:010d} 00000 n \n".encode("ascii"))
+    pdf.extend(
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n".encode("ascii")
+    )
+    return bytes(pdf)
 
 
 def fetch_deviations_results(
@@ -1292,6 +1470,137 @@ def project_details(project_code: str):
         "project_comment": normalize_comment(project_comment),
         "excel_comments": normalize_comment(excel_comments),
     }
+
+
+@app.get("/projects/{project_code}/report.pdf")
+def project_snapshot_pdf(project_code: str):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_details_columns(cur)
+            cur.execute(
+                """
+                SELECT id, project_code, project_name, client, team, project_manager, consultant
+                FROM projects
+                WHERE project_code = %s
+                  AND COALESCE(is_historical, FALSE) = FALSE
+                """,
+                (project_code,),
+            )
+            project_row = cur.fetchone()
+            if not project_row:
+                raise HTTPException(status_code=404, detail="Project not found")
+            project_id = project_row[0]
+
+            cur.execute(
+                """
+                SELECT *
+                FROM project_snapshot
+                WHERE project_id = %s
+                ORDER BY snapshot_year DESC, snapshot_week DESC, snapshot_at DESC
+                LIMIT 1
+                """,
+                (project_id,),
+            )
+            latest = cur.fetchone()
+            if not latest:
+                raise HTTPException(status_code=404, detail="No snapshots for project")
+            latest_cols = [desc[0] for desc in cur.description]
+            latest_dict = dict(zip(latest_cols, latest))
+
+            cur.execute(
+                """
+                SELECT snapshot_year, snapshot_week,
+                       progress_w, desviacion_pct,
+                       real_hours, horas_teoricas
+                FROM project_snapshot
+                WHERE project_id = %s
+                ORDER BY snapshot_year ASC, snapshot_week ASC
+                """,
+                (project_id,),
+            )
+            weekly_rows = cur.fetchall()
+
+            cur.execute(
+                """
+                SELECT snapshot_year, snapshot_week,
+                       date_kickoff, date_design, date_validation,
+                       date_golive, date_reception, date_end
+                FROM project_snapshot
+                WHERE project_id = %s
+                ORDER BY snapshot_year ASC, snapshot_week ASC
+                """,
+                (project_id,),
+            )
+            phase_rows = cur.fetchall()
+
+            cur.execute(
+                """
+                SELECT comments
+                FROM project_snapshot
+                WHERE project_id = %s
+                  AND comments IS NOT NULL
+                  AND comments <> ''
+                ORDER BY snapshot_year DESC, snapshot_week DESC, snapshot_at DESC
+                LIMIT 1
+                """,
+                (project_id,),
+            )
+            comment_row = cur.fetchone()
+
+    weekly = [
+        {
+            "year": r[0],
+            "week": r[1],
+            "progress_w": to_float(r[2]),
+            "desviacion_pct": to_float(r[3]),
+            "real_hours": to_float(r[4]),
+            "horas_teoricas": to_float(r[5]),
+        }
+        for r in weekly_rows
+    ]
+    phases_history = [
+        {
+            "year": r[0],
+            "week": r[1],
+            "date_kickoff": to_date_iso(r[2]),
+            "date_design": to_date_iso(r[3]),
+            "date_validation": to_date_iso(r[4]),
+            "date_golive": to_date_iso(r[5]),
+            "date_reception": to_date_iso(r[6]),
+            "date_end": to_date_iso(r[7]),
+        }
+        for r in phase_rows
+    ]
+
+    project = {
+        "id": project_row[0],
+        "project_code": project_row[1],
+        "project_name": project_row[2],
+        "client": project_row[3],
+        "team": project_row[4],
+        "project_manager": project_row[5],
+        "consultant": project_row[6],
+    }
+    comment_text = normalize_comment(comment_row[0]) if comment_row else normalize_comment(latest_dict.get("comments"))
+    payload = {
+        "project": project,
+        "latest": latest_dict,
+        "weekly": weekly,
+        "phases": phases_history,
+        "comment": comment_text,
+        "indicators": {
+            "productivity": compute_productivity_indicator(weekly),
+            "deviation": compute_deviation_indicator(weekly),
+            "phase": compute_phase_indicator(phases_history),
+        },
+    }
+    pdf_bytes = build_snapshot_report_pdf(payload)
+    filename = f"snapshot_{project_code}_{latest_dict.get('snapshot_year')}_W{int(latest_dict.get('snapshot_week') or 0):02d}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.post("/project-tasks")
