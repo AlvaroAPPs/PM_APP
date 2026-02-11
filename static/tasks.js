@@ -53,15 +53,39 @@ function addSubtaskRow(text = "", done = false) {
   if (!container) return;
   const row = document.createElement("div");
   row.className = "input-group input-group-sm";
-  row.innerHTML = `
-    <span class="input-group-text">
-      <input class="form-check-input mt-0 subtaskDone" type="checkbox" ${done ? "checked" : ""}>
-    </span>
-    <input type="text" class="form-control subtaskText" placeholder="Subtarea..." value="${text.replace(/"/g, "&quot;")}">
-    <button type="button" class="btn btn-outline-danger subtaskRemove">Quitar</button>
-  `;
-  row.querySelector(".subtaskRemove")?.addEventListener("click", () => row.remove());
+
+  const checkWrapper = document.createElement("span");
+  checkWrapper.className = "input-group-text";
+  const check = document.createElement("input");
+  check.className = "form-check-input mt-0 subtaskDone";
+  check.type = "checkbox";
+  check.checked = !!done;
+  checkWrapper.appendChild(check);
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "form-control subtaskText";
+  input.placeholder = "Escribe la subtarea...";
+  input.value = String(text || "");
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "btn btn-outline-danger subtaskRemove";
+  removeBtn.textContent = "Quitar";
+  removeBtn.addEventListener("click", () => row.remove());
+
+  row.appendChild(checkWrapper);
+  row.appendChild(input);
+  row.appendChild(removeBtn);
   container.appendChild(row);
+}
+
+function ensureSubtasksInitialized() {
+  const container = $("subtasksContainer");
+  if (!container) return;
+  if (!container.querySelector(".subtaskText")) {
+    addSubtaskRow();
+  }
 }
 
 function readSubtasksFromForm() {
@@ -396,11 +420,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   $("showClosed")?.addEventListener("change", loadTasks);
   $("saveTask")?.addEventListener("click", submitTask);
-  $("addSubtaskRow")?.addEventListener("click", () => addSubtaskRow());
+  $("addSubtaskRow")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    addSubtaskRow();
+  });
   $("openNewTaskModal")?.addEventListener("click", () => {
     resetTaskForm();
     newTaskModal.show();
   });
+  $("newTaskModal")?.addEventListener("shown.bs.modal", ensureSubtasksInitialized);
   $("newTaskModal")?.addEventListener("hidden.bs.modal", resetTaskForm);
   $("goBackBtn")?.addEventListener("click", () => window.history.back());
 
