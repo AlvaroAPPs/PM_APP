@@ -187,7 +187,8 @@ function buildDayCell(day, tasksByDay, outsideMonth) {
   for (const task of visible) {
     const chip = document.createElement("button");
     chip.type = "button";
-    chip.className = `task-chip ${task.type === "PP" ? "task-chip-pp" : "task-chip-task"}`;
+    const chipClass = task.status === "CLOSED" ? "task-chip-closed" : (task.type === "PP" ? "task-chip-pp" : "task-chip-task");
+    chip.className = `task-chip ${chipClass}`;
     chip.textContent = task.title || "(Sin título)";
     chip.title = `${typeLabel(task.type)} · ${task.project_code || "—"}`;
     chip.addEventListener("click", (event) => {
