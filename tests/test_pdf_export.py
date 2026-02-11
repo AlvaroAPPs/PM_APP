@@ -91,6 +91,21 @@ class FakeConn:
 
 
 class PdfExportTests(unittest.TestCase):
+    def test_ensure_general_internal_project_upsert(self):
+        statements = []
+
+        class CaptureCursor:
+            def execute(self, query, params=None):
+                statements.append((" ".join(query.split()), params))
+
+        cur = CaptureCursor()
+        app.ensure_general_internal_project(cur)
+        self.assertEqual(len(statements), 1)
+        sql, params = statements[0]
+        self.assertIn("INSERT INTO projects", sql)
+        self.assertEqual(params[0], app.GENERAL_INTERNAL_PROJECT_CODE)
+        self.assertEqual(params[1], app.GENERAL_INTERNAL_PROJECT_NAME)
+
     def test_build_snapshot_report_pdf_contains_markers(self):
         payload = {
             "project": {

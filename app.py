@@ -34,6 +34,7 @@ def startup_init() -> None:
         with conn.cursor() as cur:
             ensure_historical_storage(cur)
             ensure_project_tasks_storage(cur)
+            ensure_general_internal_project(cur)
         conn.commit()
 
 PHASES = ("design", "development", "pem", "hypercare")
@@ -57,6 +58,8 @@ class ProjectCommentIn(BaseModel):
 TASK_TYPES = {"TASK", "PP"}
 TASK_OWNER_ROLES = {"PM", "CONSULTORIA", "TECH", "COMERCIAL", "CLIENTE"}
 TASK_STATUSES = {"OPEN", "IN_PROGRESS", "PAUSED", "CLOSED"}
+GENERAL_INTERNAL_PROJECT_CODE = "AMPLIACIONES_VARIOS"
+GENERAL_INTERNAL_PROJECT_NAME = "Ampliaciones Varios"
 
 
 class ProjectTaskCreateIn(BaseModel):
@@ -868,6 +871,29 @@ def ensure_project_tasks_storage(cur: psycopg.Cursor) -> None:
         CREATE INDEX IF NOT EXISTS idx_project_tasks_project_status
         ON project_tasks (project_id, status);
         """
+    )
+
+
+def ensure_general_internal_project(cur: psycopg.Cursor) -> None:
+    cur.execute(
+        """
+        INSERT INTO projects (project_code, project_name, team, project_manager, consultant, status, is_historical)
+        VALUES (%s, %s, %s, %s, %s, %s, FALSE)
+        ON CONFLICT (project_code)
+        DO UPDATE SET
+            project_name = EXCLUDED.project_name,
+            team = EXCLUDED.team,
+            status = EXCLUDED.status,
+            is_historical = FALSE
+        """,
+        (
+            GENERAL_INTERNAL_PROJECT_CODE,
+            GENERAL_INTERNAL_PROJECT_NAME,
+            "AMPLIACIONES",
+            "INTERNO",
+            "INTERNO",
+            "ACTIVE",
+        ),
     )
 
 
