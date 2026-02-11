@@ -214,6 +214,75 @@ def _pdf_multi_line_chart(
         stream.append("S")
 
 
+def _pdf_grouped_bar_chart(
+    stream: list[str],
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    title: str,
+    week_labels: list[str],
+    series: list[tuple[str, tuple[float, float, float], list[float | None]]],
+) -> None:
+    _pdf_rect(stream, x, y, w, h, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.86, 0.88, 0.92), line_width=0.8)
+    _pdf_text(stream, x + 8, y + h - 14, title, size=9, bold=True)
+
+    chart_x = x + 28
+    chart_y = y + 18
+    chart_w = w - 42
+    chart_h = h - 42
+
+    numeric = [value for _name, _color, values in series for value in values if value is not None]
+    if len(numeric) < 1:
+        _pdf_text(stream, x + 8, y + 8, "Sin datos", size=8)
+        return
+
+    vmin = min(0.0, min(numeric))
+    vmax = max(numeric)
+    if vmax <= vmin:
+        vmax = vmin + 1.0
+    pad = (vmax - vmin) * 0.1
+    vmax += pad
+
+    for idx in range(5):
+        gy = chart_y + (chart_h * idx / 4)
+        stream.append("0.93 0.94 0.96 RG 0.4 w")
+        stream.append(f"{chart_x:.2f} {gy:.2f} m {chart_x + chart_w:.2f} {gy:.2f} l S")
+
+    stream.append("0.60 0.64 0.72 RG 0.7 w")
+    stream.append(f"{chart_x:.2f} {chart_y:.2f} m {chart_x:.2f} {chart_y + chart_h:.2f} l S")
+    stream.append(f"{chart_x:.2f} {chart_y:.2f} m {chart_x + chart_w:.2f} {chart_y:.2f} l S")
+
+    group_count = max(1, len(week_labels))
+    group_w = chart_w / group_count
+    bar_w = max(4.0, min(14.0, group_w / max(2, len(series) + 1)))
+    legend_x = x + 8
+    legend_y = y + h - 26
+    for name, color, _values in series:
+        stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
+        stream.append(f"{legend_x:.2f} {legend_y:.2f} 8.00 3.00 re f")
+        _pdf_text(stream, legend_x + 11, legend_y - 1, name, size=7)
+        legend_x += 96
+
+    for group_idx, label in enumerate(week_labels):
+        gx = chart_x + group_w * group_idx
+        center = gx + (group_w / 2)
+        _pdf_text(stream, center - 12, chart_y - 12, label, size=7)
+        for series_idx, (_name, color, values) in enumerate(series):
+            if group_idx >= len(values) or values[group_idx] is None:
+                continue
+            value = values[group_idx] or 0
+            bar_h = ((value - vmin) / (vmax - vmin)) * chart_h
+            bx = gx + 4 + (series_idx * (bar_w + 2))
+            stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
+            stream.append(f"{bx:.2f} {chart_y:.2f} {bar_w:.2f} {bar_h:.2f} re f")
+
+    for tick in range(5):
+        value = vmin + ((vmax - vmin) * tick / 4)
+        py = chart_y + (chart_h * tick / 4)
+        _pdf_text(stream, x + 2, py - 2, f"{value:.0f}", size=7)
+
+
 def build_snapshot_report_pdf(payload: dict) -> bytes:
     project = payload["project"]
     latest = payload["latest"]
@@ -242,14 +311,15 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
     week_labels = [f"W{int(item.get('week') or 0):02d}" for item in weekly]
 
     content: list[str] = []
-    _pdf_rect(content, 20, 20, 555, 802, fill_rgb=(0.97, 0.98, 1.0), stroke_rgb=(0.93, 0.94, 0.97), line_width=0.5)
-    _pdf_rect(content, 32, 772, 531, 40, fill_rgb=(0.16, 0.20, 0.33), stroke_rgb=(0.16, 0.20, 0.33))
+    _pdf_rect(content, 20, 20, 555, 802, fill_rgb=(0.96, 0.97, 0.98), stroke_rgb=(0.93, 0.94, 0.97), line_width=0.5)
+    _pdf_rect(content, 32, 772, 531, 40, fill_rgb=(0.14, 0.16, 0.20), stroke_rgb=(0.14, 0.16, 0.20))
     _pdf_text(content, 42, 793, "INFORME SNAPSHOT", size=14, bold=True)
     _pdf_text(content, 42, 779, f"Proyecto: {project.get('project_name') or 'N/A'}", size=9)
     _pdf_text(content, 370, 779, f"Semana: {snapshot_label}", size=9)
 
-    _pdf_rect(content, 32, 686, 255, 78, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.84, 0.87, 0.92))
+    _pdf_rect(content, 32, 686, 531, 78, fill_rgb=(0.89, 0.90, 0.92), stroke_rgb=(0.80, 0.83, 0.88))
     _pdf_text(content, 40, 752, "Cabecera del proyecto", size=10, bold=True)
+    _pdf_text(content, 40, 736, f"{project.get('project_name') or 'N/A'}", size=13, bold=True)
     header_lines = [
         f"Codigo / ID: {project.get('project_code') or 'N/A'}",
         f"Cliente: {project.get('client') or 'N/A'}",
@@ -257,21 +327,22 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         f"Project Manager: {project.get('project_manager') or 'N/A'}",
         f"Consultor: {project.get('consultant') or 'N/A'}",
     ]
-    y = 739
-    for line in header_lines:
-        _pdf_text(content, 40, y, line, size=8)
-        y -= 11
+    _pdf_text(content, 40, 719, header_lines[0], size=8)
+    _pdf_text(content, 200, 719, header_lines[1], size=8)
+    _pdf_text(content, 40, 704, header_lines[2], size=8, bold=True)
+    _pdf_text(content, 200, 704, header_lines[3], size=8, bold=True)
+    _pdf_text(content, 390, 704, header_lines[4], size=8, bold=True)
 
-    _pdf_rect(content, 308, 686, 255, 78, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.84, 0.87, 0.92))
-    _pdf_text(content, 316, 752, "Fechas clave", size=10, bold=True)
+    _pdf_text(content, 32, 674, "Fechas y KPIs", size=10, bold=True)
     latest_phase = phases[-1] if phases else {}
-    y = 739
-    for key, label in PHASES_INFO:
+    for idx, (key, label) in enumerate(PHASES_INFO):
+        cx = 32 + (idx * 89)
+        _pdf_rect(content, cx, 628, 82, 40, fill_rgb=(0.89, 0.90, 0.92), stroke_rgb=(0.82, 0.84, 0.88))
         phase_value = latest_phase.get(key) or "N/A"
-        _pdf_text(content, 316, y, f"{label}: {phase_value}", size=8)
-        y -= 12
+        _pdf_text(content, cx + 6, 652, label, size=7, bold=True)
+        _pdf_text(content, cx + 6, 637, phase_value, size=8, bold=True)
 
-    _pdf_text(content, 32, 670, "KPIs del snapshot", size=10, bold=True)
+    _pdf_text(content, 32, 615, "KPIs del snapshot", size=10, bold=True)
     kpi_items = [
         ("Avance", fmt_pct(progress)),
         ("Horas proyecto", fmt_num(to_float(ordered_total))),
@@ -282,21 +353,21 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
     card_w = 101
     for idx, (label, value) in enumerate(kpi_items):
         cx = 32 + (idx * (card_w + 8))
-        _pdf_rect(content, cx, 620, card_w, 42, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.84, 0.87, 0.92))
-        _pdf_text(content, cx + 6, 646, label, size=7, bold=True)
-        _pdf_text(content, cx + 6, 631, value, size=9)
+        _pdf_rect(content, cx, 562, card_w, 48, fill_rgb=(0.89, 0.90, 0.92), stroke_rgb=(0.82, 0.84, 0.88))
+        _pdf_text(content, cx + 6, 592, label, size=7, bold=True)
+        _pdf_text(content, cx + 6, 572, value, size=14, bold=True)
 
     comment = normalize_comment(payload.get("comment")) or ""
-    _pdf_rect(content, 32, 560, 531, 54, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.84, 0.87, 0.92))
-    _pdf_text(content, 40, 602, "Comentario", size=10, bold=True)
+    _pdf_rect(content, 32, 498, 531, 54, fill_rgb=(0.89, 0.90, 0.92), stroke_rgb=(0.82, 0.84, 0.88))
+    _pdf_text(content, 40, 538, "Comentarios", size=10, bold=True)
     comment_lines = [line.strip() for line in comment.splitlines() if line.strip()] or ["N/A"]
-    y = 588
+    y = 522
     for line in comment_lines[:3]:
-        _pdf_text(content, 40, y, line[:118], size=8)
+        _pdf_text(content, 40, y, line[:118], size=9)
         y -= 12
 
     indicators = payload.get("indicators") or {}
-    _pdf_text(content, 32, 545, "Tres indicadores", size=10, bold=True)
+    _pdf_text(content, 32, 486, "Tres indicadores", size=10, bold=True)
     indicator_cards = [
         ("Productividad", indicators.get("productivity") or "N/A"),
         ("Desviacion", indicators.get("deviation") or "N/A"),
@@ -305,44 +376,55 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
     for idx, (label, value) in enumerate(indicator_cards):
         cx = 32 + (idx * 180)
         color = _pdf_status_color(value)
-        _pdf_rect(content, cx, 506, 171, 34, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.84, 0.87, 0.92))
-        _pdf_rect(content, cx + 6, 518, 8, 8, fill_rgb=color, stroke_rgb=color)
-        _pdf_text(content, cx + 20, 522, label, size=8, bold=True)
-        _pdf_text(content, cx + 20, 511, str(value).upper(), size=8)
+        _pdf_rect(content, cx, 448, 171, 34, fill_rgb=(0.89, 0.90, 0.92), stroke_rgb=(0.82, 0.84, 0.88))
+        _pdf_rect(content, cx + 6, 460, 8, 8, fill_rgb=color, stroke_rgb=color)
+        _pdf_text(content, cx + 20, 464, label, size=8, bold=True)
+        _pdf_text(content, cx + 20, 453, str(value).upper(), size=8)
 
     progress_series = [to_float(item.get("progress_w")) for item in weekly]
     deviation_series = [to_float(item.get("desviacion_pct")) for item in weekly]
     real_series = [to_float(item.get("real_hours")) for item in weekly]
     theor_series = [to_float(item.get("horas_teoricas")) for item in weekly]
+    _pdf_text(content, 32, 435, "Graficas", size=10, bold=True)
     _pdf_multi_line_chart(
         content,
         32,
-        344,
+        286,
         258,
-        150,
+        140,
         "Grafica Progreso",
         week_labels,
-        [("Avance", (0.19, 0.44, 0.80), progress_series)],
+        [("Avance", (0.15, 0.39, 0.92), progress_series)],
     )
     _pdf_multi_line_chart(
         content,
         305,
-        344,
+        286,
         258,
-        150,
+        140,
         "Grafica Desviacion",
         week_labels,
-        [("Desv %", (0.82, 0.23, 0.20), deviation_series)],
+        [("Desv %", (0.86, 0.15, 0.15), deviation_series)],
     )
     _pdf_multi_line_chart(
         content,
         32,
-        188,
-        531,
-        150,
+        140,
+        258,
+        140,
+        "Grafica Horas reales",
+        week_labels,
+        [("Horas reales", (0.05, 0.65, 0.91), real_series)],
+    )
+    _pdf_grouped_bar_chart(
+        content,
+        305,
+        140,
+        258,
+        140,
         "Grafica Horas reales vs Teoricas",
         week_labels,
-        [("Horas reales", (0.18, 0.55, 0.34), real_series), ("Horas teoricas", (0.17, 0.40, 0.77), theor_series)],
+        [("Horas reales", (0.11, 0.31, 0.85), real_series), ("Horas teoricas", (0.98, 0.45, 0.09), theor_series)],
     )
 
     cumulative = []
@@ -365,12 +447,12 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
     _pdf_multi_line_chart(
         content,
         32,
-        32,
+        26,
         531,
-        150,
+        108,
         "Grafica S con proyeccion",
         week_labels,
-        [("Acumulado", (0.28, 0.50, 0.78), cumulative), ("Proyeccion", (0.91, 0.49, 0.15), projected)],
+        [("Acumulado", (0.15, 0.39, 0.92), cumulative), ("Proyeccion", (0.98, 0.45, 0.09), projected)],
     )
 
     stream = "\n".join(content).encode("latin-1", errors="replace")
