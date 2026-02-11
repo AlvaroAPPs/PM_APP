@@ -6,6 +6,7 @@ let lockedProject = false;
 let newTaskModal = null;
 let taskDetailModal = null;
 let editingTaskId = null;
+const SUBTASKS_MARKER = "\n\n---SUBTASKS---\n";
 
 function fmtDate(v) {
   if (!v) return "—";
@@ -20,6 +21,56 @@ function statusLabel(status) {
 
 function typeLabel(type) {
   return type === "PP" ? "PP" : "Tarea";
+}
+
+function splitDescriptionAndSubtasks(rawDescription) {
+  const text = rawDescription || "";
+  const markerIdx = text.indexOf(SUBTASKS_MARKER);
+  if (markerIdx < 0) {
+    return { description: text, subtasks: [] };
+  }
+  const description = text.slice(0, markerIdx).trimEnd();
+  const tail = text.slice(markerIdx + SUBTASKS_MARKER.length);
+  const subtasks = tail
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("[ ] ") || line.startsWith("[x] ") || line.startsWith("[X] "))
+    .map((line) => ({ done: line[1].toLowerCase() === "x", text: line.slice(4).trim() }))
+    .filter((row) => row.text.length > 0);
+  return { description, subtasks };
+}
+
+function composeDescriptionWithSubtasks(description, subtasks) {
+  const cleanDescription = (description || "").trim();
+  const cleanSubtasks = (subtasks || []).filter((row) => row.text && row.text.trim());
+  if (!cleanSubtasks.length) return cleanDescription;
+  const lines = cleanSubtasks.map((row) => `[${row.done ? "x" : " "}] ${row.text.trim()}`);
+  return `${cleanDescription}${SUBTASKS_MARKER}${lines.join("\n")}`;
+}
+
+function addSubtaskRow(text = "", done = false) {
+  const container = $("subtasksContainer");
+  if (!container) return;
+  const row = document.createElement("div");
+  row.className = "input-group input-group-sm";
+  row.innerHTML = `
+    <span class="input-group-text">
+      <input class="form-check-input mt-0 subtaskDone" type="checkbox" ${done ? "checked" : ""}>
+    </span>
+    <input type="text" class="form-control subtaskText" placeholder="Subtarea..." value="${text.replace(/"/g, "&quot;")}">
+    <button type="button" class="btn btn-outline-danger subtaskRemove">Quitar</button>
+  `;
+  row.querySelector(".subtaskRemove")?.addEventListener("click", () => row.remove());
+  container.appendChild(row);
+}
+
+function readSubtasksFromForm() {
+  const container = $("subtasksContainer");
+  if (!container) return [];
+  return Array.from(container.querySelectorAll(".input-group")).map((row) => ({
+    done: !!row.querySelector(".subtaskDone")?.checked,
+    text: (row.querySelector(".subtaskText")?.value || "").trim(),
+  })).filter((row) => row.text);
 }
 
 function getListFilters() {
@@ -73,13 +124,24 @@ function buildProjectDetailLink(projectCode) {
 }
 
 function openTaskDetail(task) {
+  const parsed = splitDescriptionAndSubtasks(task.description || "");
   $("detailProject").textContent = `${task.project_code || "—"} - ${task.project_name || "—"}`;
   $("detailType").textContent = typeLabel(task.type);
   $("detailStatus").textContent = statusLabel(task.status);
   $("detailTitle").textContent = task.title || "—";
   $("detailOwner").textContent = task.owner_role || "—";
   $("detailPlannedDate").textContent = fmtDate(task.planned_date);
-  $("detailDescription").textContent = task.description || "—";
+  $("detailDescription").textContent = parsed.description || "—";
+  const detailSubtasks = $("detailSubtasks");
+  if (detailSubtasks) {
+    if (!parsed.subtasks.length) {
+      detailSubtasks.textContent = "—";
+    } else {
+      detailSubtasks.innerHTML = parsed.subtasks
+        .map((row) => `<div>${row.done ? "☑" : "☐"} ${row.text}</div>`)
+        .join("");
+    }
+  }
   taskDetailModal.show();
 }
 
@@ -114,9 +176,13 @@ function resetTaskForm() {
   $("plannedDate").value = "";
   $("taskStatus").value = "OPEN";
   $("taskDescription").value = "";
+  const subtasksContainer = $("subtasksContainer");
+  if (subtasksContainer) subtasksContainer.innerHTML = "";
+  addSubtaskRow();
 }
 
 function fillTaskForm(task) {
+  const parsed = splitDescriptionAndSubtasks(task.description || "");
   editingTaskId = task.id;
   $("taskModalTitle").textContent = "Editar Tarea / PP";
   $("saveTask").textContent = "Actualizar";
@@ -125,7 +191,14 @@ function fillTaskForm(task) {
   $("ownerRole").value = task.owner_role || "PM";
   $("plannedDate").value = task.planned_date || "";
   $("taskStatus").value = task.status || "OPEN";
-  $("taskDescription").value = task.description || "";
+  $("taskDescription").value = parsed.description || "";
+  const subtasksContainer = $("subtasksContainer");
+  if (subtasksContainer) subtasksContainer.innerHTML = "";
+  if (parsed.subtasks.length) {
+    parsed.subtasks.forEach((row) => addSubtaskRow(row.text, row.done));
+  } else {
+    addSubtaskRow();
+  }
   if ($("projectSelect")) {
     $("projectSelect").value = String(task.project_id);
   }
@@ -229,6 +302,8 @@ async function loadTasks() {
 
 async function submitTask() {
   const projectId = Number($("projectSelect")?.value || 0);
+  const taskDescription = ($("taskDescription")?.value || "").trim();
+  const subtasks = readSubtasksFromForm();
   const payload = {
     project_id: projectId,
     title: ($("taskTitle")?.value || "").trim(),
@@ -236,7 +311,7 @@ async function submitTask() {
     owner_role: $("ownerRole")?.value,
     planned_date: $("plannedDate")?.value || null,
     status: $("taskStatus")?.value || "OPEN",
-    description: ($("taskDescription")?.value || "").trim(),
+    description: composeDescriptionWithSubtasks(taskDescription, subtasks),
   };
 
   if (!payload.project_id || !payload.title || !payload.type || !payload.status || !payload.description) {
@@ -321,6 +396,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   $("showClosed")?.addEventListener("change", loadTasks);
   $("saveTask")?.addEventListener("click", submitTask);
+  $("addSubtaskRow")?.addEventListener("click", () => addSubtaskRow());
   $("openNewTaskModal")?.addEventListener("click", () => {
     resetTaskForm();
     newTaskModal.show();

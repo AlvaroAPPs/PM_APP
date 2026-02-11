@@ -109,6 +109,13 @@
               <label class="form-label">Descripción</label>
               <textarea id="taskDescription" class="form-control" rows="4"></textarea>
             </div>
+            <div class="col-12">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="form-label mb-0">Tareas (check list)</label>
+                <button id="addSubtaskRow" type="button" class="btn btn-sm btn-outline-secondary">Añadir fila</button>
+              </div>
+              <div id="subtasksContainer" class="d-flex flex-column gap-2"></div>
+            </div>
           </div>
           <div id="taskFormError" class="text-danger small mt-2"></div>
         </div>
@@ -149,6 +156,9 @@
 
             <dt class="col-sm-3">Descripción</dt>
             <dd id="detailDescription" class="col-sm-9" style="white-space: pre-wrap;">—</dd>
+
+            <dt class="col-sm-3">Tareas</dt>
+            <dd id="detailSubtasks" class="col-sm-9">—</dd>
           </dl>
         </div>
       </div>
