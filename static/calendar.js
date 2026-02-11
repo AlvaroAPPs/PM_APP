@@ -4,6 +4,7 @@ const $ = (id) => document.getElementById(id);
 let viewMode = "month";
 let anchorDate = new Date();
 let selectedDate = new Date();
+let calendarTasks = [];
 let weekTasks = [];
 let selectedTask = null;
 let detailModal = null;
@@ -54,18 +55,41 @@ function sameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-async function fetchWeekTasks() {
-  const start = startOfWeek(selectedDate);
-  const end = endOfWeek(selectedDate);
+function getVisibleCalendarRange() {
+  if (viewMode === "week") {
+    return { start: startOfWeek(anchorDate), end: endOfWeek(anchorDate) };
+  }
+  const first = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
+  const start = startOfWeek(first);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 41);
+  return { start, end };
+}
+
+async function fetchTasksInRange(start, end, includeClosed) {
   const params = new URLSearchParams();
   params.set("start_date", toIsoDate(start));
   params.set("end_date", toIsoDate(end));
-  params.set("include_closed", "false");
-
+  params.set("include_closed", includeClosed ? "true" : "false");
   const res = await fetch(`${API}/project-tasks?${params.toString()}`);
-  weekTasks = res.ok ? await res.json() : [];
+  return res.ok ? res.json() : [];
+}
+
+async function fetchWeekTasks() {
+  const start = startOfWeek(selectedDate);
+  const end = endOfWeek(selectedDate);
+  weekTasks = await fetchTasksInRange(start, end, false);
   renderWeekTasks();
+}
+
+async function fetchCalendarTasks() {
+  const { start, end } = getVisibleCalendarRange();
+  calendarTasks = await fetchTasksInRange(start, end, true);
   renderCalendar();
+}
+
+async function refreshCalendarData() {
+  await Promise.all([fetchCalendarTasks(), fetchWeekTasks()]);
 }
 
 function renderWeekTasks() {
@@ -115,7 +139,7 @@ function renderCalendar() {
     : `${fmtDate(weekStart)} - ${fmtDate(weekEnd)}`;
 
   const tasksByDay = new Map();
-  for (const task of weekTasks) {
+  for (const task of calendarTasks) {
     if (!task.planned_date) continue;
     const key = task.planned_date;
     if (!tasksByDay.has(key)) tasksByDay.set(key, []);
@@ -143,19 +167,54 @@ function renderCalendar() {
 }
 
 function buildDayCell(day, tasksByDay, outsideMonth) {
-  const cell = document.createElement("button");
-  cell.type = "button";
+  const cell = document.createElement("div");
   cell.className = "calendar-cell text-start";
   if (sameDay(day, selectedDate)) cell.classList.add("active");
   if (outsideMonth) cell.classList.add("opacity-50");
 
   const key = toIsoDate(day);
-  const count = (tasksByDay.get(key) || []).length;
-  cell.innerHTML = `<div class="num">${day.getDate()}</div>${count ? `<span class="task-chip">${count} tareas</span>` : ""}`;
-  cell.addEventListener("click", () => {
+  const tasks = tasksByDay.get(key) || [];
+
+  const num = document.createElement("div");
+  num.className = "num";
+  num.textContent = String(day.getDate());
+  cell.appendChild(num);
+
+  const list = document.createElement("div");
+  list.className = "mt-1 d-flex flex-column gap-1";
+
+  const visible = tasks.slice(0, 3);
+  for (const task of visible) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = `task-chip ${task.type === "PP" ? "task-chip-pp" : "task-chip-task"}`;
+    chip.textContent = task.title || "(Sin título)";
+    chip.title = `${typeLabel(task.type)} · ${task.project_code || "—"}`;
+    chip.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openTaskDetail(task);
+    });
+    list.appendChild(chip);
+  }
+
+  if (tasks.length > 3) {
+    const more = document.createElement("span");
+    more.className = "small muted";
+    more.textContent = `+${tasks.length - 3} más`;
+    list.appendChild(more);
+  }
+
+  cell.appendChild(list);
+  cell.addEventListener("click", async () => {
     selectedDate = new Date(day);
-    fetchWeekTasks();
+    if (viewMode === "month" && day.getMonth() !== anchorDate.getMonth()) {
+      anchorDate = new Date(day.getFullYear(), day.getMonth(), 1);
+      await fetchCalendarTasks();
+    }
+    await fetchWeekTasks();
+    renderCalendar();
   });
+
   return cell;
 }
 
@@ -210,7 +269,7 @@ async function saveEdit() {
 
   editModal.hide();
   detailModal.hide();
-  await fetchWeekTasks();
+  await refreshCalendarData();
 }
 
 async function closeTask() {
@@ -222,7 +281,7 @@ async function closeTask() {
   });
   if (!res.ok) return;
   detailModal.hide();
-  await fetchWeekTasks();
+  await refreshCalendarData();
 }
 
 function navigateTask() {
@@ -241,7 +300,7 @@ function goProject() {
   window.location.href = `/estado-proyecto?${params.toString()}`;
 }
 
-function moveRange(step) {
+async function moveRange(step) {
   if (viewMode === "month") {
     anchorDate = new Date(anchorDate.getFullYear(), anchorDate.getMonth() + step, 1);
     if (selectedDate.getMonth() !== anchorDate.getMonth() || selectedDate.getFullYear() !== anchorDate.getFullYear()) {
@@ -252,14 +311,14 @@ function moveRange(step) {
     anchorDate.setDate(anchorDate.getDate() + (7 * step));
     selectedDate = new Date(anchorDate);
   }
-  fetchWeekTasks();
+  await refreshCalendarData();
 }
 
-function setView(mode) {
+async function setView(mode) {
   viewMode = mode;
   $("viewMonth").className = mode === "month" ? "btn btn-dark" : "btn btn-outline-dark";
   $("viewWeek").className = mode === "week" ? "btn btn-dark" : "btn btn-outline-dark";
-  renderCalendar();
+  await refreshCalendarData();
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -270,10 +329,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("viewWeek")?.addEventListener("click", () => setView("week"));
   $("prevRange")?.addEventListener("click", () => moveRange(-1));
   $("nextRange")?.addEventListener("click", () => moveRange(1));
-  $("todayRange")?.addEventListener("click", () => {
+  $("todayRange")?.addEventListener("click", async () => {
     anchorDate = new Date();
     selectedDate = new Date();
-    fetchWeekTasks();
+    await refreshCalendarData();
   });
 
   $("detailEdit")?.addEventListener("click", openEditModal);
@@ -282,6 +341,5 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("detailNavigate")?.addEventListener("click", navigateTask);
   $("detailProjectBtn")?.addEventListener("click", goProject);
 
-  await fetchWeekTasks();
-  renderCalendar();
+  await refreshCalendarData();
 });
