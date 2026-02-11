@@ -145,7 +145,7 @@ class PdfExportTests(unittest.TestCase):
         self.assertEqual(res.headers.get("content-type"), "application/pdf")
         self.assertIn(b"Proyecto Demo", res.content)
         self.assertIn(b"2026-W06", res.content)
-        self.assertIn(b"Avance %", res.content)
+        self.assertIn(b"Avance", res.content)
 
 
 if __name__ == "__main__":

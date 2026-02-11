@@ -101,48 +101,117 @@ def to_float(value: object) -> float | None:
 def to_date_iso(value: object) -> str | None:
     if value is None:
         return None
+    if isinstance(value, str):
+        return value
     return value.isoformat()
 
 
 def _pdf_escape(value: object) -> str:
     text = "" if value is None else str(value)
     text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-    return re.sub(r"[^\x20-\x7E]", "?", text)
+    return re.sub(r"[\x00-\x1F]", " ", text)
 
 
-def _pdf_line_chart(stream: list[str], x: float, y: float, w: float, h: float, values: list[float | None], title: str) -> None:
-    stream.append("0.85 0.87 0.91 RG 0.6 w")
-    stream.append(f"{x:.2f} {y:.2f} {w:.2f} {h:.2f} re S")
-    stream.append("BT /F1 8 Tf 0 0 0 rg")
-    stream.append(f"1 0 0 1 {x + 4:.2f} {y + h - 12:.2f} Tm ({_pdf_escape(title)}) Tj")
-    stream.append("ET")
-    numeric = [v for v in values if v is not None]
+def _pdf_text(stream: list[str], x: float, y: float, text: str, size: int = 9, bold: bool = False) -> None:
+    font = "F2" if bold else "F1"
+    stream.extend(["BT", f"/{font} {size} Tf", "0 0 0 rg", f"1 0 0 1 {x:.2f} {y:.2f} Tm ({_pdf_escape(text)}) Tj", "ET"])
+
+
+def _pdf_rect(stream: list[str], x: float, y: float, w: float, h: float, fill_rgb: tuple[float, float, float] | None = None,
+              stroke_rgb: tuple[float, float, float] | None = (0.82, 0.85, 0.90), line_width: float = 0.7) -> None:
+    if fill_rgb is not None:
+        stream.append(f"{fill_rgb[0]:.2f} {fill_rgb[1]:.2f} {fill_rgb[2]:.2f} rg")
+    if stroke_rgb is not None:
+        stream.append(f"{stroke_rgb[0]:.2f} {stroke_rgb[1]:.2f} {stroke_rgb[2]:.2f} RG")
+        stream.append(f"{line_width:.2f} w")
+    stream.append(f"{x:.2f} {y:.2f} {w:.2f} {h:.2f} re {'B' if fill_rgb is not None and stroke_rgb is not None else 'f' if fill_rgb is not None else 'S'}")
+
+
+def _pdf_status_color(status: str) -> tuple[float, float, float]:
+    normalized = (status or "").lower()
+    if normalized == "red":
+        return (0.86, 0.26, 0.21)
+    if normalized in {"amber", "orange"}:
+        return (0.98, 0.66, 0.13)
+    return (0.27, 0.61, 0.30)
+
+
+def _pdf_multi_line_chart(
+    stream: list[str],
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    title: str,
+    week_labels: list[str],
+    series: list[tuple[str, tuple[float, float, float], list[float | None]]],
+) -> None:
+    _pdf_rect(stream, x, y, w, h, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.86, 0.88, 0.92), line_width=0.8)
+    _pdf_text(stream, x + 8, y + h - 14, title, size=9, bold=True)
+
+    chart_x = x + 28
+    chart_y = y + 18
+    chart_w = w - 42
+    chart_h = h - 42
+
+    numeric = [value for _name, _color, values in series for value in values if value is not None]
     if len(numeric) < 2:
+        _pdf_text(stream, x + 8, y + 8, "Sin datos", size=8)
         return
+
     vmin = min(numeric)
     vmax = max(numeric)
     if vmin == vmax:
-        vmin -= 1
-        vmax += 1
-    inner_left = x + 6
-    inner_bottom = y + 6
-    inner_w = w - 12
-    inner_h = h - 20
-    points: list[tuple[float, float]] = []
-    for idx, value in enumerate(values):
-        if value is None:
+        vmin -= 1.0
+        vmax += 1.0
+    pad = (vmax - vmin) * 0.1
+    vmin -= pad
+    vmax += pad
+
+    for idx in range(5):
+        gy = chart_y + (chart_h * idx / 4)
+        stream.append("0.93 0.94 0.96 RG 0.4 w")
+        stream.append(f"{chart_x:.2f} {gy:.2f} m {chart_x + chart_w:.2f} {gy:.2f} l S")
+
+    stream.append("0.60 0.64 0.72 RG 0.7 w")
+    stream.append(f"{chart_x:.2f} {chart_y:.2f} m {chart_x:.2f} {chart_y + chart_h:.2f} l S")
+    stream.append(f"{chart_x:.2f} {chart_y:.2f} m {chart_x + chart_w:.2f} {chart_y:.2f} l S")
+
+    for idx, label in enumerate(week_labels):
+        px = chart_x + (chart_w * idx / max(1, len(week_labels) - 1))
+        stream.append("0.80 0.82 0.88 RG 0.3 w")
+        stream.append(f"{px:.2f} {chart_y:.2f} m {px:.2f} {chart_y - 3:.2f} l S")
+        if idx % max(1, len(week_labels) // 6) == 0 or idx == len(week_labels) - 1:
+            _pdf_text(stream, px - 10, chart_y - 12, label, size=7)
+
+    for tick in range(5):
+        value = vmin + ((vmax - vmin) * tick / 4)
+        py = chart_y + (chart_h * tick / 4)
+        _pdf_text(stream, x + 2, py - 2, f"{value:.1f}", size=7)
+
+    legend_x = x + 8
+    legend_y = y + h - 26
+    for name, color, values in series:
+        stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
+        stream.append(f"{legend_x:.2f} {legend_y:.2f} 8.00 3.00 re f")
+        _pdf_text(stream, legend_x + 11, legend_y - 1, name, size=7)
+        legend_x += 92
+
+        points: list[tuple[float, float]] = []
+        for idx, value in enumerate(values):
+            if value is None:
+                continue
+            px = chart_x + (chart_w * idx / max(1, len(values) - 1))
+            py = chart_y + ((value - vmin) / (vmax - vmin)) * chart_h
+            points.append((px, py))
+        if len(points) < 2:
             continue
-        px = inner_left + (inner_w * idx / max(1, len(values) - 1))
-        py = inner_bottom + ((value - vmin) / (vmax - vmin)) * inner_h
-        points.append((px, py))
-    if len(points) < 2:
-        return
-    stream.append("0.20 0.46 0.80 RG 1.2 w")
-    p0x, p0y = points[0]
-    stream.append(f"{p0x:.2f} {p0y:.2f} m")
-    for px, py in points[1:]:
-        stream.append(f"{px:.2f} {py:.2f} l")
-    stream.append("S")
+        stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} RG 1.2 w")
+        p0x, p0y = points[0]
+        stream.append(f"{p0x:.2f} {p0y:.2f} m")
+        for px, py in points[1:]:
+            stream.append(f"{px:.2f} {py:.2f} l")
+        stream.append("S")
 
 
 def build_snapshot_report_pdf(payload: dict) -> bytes:
@@ -165,85 +234,117 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         deviation = ((real_hours - theoretical) / theoretical) * 100.0
 
     def fmt_num(val: float | None) -> str:
-        return "N/A" if val is None else f"{val:.2f}"
+        return "N/A" if val is None else f"{val:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+
+    def fmt_pct(val: float | None) -> str:
+        return "N/A" if val is None else f"{val:.2f} %"
+
+    week_labels = [f"W{int(item.get('week') or 0):02d}" for item in weekly]
 
     content: list[str] = []
-    y = 810
-    content.extend([
-        "BT /F2 16 Tf 0 0 0 rg",
-        f"1 0 0 1 40 {y} Tm (Reporte Snapshot Proyecto) Tj",
-        "ET",
-    ])
-    y -= 22
-    content.extend([
-        "BT /F1 10 Tf 0 0 0 rg",
-        f"1 0 0 1 40 {y} Tm (Cabecera del proyecto) Tj",
-        "ET",
-    ])
-    y -= 14
+    _pdf_rect(content, 20, 20, 555, 802, fill_rgb=(0.97, 0.98, 1.0), stroke_rgb=(0.93, 0.94, 0.97), line_width=0.5)
+    _pdf_rect(content, 32, 772, 531, 40, fill_rgb=(0.16, 0.20, 0.33), stroke_rgb=(0.16, 0.20, 0.33))
+    _pdf_text(content, 42, 793, "INFORME SNAPSHOT", size=14, bold=True)
+    _pdf_text(content, 42, 779, f"Proyecto: {project.get('project_name') or 'N/A'}", size=9)
+    _pdf_text(content, 370, 779, f"Semana: {snapshot_label}", size=9)
+
+    _pdf_rect(content, 32, 686, 255, 78, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.84, 0.87, 0.92))
+    _pdf_text(content, 40, 752, "Cabecera del proyecto", size=10, bold=True)
     header_lines = [
-        f"Proyecto: {project.get('project_name')}",
-        f"Codigo/ID: {project.get('project_code')}",
-        f"Cliente: {project.get('client')}",
-        f"Equipo: {project.get('team')}",
-        f"Project Manager: {project.get('project_manager')}",
-        f"Consultor: {project.get('consultant')}",
-        f"Snapshot: {snapshot_label}",
+        f"Codigo / ID: {project.get('project_code') or 'N/A'}",
+        f"Cliente: {project.get('client') or 'N/A'}",
+        f"Equipo: {project.get('team') or 'N/A'}",
+        f"Project Manager: {project.get('project_manager') or 'N/A'}",
+        f"Consultor: {project.get('consultant') or 'N/A'}",
     ]
+    y = 739
     for line in header_lines:
-        content.extend(["BT /F1 9 Tf", f"1 0 0 1 40 {y} Tm ({_pdf_escape(line)}) Tj", "ET"])
-        y -= 12
-
-    y -= 4
-    content.extend(["BT /F1 10 Tf", f"1 0 0 1 40 {y} Tm (Fechas y KPIs) Tj", "ET"])
-    y -= 14
-    latest_phase = phases[-1] if phases else {}
-    for key, label in PHASES_INFO:
-        phase_value = latest_phase.get(key) or "N/A"
-        phase_line = f"{label}: {phase_value}"
-        content.extend(["BT /F1 9 Tf", f"1 0 0 1 40 {y} Tm ({_pdf_escape(phase_line)}) Tj", "ET"])
-        y -= 12
-    kpi_lines = [
-        f"Avance %: {fmt_num(progress)}",
-        f"Horas proyecto: {fmt_num(to_float(ordered_total))}",
-        f"Horas teoricas: {fmt_num(theoretical)}",
-        f"Horas reales: {fmt_num(real_hours)}",
-        f"Desviacion %: {fmt_num(deviation)}",
-    ]
-    for line in kpi_lines:
-        content.extend(["BT /F1 9 Tf", f"1 0 0 1 300 {y} Tm ({_pdf_escape(line)}) Tj", "ET"])
-        y -= 12
-
-    y -= 4
-    comment = normalize_comment(payload.get("comment")) or ""
-    content.extend(["BT /F1 10 Tf", f"1 0 0 1 40 {y} Tm (Comentario) Tj", "ET"])
-    y -= 12
-    for line in (comment.splitlines() or ["N/A"])[:4]:
-        content.extend(["BT /F1 9 Tf", f"1 0 0 1 40 {y} Tm ({_pdf_escape(line)}) Tj", "ET"])
+        _pdf_text(content, 40, y, line, size=8)
         y -= 11
 
-    y -= 4
-    content.extend(["BT /F1 10 Tf", f"1 0 0 1 40 {y} Tm (Charts e indicadores) Tj", "ET"])
-    y -= 14
+    _pdf_rect(content, 308, 686, 255, 78, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.84, 0.87, 0.92))
+    _pdf_text(content, 316, 752, "Fechas clave", size=10, bold=True)
+    latest_phase = phases[-1] if phases else {}
+    y = 739
+    for key, label in PHASES_INFO:
+        phase_value = latest_phase.get(key) or "N/A"
+        _pdf_text(content, 316, y, f"{label}: {phase_value}", size=8)
+        y -= 12
+
+    _pdf_text(content, 32, 670, "KPIs del snapshot", size=10, bold=True)
+    kpi_items = [
+        ("Avance", fmt_pct(progress)),
+        ("Horas proyecto", fmt_num(to_float(ordered_total))),
+        ("Horas teoricas", fmt_num(theoretical)),
+        ("Horas reales", fmt_num(real_hours)),
+        ("Desviacion", fmt_pct(deviation)),
+    ]
+    card_w = 101
+    for idx, (label, value) in enumerate(kpi_items):
+        cx = 32 + (idx * (card_w + 8))
+        _pdf_rect(content, cx, 620, card_w, 42, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.84, 0.87, 0.92))
+        _pdf_text(content, cx + 6, 646, label, size=7, bold=True)
+        _pdf_text(content, cx + 6, 631, value, size=9)
+
+    comment = normalize_comment(payload.get("comment")) or ""
+    _pdf_rect(content, 32, 560, 531, 54, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.84, 0.87, 0.92))
+    _pdf_text(content, 40, 602, "Comentario", size=10, bold=True)
+    comment_lines = [line.strip() for line in comment.splitlines() if line.strip()] or ["N/A"]
+    y = 588
+    for line in comment_lines[:3]:
+        _pdf_text(content, 40, y, line[:118], size=8)
+        y -= 12
+
     indicators = payload.get("indicators") or {}
-    indicator_text = (
-        f"Tres indicadores: productividad={indicators.get('productivity')}, "
-        f"desviacion={indicators.get('deviation')}, fases={indicators.get('phase')}"
-    )
-    content.extend(["BT /F1 9 Tf", f"1 0 0 1 40 {y} Tm ({_pdf_escape(indicator_text)}) Tj", "ET"])
-    y -= 10
+    _pdf_text(content, 32, 545, "Tres indicadores", size=10, bold=True)
+    indicator_cards = [
+        ("Productividad", indicators.get("productivity") or "N/A"),
+        ("Desviacion", indicators.get("deviation") or "N/A"),
+        ("Fases", indicators.get("phase") or "N/A"),
+    ]
+    for idx, (label, value) in enumerate(indicator_cards):
+        cx = 32 + (idx * 180)
+        color = _pdf_status_color(value)
+        _pdf_rect(content, cx, 506, 171, 34, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.84, 0.87, 0.92))
+        _pdf_rect(content, cx + 6, 518, 8, 8, fill_rgb=color, stroke_rgb=color)
+        _pdf_text(content, cx + 20, 522, label, size=8, bold=True)
+        _pdf_text(content, cx + 20, 511, str(value).upper(), size=8)
 
     progress_series = [to_float(item.get("progress_w")) for item in weekly]
     deviation_series = [to_float(item.get("desviacion_pct")) for item in weekly]
     real_series = [to_float(item.get("real_hours")) for item in weekly]
     theor_series = [to_float(item.get("horas_teoricas")) for item in weekly]
-    _pdf_line_chart(content, 40, y - 95, 250, 90, progress_series, "Grafica Progreso")
-    _pdf_line_chart(content, 310, y - 95, 250, 90, deviation_series, "Grafica Desviacion")
-    _pdf_line_chart(content, 40, y - 195, 250, 90, real_series, "Grafica Horas reales")
-    compare_values = []
-    for rv, tv in zip(real_series, theor_series):
-        compare_values.append((rv or 0) - (tv or 0) if rv is not None and tv is not None else None)
-    _pdf_line_chart(content, 310, y - 195, 250, 90, compare_values, "Grafica Horas reales vs Teoricas")
+    _pdf_multi_line_chart(
+        content,
+        32,
+        344,
+        258,
+        150,
+        "Grafica Progreso",
+        week_labels,
+        [("Avance", (0.19, 0.44, 0.80), progress_series)],
+    )
+    _pdf_multi_line_chart(
+        content,
+        305,
+        344,
+        258,
+        150,
+        "Grafica Desviacion",
+        week_labels,
+        [("Desv %", (0.82, 0.23, 0.20), deviation_series)],
+    )
+    _pdf_multi_line_chart(
+        content,
+        32,
+        188,
+        531,
+        150,
+        "Grafica Horas reales vs Teoricas",
+        week_labels,
+        [("Horas reales", (0.18, 0.55, 0.34), real_series), ("Horas teoricas", (0.17, 0.40, 0.77), theor_series)],
+    )
+
     cumulative = []
     running = 0.0
     for val in progress_series:
@@ -252,7 +353,25 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
             continue
         running += val
         cumulative.append(running)
-    _pdf_line_chart(content, 40, y - 295, 520, 90, cumulative, "Grafica S con proyeccion")
+    projected = []
+    if cumulative:
+        projected = list(cumulative)
+        known_values = [v for v in cumulative if v is not None]
+        if len(known_values) >= 2:
+            slope = known_values[-1] - known_values[-2]
+            for idx in range(len(projected)):
+                if projected[idx] is None and idx > 0 and projected[idx - 1] is not None:
+                    projected[idx] = projected[idx - 1] + slope
+    _pdf_multi_line_chart(
+        content,
+        32,
+        32,
+        531,
+        150,
+        "Grafica S con proyeccion",
+        week_labels,
+        [("Acumulado", (0.28, 0.50, 0.78), cumulative), ("Proyeccion", (0.91, 0.49, 0.15), projected)],
+    )
 
     stream = "\n".join(content).encode("latin-1", errors="replace")
     objects = [
