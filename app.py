@@ -212,6 +212,15 @@ def _pdf_multi_line_chart(
         for px, py in points[1:]:
             stream.append(f"{px:.2f} {py:.2f} l")
         stream.append("S")
+        for px, py in points:
+            stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
+            stream.append(f"{px - 1.8:.2f} {py - 1.8:.2f} 3.60 3.60 re f")
+        for idx, value in enumerate(values):
+            if value is None:
+                continue
+            px = chart_x + (chart_w * idx / max(1, len(values) - 1))
+            py = chart_y + ((value - vmin) / (vmax - vmin)) * chart_h
+            _pdf_text(stream, px - 8, py + 4, f"{value:.1f}", size=6)
 
 
 def _pdf_grouped_bar_chart(
@@ -276,6 +285,7 @@ def _pdf_grouped_bar_chart(
             bx = gx + 4 + (series_idx * (bar_w + 2))
             stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
             stream.append(f"{bx:.2f} {chart_y:.2f} {bar_w:.2f} {bar_h:.2f} re f")
+            _pdf_text(stream, bx - 2, chart_y + bar_h + 3, f"{value:.0f}", size=6)
 
     for tick in range(5):
         value = vmin + ((vmax - vmin) * tick / 4)
@@ -308,14 +318,59 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
     def fmt_pct(val: float | None) -> str:
         return "N/A" if val is None else f"{val:.2f} %"
 
+    def add_week(year: int, week: int) -> tuple[int, int]:
+        next_week = week + 1
+        next_year = year
+        if next_week > 52:
+            next_week = 1
+            next_year += 1
+        return next_year, next_week
+
+    def compute_projection_meta() -> tuple[float | None, str]:
+        if not weekly:
+            return None, "N/A"
+        if ordered_total is None:
+            return None, "N/A"
+        latest_progress = progress_series[-1] if progress_series else None
+        latest_real = real_series[-1] if real_series else None
+        if latest_progress is None or latest_real is None:
+            return None, "N/A"
+        pending_percent = max(0.0, 100.0 - latest_progress)
+        estimated_close_hours = latest_real + (pending_percent / 100.0) * float(ordered_total)
+
+        if len(weekly) < 2:
+            return estimated_close_hours, "N/A"
+        progress_deltas: list[float] = []
+        for idx in range(1, len(progress_series)):
+            curr = progress_series[idx]
+            prev = progress_series[idx - 1]
+            if curr is None or prev is None:
+                continue
+            delta = curr - prev
+            if delta > 0:
+                progress_deltas.append(delta)
+        if not progress_deltas:
+            return estimated_close_hours, "N/A"
+        avg_weekly = sum(progress_deltas) / len(progress_deltas)
+        if avg_weekly <= 0:
+            return estimated_close_hours, "N/A"
+        weeks_remaining = int((max(0.0, 100.0 - latest_progress) + avg_weekly - 1) // avg_weekly)
+        year = int(weekly[-1].get("year") or 0)
+        week = int(weekly[-1].get("week") or 0)
+        if year <= 0 or week <= 0:
+            return estimated_close_hours, "N/A"
+        for _ in range(weeks_remaining):
+            year, week = add_week(year, week)
+        return estimated_close_hours, f"{year}-W{week:02d}"
+
     week_labels = [f"W{int(item.get('week') or 0):02d}" for item in weekly]
 
     content: list[str] = []
     _pdf_rect(content, 20, 20, 555, 802, fill_rgb=(0.96, 0.97, 0.98), stroke_rgb=(0.93, 0.94, 0.97), line_width=0.5)
-    _pdf_rect(content, 32, 772, 531, 40, fill_rgb=(0.14, 0.16, 0.20), stroke_rgb=(0.14, 0.16, 0.20))
-    _pdf_text(content, 42, 793, "INFORME SNAPSHOT", size=14, bold=True)
-    _pdf_text(content, 42, 779, f"Proyecto: {project.get('project_name') or 'N/A'}", size=9)
-    _pdf_text(content, 370, 779, f"Semana: {snapshot_label}", size=9)
+    _pdf_rect(content, 32, 772, 531, 40, fill_rgb=(0.11, 0.24, 0.43), stroke_rgb=(0.11, 0.24, 0.43))
+    _pdf_text(content, 42, 786, f"Proyecto: {project.get('project_name') or 'N/A'}", size=11, bold=True)
+    _pdf_text(content, 42, 774, f"Semana: {snapshot_label}", size=9)
+    _pdf_text(content, 430, 774, f"Codigo: {project.get('project_code') or 'N/A'}", size=8)
 
     _pdf_rect(content, 32, 686, 531, 78, fill_rgb=(0.89, 0.90, 0.92), stroke_rgb=(0.80, 0.83, 0.88))
     _pdf_text(content, 40, 752, "Cabecera del proyecto", size=10, bold=True)
@@ -333,7 +388,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
     _pdf_text(content, 200, 704, header_lines[3], size=8, bold=True)
     _pdf_text(content, 390, 704, header_lines[4], size=8, bold=True)
 
-    _pdf_text(content, 32, 674, "Fechas y KPIs", size=10, bold=True)
+    _pdf_text(content, 32, 674, "HITOS", size=10, bold=True)
     latest_phase = phases[-1] if phases else {}
     for idx, (key, label) in enumerate(PHASES_INFO):
         cx = 32 + (idx * 89)
@@ -342,7 +397,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         _pdf_text(content, cx + 6, 652, label, size=7, bold=True)
         _pdf_text(content, cx + 6, 637, phase_value, size=8, bold=True)
 
-    _pdf_text(content, 32, 615, "KPIs del snapshot", size=10, bold=True)
+    _pdf_text(content, 32, 615, "Datos Proyecto", size=10, bold=True)
     kpi_items = [
         ("Avance", fmt_pct(progress)),
         ("Horas proyecto", fmt_num(to_float(ordered_total))),
@@ -367,7 +422,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         y -= 12
 
     indicators = payload.get("indicators") or {}
-    _pdf_text(content, 32, 486, "Tres indicadores", size=10, bold=True)
+    _pdf_text(content, 32, 486, "Indicadores", size=10, bold=True)
     indicator_cards = [
         ("Productividad", indicators.get("productivity") or "N/A"),
         ("Desviacion", indicators.get("deviation") or "N/A"),
@@ -379,7 +434,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         _pdf_rect(content, cx, 448, 171, 34, fill_rgb=(0.89, 0.90, 0.92), stroke_rgb=(0.82, 0.84, 0.88))
         _pdf_rect(content, cx + 6, 460, 8, 8, fill_rgb=color, stroke_rgb=color)
         _pdf_text(content, cx + 20, 464, label, size=8, bold=True)
-        _pdf_text(content, cx + 20, 453, str(value).upper(), size=8)
+        # El color del cuadrado ya representa el estado del indicador.
 
     progress_series = [to_float(item.get("progress_w")) for item in weekly]
     deviation_series = [to_float(item.get("desviacion_pct")) for item in weekly]
@@ -392,7 +447,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         286,
         258,
         140,
-        "Grafica Progreso",
+        "Progreso",
         week_labels,
         [("Avance", (0.15, 0.39, 0.92), progress_series)],
     )
@@ -402,7 +457,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         286,
         258,
         140,
-        "Grafica Desviacion",
+        "Desviacion",
         week_labels,
         [("Desv %", (0.86, 0.15, 0.15), deviation_series)],
     )
@@ -412,7 +467,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         140,
         258,
         140,
-        "Grafica Horas reales",
+        "Horas reales",
         week_labels,
         [("Horas reales", (0.05, 0.65, 0.91), real_series)],
     )
@@ -422,7 +477,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         140,
         258,
         140,
-        "Grafica Horas reales vs Teoricas",
+        "Horas reales vs Teoricas",
         week_labels,
         [("Horas reales", (0.11, 0.31, 0.85), real_series), ("Horas teoricas", (0.98, 0.45, 0.09), theor_series)],
     )
@@ -450,9 +505,27 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         26,
         531,
         108,
-        "Grafica S con proyeccion",
+        "S con proyeccion",
         week_labels,
         [("Acumulado", (0.15, 0.39, 0.92), cumulative), ("Proyeccion", (0.98, 0.45, 0.09), projected)],
+    )
+
+    estimated_close_hours, expected_close_week = compute_projection_meta()
+    _pdf_text(
+        content,
+        40,
+        18,
+        f"Horas estimadas de finalizacion: {fmt_num(estimated_close_hours) if estimated_close_hours is not None else 'N/A'}",
+        size=8,
+        bold=True,
+    )
+    _pdf_text(
+        content,
+        310,
+        18,
+        f"Semana esperada de finalizacion: {expected_close_week}",
+        size=8,
+        bold=True,
     )
 
     stream = "\n".join(content).encode("latin-1", errors="replace")
