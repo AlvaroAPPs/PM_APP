@@ -44,6 +44,49 @@ function typeLabel(type) {
   return type === "PP" ? "PP" : "Tarea";
 }
 
+function splitDescriptionAndSubtasks(rawDescription) {
+  const text = rawDescription || "";
+  const markerIdx = text.indexOf(SUBTASKS_MARKER);
+  if (markerIdx < 0) return { description: text, subtasks: [] };
+  const description = text.slice(0, markerIdx).trimEnd();
+  const tail = text.slice(markerIdx + SUBTASKS_MARKER.length);
+  const subtasks = tail
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("[ ] ") || line.startsWith("[x] ") || line.startsWith("[X] "))
+    .map((line) => ({ done: line[1].toLowerCase() === "x", text: line.slice(4).trim() }))
+    .filter((row) => row.text.length > 0);
+  return { description, subtasks };
+}
+
+function composeDescriptionWithSubtasks(description, subtasks) {
+  const cleanDescription = (description || "").trim();
+  const cleanSubtasks = (subtasks || []).filter((row) => row.text && row.text.trim());
+  if (!cleanSubtasks.length) return cleanDescription;
+  const lines = cleanSubtasks.map((row) => `[${row.done ? "x" : " "}] ${row.text.trim()}`);
+  return `${cleanDescription}${SUBTASKS_MARKER}${lines.join("\n")}`;
+}
+
+function buildEditChecklistItem(text = "", done = false) {
+  const wrap = document.createElement("div");
+  wrap.className = "note-checklist-item";
+  wrap.innerHTML = `
+    <input type="checkbox" class="form-check-input" ${done ? "checked" : ""} />
+    <input type="text" class="form-control form-control-sm" value="${String(text || "").replace(/"/g, "&quot;")}" placeholder="Sub-tarea" />
+    <button type="button" class="btn btn-sm btn-outline-danger">×</button>
+  `;
+  wrap.querySelector("button").addEventListener("click", () => wrap.remove());
+  return wrap;
+}
+
+function readEditChecklist() {
+  const rows = [...$("editChecklist").querySelectorAll(".note-checklist-item")];
+  return rows.map((row) => ({
+    done: Boolean(row.querySelector('input[type="checkbox"]').checked),
+    text: (row.querySelector('input[type="text"]').value || "").trim(),
+  })).filter((row) => row.text);
+}
+
 function startOfWeek(date) {
   const d = new Date(date);
   const day = (d.getDay() + 6) % 7;
@@ -281,12 +324,20 @@ function openTaskDetail(task) {
 
 function openEditModal() {
   if (!selectedTask) return;
+  const parsed = splitDescriptionAndSubtasks(selectedTask.description || "");
   $("editTitle").value = selectedTask.title || "";
   $("editType").value = selectedTask.type || "TASK";
   $("editOwner").value = selectedTask.owner_role || "PM";
   $("editDate").value = selectedTask.planned_date || "";
   $("editStatus").value = selectedTask.status || "OPEN";
-  $("editDescription").value = selectedTask.description || "";
+  $("editDescription").value = parsed.description || "";
+  const box = $("editChecklist");
+  box.innerHTML = "";
+  if (parsed.subtasks.length) {
+    parsed.subtasks.forEach((row) => box.appendChild(buildEditChecklistItem(row.text, row.done)));
+  } else {
+    box.appendChild(buildEditChecklistItem());
+  }
   $("editError").textContent = "";
   editModal.show();
 }
@@ -383,7 +434,7 @@ async function saveEdit() {
     owner_role: $("editOwner").value,
     planned_date: $("editDate").value || null,
     status: $("editStatus").value,
-    description: ($("editDescription").value || "").trim(),
+    description: composeDescriptionWithSubtasks(($("editDescription").value || "").trim(), readEditChecklist()),
   };
   if (!payload.title || !payload.description) {
     $("editError").textContent = "Título y descripción son obligatorios.";
@@ -492,8 +543,7 @@ function composeDescriptionWithChecklist(description, checklist) {
   const cleanDescription = (description || "").trim();
   const cleanChecklist = (checklist || []).filter((item) => item.text && item.text.trim());
   if (!cleanChecklist.length) return cleanDescription;
-  const lines = cleanChecklist.map((item) => `[${item.done ? "x" : " "}] ${item.text.trim()}`);
-  return `${cleanDescription}${SUBTASKS_MARKER}${lines.join("\n")}`;
+  return composeDescriptionWithSubtasks(cleanDescription, cleanChecklist);
 }
 
 async function saveCreateTask() {
@@ -572,6 +622,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("createNoteOption")?.addEventListener("click", openCreateNoteModal);
   $("detailEdit")?.addEventListener("click", openEditModal);
   $("saveEditTask")?.addEventListener("click", saveEdit);
+  $("addEditChecklistItem")?.addEventListener("click", () => $("editChecklist").appendChild(buildEditChecklistItem()));
   $("detailClose")?.addEventListener("click", closeTask);
   $("detailNavigate")?.addEventListener("click", navigateTask);
   $("detailProjectBtn")?.addEventListener("click", goProject);

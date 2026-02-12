@@ -19,6 +19,10 @@
     .task-chip-pp { background:#f3e8ff; border-color:#e9d5ff; color:#6b21a8; }
     .task-chip-note-marker { width:8px; height:8px; border-radius:999px; background:#f59e0b; display:inline-block; margin-left:4px; }
     .note-checklist-item { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
+    .sidebar-block { border:1px solid #e7e9f0; border-radius:12px; padding:10px; margin-bottom:12px; }
+    .sidebar-block-tasks { background:#eff6ff; border-color:#bfdbfe; }
+    .sidebar-block-pp { background:#faf5ff; border-color:#e9d5ff; }
+    .sidebar-block-notes { background:#fffbeb; border-color:#fde68a; }
   </style>
 </head>
 <body>
@@ -68,12 +72,18 @@
         <div class="card shadow-soft">
           <div class="card-body">
             <div id="weekLabel" class="muted small mb-3"></div>
-            <h6 class="mb-2">Tasks</h6>
-            <div id="weekTasks" class="list-group list-group-flush mb-3"></div>
-            <h6 class="mb-2">PP</h6>
-            <div id="weekPp" class="list-group list-group-flush mb-3"></div>
-            <h6 class="mb-2">Notes</h6>
-            <div id="weekNotes" class="list-group list-group-flush"></div>
+            <div class="sidebar-block sidebar-block-tasks">
+              <h6 class="mb-2">Tasks</h6>
+              <div id="weekTasks" class="list-group list-group-flush"></div>
+            </div>
+            <div class="sidebar-block sidebar-block-pp">
+              <h6 class="mb-2">PP</h6>
+              <div id="weekPp" class="list-group list-group-flush"></div>
+            </div>
+            <div class="sidebar-block sidebar-block-notes mb-0">
+              <h6 class="mb-2">Notes</h6>
+              <div id="weekNotes" class="list-group list-group-flush"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -123,6 +133,11 @@
             <div class="col-md-6"><label class="form-label">Fecha prevista</label><input id="editDate" type="date" class="form-control" /></div>
             <div class="col-md-6"><label class="form-label">Estado</label><select id="editStatus" class="form-select"><option value="OPEN">Abierta</option><option value="IN_PROGRESS">Proceso</option><option value="PAUSED">Parada</option><option value="CLOSED">Cerrada</option></select></div>
             <div class="col-12"><label class="form-label">Descripción</label><textarea id="editDescription" class="form-control" rows="4"></textarea></div>
+            <div class="col-12">
+              <label class="form-label">Checklist (sub-tareas)</label>
+              <div id="editChecklist"></div>
+              <button id="addEditChecklistItem" type="button" class="btn btn-sm btn-outline-secondary">Añadir item</button>
+            </div>
           </div>
           <div id="editError" class="text-danger small mt-2"></div>
         </div>
