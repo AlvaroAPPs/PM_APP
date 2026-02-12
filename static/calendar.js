@@ -332,7 +332,14 @@ async function saveNote() {
   const method = editingNote ? "PUT" : "POST";
   const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   if (!res.ok) {
-    $("noteError").textContent = "No se pudo guardar la nota.";
+    let detail = "";
+    try {
+      const payload = await res.json();
+      detail = payload?.detail ? ` (${payload.detail})` : "";
+    } catch (_e) {
+      detail = "";
+    }
+    $("noteError").textContent = `No se pudo guardar la nota${detail}.`;
     return;
   }
   noteModal.hide();
@@ -459,25 +466,21 @@ async function saveCreateTask() {
   await refreshCalendarData();
 }
 
-function openCreateSelector() {
-  const choice = window.prompt("Crear: TASK / PP / NOTE", "NOTE");
-  if (!choice) return;
-  const c = choice.trim().toUpperCase();
-  if (c === "NOTE") {
-    openNoteModal(null);
-    return;
-  }
-  if (c === "TASK" || c === "PP") {
-    $("createTaskError").textContent = "";
-    $("createType").value = c;
-    $("createOwner").value = "PM";
-    $("createStatus").value = "OPEN";
-    $("createDate").value = toIsoDate(selectedDate);
-    $("createTitle").value = "";
-    $("createDescription").value = "";
-    createTaskModal.show();
-  }
+function openCreateTaskModal(type) {
+  $("createTaskError").textContent = "";
+  $("createType").value = type;
+  $("createOwner").value = "PM";
+  $("createStatus").value = "OPEN";
+  $("createDate").value = toIsoDate(selectedDate);
+  $("createTitle").value = "";
+  $("createDescription").value = "";
+  createTaskModal.show();
 }
+
+function openCreateNoteModal() {
+  openNoteModal(null);
+}
+
 
 document.addEventListener("DOMContentLoaded", async () => {
   detailModal = new bootstrap.Modal($("taskDetailModal"));
@@ -496,7 +499,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     await refreshCalendarData();
   });
 
-  $("createEntry")?.addEventListener("click", openCreateSelector);
+  $("createTaskOption")?.addEventListener("click", () => openCreateTaskModal("TASK"));
+  $("createPpOption")?.addEventListener("click", () => openCreateTaskModal("PP"));
+  $("createNoteOption")?.addEventListener("click", openCreateNoteModal);
   $("detailEdit")?.addEventListener("click", openEditModal);
   $("saveEditTask")?.addEventListener("click", saveEdit);
   $("detailClose")?.addEventListener("click", closeTask);

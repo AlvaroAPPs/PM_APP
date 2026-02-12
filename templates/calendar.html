@@ -41,7 +41,14 @@
             <button id="viewMonth" class="btn btn-dark">Mes</button>
             <button id="viewWeek" class="btn btn-outline-dark">Semana</button>
           </div>
-          <button id="createEntry" class="btn btn-primary">Crear</button>
+          <div class="dropdown">
+            <button id="createEntry" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">Crear</button>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><button id="createTaskOption" class="dropdown-item" type="button">Task</button></li>
+              <li><button id="createPpOption" class="dropdown-item" type="button">PP</button></li>
+              <li><button id="createNoteOption" class="dropdown-item" type="button">Note</button></li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>
