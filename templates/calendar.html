@@ -154,6 +154,11 @@
             <div class="col-md-6"><label class="form-label">Título</label><input id="createTitle" class="form-control" /></div>
             <div class="col-md-6"><label class="form-label">Estado</label><select id="createStatus" class="form-select"><option value="OPEN">Abierta</option><option value="IN_PROGRESS">Proceso</option><option value="PAUSED">Parada</option></select></div>
             <div class="col-12"><label class="form-label">Descripción</label><textarea id="createDescription" class="form-control" rows="3"></textarea></div>
+            <div class="col-12">
+              <label class="form-label">Checklist (tareas internas)</label>
+              <div id="createChecklist"></div>
+              <button id="addCreateChecklistItem" type="button" class="btn btn-sm btn-outline-secondary">Añadir item</button>
+            </div>
           </div>
           <div id="createTaskError" class="text-danger small mt-2"></div>
         </div>

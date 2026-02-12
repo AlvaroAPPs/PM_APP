@@ -15,6 +15,7 @@ let detailModal = null;
 let editModal = null;
 let noteModal = null;
 let createTaskModal = null;
+const SUBTASKS_MARKER = "\n\n---SUBTASKS---\n";
 
 function toIsoDate(date) {
   const y = date.getFullYear();
@@ -439,7 +440,36 @@ async function loadCreateProjects() {
   }
 }
 
+function buildCreateChecklistItem(text = "", done = false) {
+  const wrap = document.createElement("div");
+  wrap.className = "note-checklist-item";
+  wrap.innerHTML = `
+    <input type="checkbox" class="form-check-input" ${done ? "checked" : ""} />
+    <input type="text" class="form-control form-control-sm" value="${String(text || "").replace(/"/g, "&quot;")}" placeholder="Tarea interna" />
+    <button type="button" class="btn btn-sm btn-outline-danger">×</button>
+  `;
+  wrap.querySelector("button").addEventListener("click", () => wrap.remove());
+  return wrap;
+}
+
+function readCreateChecklist() {
+  const rows = [...$("createChecklist").querySelectorAll(".note-checklist-item")];
+  return rows.map((row) => ({
+    done: Boolean(row.querySelector('input[type="checkbox"]').checked),
+    text: (row.querySelector('input[type="text"]').value || "").trim(),
+  })).filter((item) => item.text);
+}
+
+function composeDescriptionWithChecklist(description, checklist) {
+  const cleanDescription = (description || "").trim();
+  const cleanChecklist = (checklist || []).filter((item) => item.text && item.text.trim());
+  if (!cleanChecklist.length) return cleanDescription;
+  const lines = cleanChecklist.map((item) => `[${item.done ? "x" : " "}] ${item.text.trim()}`);
+  return `${cleanDescription}${SUBTASKS_MARKER}${lines.join("\n")}`;
+}
+
 async function saveCreateTask() {
+  const checklist = readCreateChecklist();
   const payload = {
     project_id: Number($("createProject").value || 0),
     type: $("createType").value,
@@ -447,7 +477,7 @@ async function saveCreateTask() {
     planned_date: $("createDate").value || null,
     status: $("createStatus").value,
     title: ($("createTitle").value || "").trim(),
-    description: ($("createDescription").value || "").trim(),
+    description: composeDescriptionWithChecklist(($("createDescription").value || "").trim(), checklist),
   };
   if (!payload.project_id || !payload.title || !payload.description) {
     $("createTaskError").textContent = "Proyecto, título y descripción son obligatorios.";
@@ -459,7 +489,14 @@ async function saveCreateTask() {
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
-    $("createTaskError").textContent = "No se pudo crear.";
+    let detail = "";
+    try {
+      const err = await res.json();
+      detail = err?.detail ? ` (${err.detail})` : "";
+    } catch (_e) {
+      detail = "";
+    }
+    $("createTaskError").textContent = `No se pudo crear${detail}.`;
     return;
   }
   createTaskModal.hide();
@@ -474,6 +511,9 @@ function openCreateTaskModal(type) {
   $("createDate").value = toIsoDate(selectedDate);
   $("createTitle").value = "";
   $("createDescription").value = "";
+  const checklistBox = $("createChecklist");
+  checklistBox.innerHTML = "";
+  checklistBox.appendChild(buildCreateChecklistItem());
   createTaskModal.show();
 }
 
@@ -510,6 +550,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("addChecklistItem")?.addEventListener("click", () => $("noteChecklist").appendChild(buildChecklistItem()));
   $("saveNote")?.addEventListener("click", saveNote);
   $("saveCreateTask")?.addEventListener("click", saveCreateTask);
+  $("addCreateChecklistItem")?.addEventListener("click", () => $("createChecklist").appendChild(buildCreateChecklistItem()));
+  $("noteEditModal")?.addEventListener("hidden.bs.modal", () => { editingNote = null; });
 
   await refreshCalendarData();
 });
