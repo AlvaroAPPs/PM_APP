@@ -95,13 +95,20 @@ async function fetchAllOpenTasks() {
   allOpenTasks = res.ok ? await res.json() : [];
 }
 
+async function fetchNotesWithFallback(path, options) {
+  const res = await fetch(`${API}${path}`, options);
+  if (res.status !== 404) return res;
+  const fallbackPath = path.replace("/project-notes", "/notes");
+  return fetch(`${API}${fallbackPath}`, options);
+}
+
 async function fetchWeekNotes() {
   const start = startOfWeek(selectedDate);
   const end = endOfWeek(selectedDate);
   const params = new URLSearchParams();
   params.set("start_date", toIsoDate(start));
   params.set("end_date", toIsoDate(end));
-  const res = await fetch(`${API}/notes?${params.toString()}`);
+  const res = await fetchNotesWithFallback(`/project-notes?${params.toString()}`);
   weekNotes = res.ok ? await res.json() : [];
 }
 
@@ -329,9 +336,9 @@ async function saveNote() {
     $("noteError").textContent = "Título y fecha son obligatorios.";
     return;
   }
-  const url = editingNote ? `${API}/notes/${editingNote.id}` : `${API}/notes`;
+  const path = editingNote ? `/project-notes/${editingNote.id}` : `/project-notes`;
   const method = editingNote ? "PUT" : "POST";
-  const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  const res = await fetchNotesWithFallback(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   if (!res.ok) {
     let detail = "";
     try {

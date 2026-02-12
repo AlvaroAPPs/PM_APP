@@ -2192,6 +2192,7 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
 
 
 @app.post("/notes")
+@app.post("/project-notes")
 def create_note(payload: NoteCreateIn):
     title, comment, parsed_date, checklist = _normalize_note_payload(payload)
 
@@ -2212,6 +2213,7 @@ def create_note(payload: NoteCreateIn):
 
 
 @app.put("/notes/{note_id}")
+@app.put("/project-notes/{note_id}")
 def update_note(note_id: int, payload: NoteUpdateIn):
     title, comment, parsed_date, checklist = _normalize_note_payload(payload)
 
@@ -2239,6 +2241,7 @@ def update_note(note_id: int, payload: NoteUpdateIn):
 
 
 @app.get("/notes")
+@app.get("/project-notes")
 def list_notes(start_date: str | None = None, end_date: str | None = None):
     parsed_start: date | None = None
     parsed_end: date | None = None
