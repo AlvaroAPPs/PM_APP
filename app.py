@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 import pandas as pd
 import psycopg
+from psycopg.types.json import Json
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -34,6 +35,7 @@ def startup_init() -> None:
         with conn.cursor() as cur:
             ensure_historical_storage(cur)
             ensure_project_tasks_storage(cur)
+            ensure_project_notes_storage(cur)
             ensure_general_internal_project(cur)
         conn.commit()
 
@@ -83,6 +85,25 @@ class ProjectTaskUpdateIn(BaseModel):
     status: str
     title: str
     description: str
+
+
+class NoteChecklistItemIn(BaseModel):
+    text: str
+    done: bool = False
+
+
+class NoteCreateIn(BaseModel):
+    title: str
+    comment: str | None = None
+    date: str
+    checklist: list[NoteChecklistItemIn] = []
+
+
+class NoteUpdateIn(BaseModel):
+    title: str
+    comment: str | None = None
+    date: str
+    checklist: list[NoteChecklistItemIn] = []
 
 
 def normalize_comment(value: object) -> str | None:
@@ -874,6 +895,44 @@ def ensure_project_tasks_storage(cur: psycopg.Cursor) -> None:
     )
 
 
+
+
+def ensure_project_notes_storage(cur: psycopg.Cursor) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS project_notes (
+            id BIGSERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            comment TEXT,
+            note_date DATE NOT NULL,
+            checklist JSONB NOT NULL DEFAULT '[]'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """
+    )
+
+
+def _normalize_note_payload(payload: NoteCreateIn | NoteUpdateIn) -> tuple[str, str | None, date, list[dict[str, object]]]:
+    title = (payload.title or "").strip()
+    comment = (payload.comment or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title is required")
+    if not payload.date:
+        raise HTTPException(status_code=400, detail="Date is required")
+    try:
+        parsed_date = date.fromisoformat(payload.date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date")
+
+    checklist: list[dict[str, object]] = []
+    for item in payload.checklist or []:
+        text = (item.text or "").strip()
+        if not text:
+            continue
+        checklist.append({"text": text, "done": bool(item.done)})
+
+    return title, (comment or None), parsed_date, checklist
 def ensure_general_internal_project(cur: psycopg.Cursor) -> None:
     cur.execute(
         """
@@ -2128,6 +2187,110 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
                 raise HTTPException(status_code=404, detail="Task not found")
         conn.commit()
     return {"status": "ok"}
+
+
+
+
+@app.post("/notes")
+def create_note(payload: NoteCreateIn):
+    title, comment, parsed_date, checklist = _normalize_note_payload(payload)
+
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_notes_storage(cur)
+            cur.execute(
+                """
+                INSERT INTO project_notes (title, comment, note_date, checklist)
+                VALUES (%s, %s, %s, %s::jsonb)
+                RETURNING id
+                """,
+                (title, comment, parsed_date, Json(checklist)),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    return {"id": row[0], "status": "ok"}
+
+
+@app.put("/notes/{note_id}")
+def update_note(note_id: int, payload: NoteUpdateIn):
+    title, comment, parsed_date, checklist = _normalize_note_payload(payload)
+
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_notes_storage(cur)
+            cur.execute(
+                """
+                UPDATE project_notes
+                SET title = %s,
+                    comment = %s,
+                    note_date = %s,
+                    checklist = %s::jsonb,
+                    updated_at = now()
+                WHERE id = %s
+                RETURNING id
+                """,
+                (title, comment, parsed_date, Json(checklist), note_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Note not found")
+        conn.commit()
+    return {"status": "ok"}
+
+
+@app.get("/notes")
+def list_notes(start_date: str | None = None, end_date: str | None = None):
+    parsed_start: date | None = None
+    parsed_end: date | None = None
+    if start_date:
+        try:
+            parsed_start = date.fromisoformat(start_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid start_date")
+    if end_date:
+        try:
+            parsed_end = date.fromisoformat(end_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid end_date")
+    if parsed_start and parsed_end and parsed_end < parsed_start:
+        raise HTTPException(status_code=400, detail="Invalid date range")
+
+    where: list[str] = []
+    params: list[object] = []
+    if parsed_start:
+        where.append("note_date >= %s")
+        params.append(parsed_start)
+    if parsed_end:
+        where.append("note_date <= %s")
+        params.append(parsed_end)
+
+    where_sql = "" if not where else f"WHERE {' AND '.join(where)}"
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_notes_storage(cur)
+            cur.execute(
+                f"""
+                SELECT id, title, comment, note_date, checklist, created_at, updated_at
+                FROM project_notes
+                {where_sql}
+                ORDER BY note_date ASC, created_at DESC, id DESC
+                """,
+                params,
+            )
+            rows = cur.fetchall()
+
+    return [
+        {
+            "id": r[0],
+            "title": r[1],
+            "comment": normalize_comment(r[2]),
+            "date": to_date_iso(r[3]),
+            "checklist": r[4] or [],
+            "created_at": r[5].isoformat() if r[5] else None,
+            "updated_at": r[6].isoformat() if r[6] else None,
+        }
+        for r in rows
+    ]
 
 
 @app.get("/projects/{project_code}/task-counters")
