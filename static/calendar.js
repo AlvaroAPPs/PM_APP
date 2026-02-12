@@ -310,6 +310,7 @@ function openNoteModal(note = null) {
   $("noteComment").value = note?.comment || "";
   $("noteDate").value = note?.date || toIsoDate(new Date());
   $("noteError").textContent = "";
+  $("deleteNote").classList.toggle("d-none", !note);
   const checklist = $("noteChecklist");
   checklist.innerHTML = "";
   const items = Array.isArray(note?.checklist) && note.checklist.length ? note.checklist : [{ text: "", done: false }];
@@ -323,6 +324,26 @@ function readChecklistFromUi() {
     text: (row.querySelector('input[type="text"]').value || "").trim(),
     done: Boolean(row.querySelector('input[type="checkbox"]').checked),
   })).filter((item) => item.text);
+}
+
+async function deleteNote() {
+  if (!editingNote) return;
+  if (!window.confirm("¿Eliminar esta nota?")) return;
+  const path = `/project-notes/${editingNote.id}`;
+  const res = await fetchNotesWithFallback(path, { method: "DELETE" });
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const payload = await res.json();
+      detail = payload?.detail ? ` (${payload.detail})` : "";
+    } catch (_e) {
+      detail = "";
+    }
+    $("noteError").textContent = `No se pudo eliminar la nota${detail}.`;
+    return;
+  }
+  noteModal.hide();
+  await refreshCalendarData();
 }
 
 async function saveNote() {
@@ -556,6 +577,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("detailProjectBtn")?.addEventListener("click", goProject);
   $("addChecklistItem")?.addEventListener("click", () => $("noteChecklist").appendChild(buildChecklistItem()));
   $("saveNote")?.addEventListener("click", saveNote);
+  $("deleteNote")?.addEventListener("click", deleteNote);
   $("saveCreateTask")?.addEventListener("click", saveCreateTask);
   $("addCreateChecklistItem")?.addEventListener("click", () => $("createChecklist").appendChild(buildCreateChecklistItem()));
   $("noteEditModal")?.addEventListener("hidden.bs.modal", () => { editingNote = null; });

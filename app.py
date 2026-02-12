@@ -2240,6 +2240,27 @@ def update_note(note_id: int, payload: NoteUpdateIn):
     return {"status": "ok"}
 
 
+@app.delete("/notes/{note_id}")
+@app.delete("/project-notes/{note_id}")
+def delete_note(note_id: int):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_notes_storage(cur)
+            cur.execute(
+                """
+                DELETE FROM project_notes
+                WHERE id = %s
+                RETURNING id
+                """,
+                (note_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Note not found")
+        conn.commit()
+    return {"status": "ok"}
+
+
 @app.get("/notes")
 @app.get("/project-notes")
 def list_notes(start_date: str | None = None, end_date: str | None = None):
