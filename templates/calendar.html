@@ -23,6 +23,9 @@
     .sidebar-block-tasks { background:#eff6ff; border-color:#bfdbfe; }
     .sidebar-block-pp { background:#faf5ff; border-color:#e9d5ff; }
     .sidebar-block-notes { background:#fffbeb; border-color:#fde68a; }
+    .detail-checklist { margin:0; padding-left:0; list-style:none; }
+    .detail-checklist li { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+    .detail-checklist .check-icon { font-size: .95rem; }
   </style>
 </head>
 <body>
@@ -106,6 +109,7 @@
             <dt class="col-sm-3">Responsable</dt><dd id="detailOwner" class="col-sm-9">—</dd>
             <dt class="col-sm-3">Fecha prevista</dt><dd id="detailDate" class="col-sm-9">—</dd>
             <dt class="col-sm-3">Descripción</dt><dd id="detailDescription" class="col-sm-9" style="white-space: pre-wrap;">—</dd>
+            <dt class="col-sm-3">Tareas</dt><dd id="detailChecklist" class="col-sm-9">—</dd>
           </dl>
         </div>
         <div class="modal-footer">

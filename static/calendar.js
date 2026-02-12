@@ -312,13 +312,24 @@ function buildDayCell(day, tasksByDay, notesByDay, outsideMonth) {
 
 function openTaskDetail(task) {
   selectedTask = task;
+  const parsed = splitDescriptionAndSubtasks(task.description || "");
   $("detailProject").textContent = `${task.project_code || "—"} - ${task.project_name || "—"}`;
   $("detailTitle").textContent = task.title || "—";
   $("detailType").textContent = typeLabel(task.type);
   $("detailStatus").textContent = statusLabel(task.status);
   $("detailOwner").textContent = task.owner_role || "—";
   $("detailDate").textContent = fmtDate(task.planned_date);
-  $("detailDescription").textContent = task.description || "—";
+  $("detailDescription").textContent = parsed.description || "—";
+
+  const checklistEl = $("detailChecklist");
+  if (!parsed.subtasks.length) {
+    checklistEl.textContent = "—";
+  } else {
+    checklistEl.innerHTML = `<ul class="detail-checklist">${parsed.subtasks
+      .map((item) => `<li><span class="check-icon">${item.done ? "✅" : "⬜"}</span><span>${item.text}</span></li>`)
+      .join("")}</ul>`;
+  }
+
   detailModal.show();
 }
 
