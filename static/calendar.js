@@ -516,18 +516,36 @@ async function setView(mode) {
   await refreshCalendarData();
 }
 
-async function loadCreateProjects() {
-  const res = await fetch(`${API}/project-tasks/open-projects`);
-  const rows = res.ok ? await res.json() : [];
+async function searchProjects(query) {
+  if (!query || query.trim().length < 1) return [];
+  const res = await fetch(`${API}/projects/search?q=${encodeURIComponent(query.trim())}`);
+  return res.ok ? res.json() : [];
+}
+
+function renderCreateProjectOptions(rows) {
   const select = $("createProject");
   if (!select) return;
   select.innerHTML = "";
   for (const row of rows) {
     const opt = document.createElement("option");
-    opt.value = String(row.project_id);
+    opt.value = String(row.id);
     opt.textContent = `${row.project_code || "—"} - ${row.project_name || "—"}`;
     select.appendChild(opt);
   }
+}
+
+async function setupCreateProjectPicker() {
+  const searchInput = $("createProjectSearch");
+  if (!searchInput) return;
+  renderCreateProjectOptions([]);
+  let timer = null;
+  searchInput.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const rows = await searchProjects(searchInput.value || "");
+      renderCreateProjectOptions(rows);
+    }, 250);
+  });
 }
 
 function buildCreateChecklistItem(text = "", done = false) {
@@ -569,7 +587,7 @@ async function saveCreateTask() {
     description: composeDescriptionWithChecklist(($("createDescription").value || "").trim(), checklist),
   };
   if (!payload.project_id || !payload.title || !payload.description) {
-    $("createTaskError").textContent = "Proyecto, título y descripción son obligatorios.";
+    $("createTaskError").textContent = "Proyecto, título y descripción son obligatorios (busca y selecciona un proyecto).";
     return;
   }
   const res = await fetch(`${API}/project-tasks`, {
@@ -600,6 +618,8 @@ function openCreateTaskModal(type) {
   $("createDate").value = toIsoDate(selectedDate);
   $("createTitle").value = "";
   $("createDescription").value = "";
+  $("createProjectSearch").value = "";
+  renderCreateProjectOptions([]);
   const checklistBox = $("createChecklist");
   checklistBox.innerHTML = "";
   checklistBox.appendChild(buildCreateChecklistItem());
@@ -616,7 +636,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   editModal = new bootstrap.Modal($("taskEditModal"));
   noteModal = new bootstrap.Modal($("noteEditModal"));
   createTaskModal = new bootstrap.Modal($("createTaskModal"));
-  await loadCreateProjects();
+  await setupCreateProjectPicker();
 
   $("viewMonth")?.addEventListener("click", () => setView("month"));
   $("viewWeek")?.addEventListener("click", () => setView("week"));

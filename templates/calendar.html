@@ -166,7 +166,11 @@
         </div>
         <div class="modal-body">
           <div class="row g-3">
-            <div class="col-md-6"><label class="form-label">Proyecto</label><select id="createProject" class="form-select"></select></div>
+            <div class="col-md-6">
+              <label class="form-label">Proyecto</label>
+              <input id="createProjectSearch" class="form-control mb-2" placeholder="Buscar proyecto por código o nombre" />
+              <select id="createProject" class="form-select"></select>
+            </div>
             <div class="col-md-6"><label class="form-label">Tipo</label><select id="createType" class="form-select"><option value="TASK">Task</option><option value="PP">PP</option></select></div>
             <div class="col-md-6"><label class="form-label">Responsable</label><select id="createOwner" class="form-select"><option value="PM">PM</option><option value="CONSULTORIA">Consultoria</option><option value="TECH">Tech</option><option value="COMERCIAL">Comercial</option><option value="CLIENTE">Cliente</option></select></div>
             <div class="col-md-6"><label class="form-label">Fecha prevista</label><input id="createDate" type="date" class="form-control" /></div>
