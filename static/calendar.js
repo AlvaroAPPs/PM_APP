@@ -156,8 +156,16 @@ async function fetchWeekNotes() {
 }
 
 function splitWeekSidebarData() {
-  const taskItems = allOpenTasks.filter((t) => t.type === "TASK" && (inSelectedWeek(t.planned_date) || !t.planned_date));
-  const ppItems = allOpenTasks.filter((t) => t.type === "PP" && (inSelectedWeek(t.planned_date) || !t.planned_date));
+  const weekStart = startOfWeek(selectedDate);
+  const inWeekOrPrevious = (plannedDate) => {
+    if (!plannedDate) return true;
+    if (inSelectedWeek(plannedDate)) return true;
+    const parsed = parseIsoDate(plannedDate);
+    return parsed ? parsed < weekStart : false;
+  };
+
+  const taskItems = allOpenTasks.filter((t) => t.type === "TASK" && inWeekOrPrevious(t.planned_date));
+  const ppItems = allOpenTasks.filter((t) => t.type === "PP" && inWeekOrPrevious(t.planned_date));
   weekTasks = taskItems;
   weekPp = ppItems;
 }
