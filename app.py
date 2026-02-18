@@ -1571,6 +1571,21 @@ async def import_excel(
 
                 internal_status = str(snapshot_fields.get("internal_status") or "").strip().lower()
                 moved_to_historical_week = historical_week_label(snapshot_year, snapshot_week)
+                cur.execute(
+                    """
+                    SELECT COALESCE(is_historical, FALSE)
+                    FROM projects
+                    WHERE project_code = %s
+                    """,
+                    (code,),
+                )
+                existing_project = cur.fetchone()
+                existing_is_historical = bool(existing_project[0]) if existing_project else False
+
+                if existing_is_historical and internal_status in {"closed", "hided"}:
+                    skipped += 1
+                    continue
+
                 pid = upsert_project(cur, project_fields)
 
                 if internal_status in {"closed", "hided"}:
