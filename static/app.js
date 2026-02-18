@@ -512,6 +512,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (Number.isFinite(currentProjectTotalHours)) {
         params.set("totalHours", String(currentProjectTotalHours));
       }
+      params.set("return_to", `${window.location.pathname}${window.location.search}`);
       window.location.href = `/projects/${encodeURIComponent(currentProjectCode)}/indicators?${params.toString()}`;
     });
   }

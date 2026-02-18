@@ -796,9 +796,12 @@ async function init() {
     projectCodeEl.textContent = projectCode;
   }
   if (backLink && projectCode) {
-    const params = new URLSearchParams();
-    params.set("q", projectCode);
-    const targetUrl = `/estado-proyecto?${params.toString()}`;
+    const params = new URLSearchParams(window.location.search);
+    const returnTo = params.get("return_to");
+    const fallbackParams = new URLSearchParams();
+    fallbackParams.set("q", projectCode);
+    const fallbackUrl = `/estado-proyecto?${fallbackParams.toString()}`;
+    const targetUrl = returnTo || fallbackUrl;
     backLink.href = targetUrl;
     backLink.addEventListener("click", (event) => {
       event.preventDefault();
