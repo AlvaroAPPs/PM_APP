@@ -172,77 +172,57 @@ function computeProductivityIndicator(weekly) {
 
   const latestReal = toNumber(latest.real_hours);
   const prevReal = toNumber(prev.real_hours);
-  const latestProgress = toNumber(latest.progress_w);
-  const prevProgress = toNumber(prev.progress_w);
   const latestTheoretical = toNumber(latest.horas_teoricas);
   const prevTheoretical = toNumber(prev.horas_teoricas);
 
   if (
     latestReal === null ||
     prevReal === null ||
-    latestProgress === null ||
-    prevProgress === null
+    latestTheoretical === null ||
+    prevTheoretical === null
   ) {
     return { status: "orange", label: "N/A", detail: "Datos insuficientes" };
   }
 
-  if (latestReal > prevReal && latestProgress <= prevProgress) {
+  const gradientReal = latestReal - prevReal;
+  const gradientTheoretical = latestTheoretical - prevTheoretical;
+  if (gradientTheoretical < gradientReal) {
     return {
       status: "red",
       label: "Alerta",
-      detail: "Suben horas reales sin mejorar el progreso",
+      detail: "La pendiente teórica es menor que la real",
     };
   }
 
-  if (latestTheoretical !== null && latestReal > latestTheoretical) {
-    return {
-      status: "amber",
-      label: "En riesgo",
-      detail: "Horas reales por encima de las teóricas",
-    };
-  }
-
-  if (prevTheoretical !== null && latestReal < prevTheoretical) {
-    return {
-      status: "green",
-      label: "En control",
-      detail: "Horas reales por debajo de la teoría previa",
-    };
-  }
-
-  return { status: "orange", label: "N/A", detail: "Sin condición aplicable" };
+  return {
+    status: "green",
+    label: "En control",
+    detail: "La pendiente teórica es igual o mayor que la real",
+  };
 }
 
 function computeDeviationIndicator(weekly) {
-  if (weekly.length < 2) {
-    return { status: "orange", label: "N/A", detail: "Sin semana anterior" };
+  if (!weekly.length) {
+    return { status: "orange", label: "N/A", detail: "Sin datos" };
   }
   const latest = weekly[weekly.length - 1];
-  const prev = weekly[weekly.length - 2];
 
   const latestDev = toNumber(latest.desviacion_pct);
-  const prevDev = toNumber(prev.desviacion_pct);
-  if (latestDev === null || prevDev === null) {
+  if (latestDev === null) {
     return { status: "orange", label: "N/A", detail: "Datos insuficientes" };
   }
-  if (latestDev > prevDev) {
+  if (latestDev > 0) {
     return {
       status: "red",
-      label: "Aumenta",
-      detail: `Sube de ${formatNumber(prevDev)}% a ${formatNumber(latestDev)}%`,
+      label: "Alerta",
+      detail: `Desviación actual: ${formatNumber(latestDev)}%`,
     };
   }
-  if (latestDev === prevDev) {
-    return {
-      status: "amber",
-      label: "Estable",
-      detail: `Se mantiene en ${formatNumber(latestDev)}%`,
-    };
-  }
+
   return {
     status: "green",
-    label: "Mejora",
-    detail: `Baja de ${formatNumber(prevDev)}% a ${formatNumber(latestDev)}%`,
+    label: "En control",
+    detail: `Desviación actual: ${formatNumber(latestDev)}%`,
   };
 }
 
@@ -251,69 +231,37 @@ function computePhaseIndicator(phasesHistory, projectCode) {
   const resetValue = localStorage.getItem(resetKey);
   if (resetValue === "true") {
     return {
-      status: "orange",
+      status: "green",
       label: "Reiniciado",
       detail: "Indicador reiniciado para este proyecto",
       resetKey,
     };
   }
 
-  const changes = {};
-  PHASES.forEach((phase) => {
-    changes[phase.key] = { later: false, earlier: false, changed: false };
-  });
-  for (let i = 1; i < phasesHistory.length; i += 1) {
-    const prev = phasesHistory[i - 1];
-    const curr = phasesHistory[i];
-    PHASES.forEach((phase) => {
-      const prevDate = prev[phase.key] || null;
-      const currDate = curr[phase.key] || null;
-      if (prevDate !== currDate) {
-        changes[phase.key].changed = true;
-        let direction = "unknown";
-        if (prevDate && currDate) {
-          const prevTime = new Date(`${prevDate}T00:00:00`).getTime();
-          const currTime = new Date(`${currDate}T00:00:00`).getTime();
-          if (!Number.isNaN(prevTime) && !Number.isNaN(currTime)) {
-            if (currTime > prevTime) direction = "later";
-            if (currTime < prevTime) direction = "earlier";
-          }
-        }
-        if (direction === "later") changes[phase.key].later = true;
-        if (direction === "earlier") changes[phase.key].earlier = true;
-      }
-    });
-  }
-
-  const firstLater = PHASES.find((phase) => changes[phase.key].later);
-  if (firstLater) {
-    return {
-      status: "red",
-      label: "Retraso",
-      detail: `Primera fase afectada: ${firstLater.label}`,
-      resetKey,
-    };
-  }
-  const firstEarlier = PHASES.find((phase) => changes[phase.key].earlier);
-  if (firstEarlier) {
-    return {
-      status: "green",
-      label: "Mejora",
-      detail: `Primera fase afectada: ${firstEarlier.label}`,
-      resetKey,
-    };
-  }
-  const firstChanged = PHASES.find((phase) => changes[phase.key].changed);
-  if (firstChanged) {
+  if (phasesHistory.length < 2) {
     return {
       status: "orange",
-      label: "Cambio sin dirección",
-      detail: `Primera fase afectada: ${firstChanged.label}`,
+      label: "N/A",
+      detail: "Sin semana anterior",
       resetKey,
     };
   }
+
+  const prev = phasesHistory[phasesHistory.length - 2];
+  const curr = phasesHistory[phasesHistory.length - 1];
+  const changedPhase = PHASES.find((phase) => (prev[phase.key] || null) !== (curr[phase.key] || null));
+
+  if (changedPhase) {
+    return {
+      status: "red",
+      label: "Cambio detectado",
+      detail: `Fase afectada: ${changedPhase.label}`,
+      resetKey,
+    };
+  }
+
   return {
-    status: "orange",
+    status: "green",
     label: "Sin cambios",
     detail: "No hay cambios en fechas",
     resetKey,
@@ -810,7 +758,7 @@ async function loadIndicators() {
         localStorage.setItem(phaseIndicator.resetKey, "true");
         setIndicator(
           "phases",
-          "orange",
+          "green",
           "Reiniciado",
           "Indicador reiniciado para este proyecto"
         );

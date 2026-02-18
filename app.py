@@ -1077,82 +1077,56 @@ def compute_productivity_indicator(weekly: list[dict]) -> str:
 
     latest_real = to_float(latest.get("real_hours"))
     prev_real = to_float(prev.get("real_hours"))
-    latest_progress = to_float(latest.get("progress_w"))
-    prev_progress = to_float(prev.get("progress_w"))
     latest_theoretical = to_float(latest.get("horas_teoricas"))
     prev_theoretical = to_float(prev.get("horas_teoricas"))
 
     if (
         latest_real is None
         or prev_real is None
-        or latest_progress is None
-        or prev_progress is None
+        or latest_theoretical is None
+        or prev_theoretical is None
     ):
         return "orange"
 
-    if latest_real > prev_real and latest_progress <= prev_progress:
+    gradient_real = latest_real - prev_real
+    gradient_theoretical = latest_theoretical - prev_theoretical
+    if gradient_theoretical < gradient_real:
         return "red"
-
-    if latest_theoretical is not None and latest_real > latest_theoretical:
-        return "amber"
-
-    if prev_theoretical is not None and latest_real < prev_theoretical:
-        return "green"
-
-    return "orange"
+    return "green"
 
 
 def compute_deviation_indicator(weekly: list[dict]) -> str:
-    if len(weekly) < 2:
+    if len(weekly) < 1:
         return "orange"
     latest = weekly[-1]
-    prev = weekly[-2]
 
     latest_dev = to_float(latest.get("desviacion_pct"))
-    prev_dev = to_float(prev.get("desviacion_pct"))
-    if latest_dev is None or prev_dev is None:
+    if latest_dev is None:
         return "orange"
-    if latest_dev > prev_dev:
+    if latest_dev > 0:
         return "red"
-    if latest_dev == prev_dev:
-        return "amber"
     return "green"
 
 
 def compute_phase_indicator(phases_history: list[dict]) -> str:
-    changes: dict[str, dict[str, bool]] = {}
-    for key, _label in PHASES_INFO:
-        changes[key] = {"later": False, "earlier": False, "changed": False}
+    if len(phases_history) < 2:
+        return "orange"
 
-    for i in range(1, len(phases_history)):
-        prev = phases_history[i - 1]
-        curr = phases_history[i]
-        for key, _label in PHASES_INFO:
-            prev_date = prev.get(key)
-            curr_date = curr.get(key)
-            if prev_date != curr_date:
-                changes[key]["changed"] = True
-                direction = "unknown"
-                if prev_date and curr_date:
-                    if curr_date > prev_date:
-                        direction = "later"
-                    elif curr_date < prev_date:
-                        direction = "earlier"
-                if direction == "later":
-                    changes[key]["later"] = True
-                if direction == "earlier":
-                    changes[key]["earlier"] = True
-
+    prev = phases_history[-2]
+    curr = phases_history[-1]
     for key, _label in PHASES_INFO:
-        if changes[key]["later"]:
+        if prev.get(key) != curr.get(key):
             return "red"
-    for key, _label in PHASES_INFO:
-        if changes[key]["earlier"]:
-            return "green"
-    for key, _label in PHASES_INFO:
-        if changes[key]["changed"]:
-            return "orange"
-    return "orange"
+    return "green"
+
+
+def compute_area_personal_indicator_status(*indicator_statuses: str) -> str:
+    red_count = sum(1 for status in indicator_statuses if _indicator_to_color(status) == "red")
+    if red_count >= 2:
+        return "red"
+    if red_count == 1:
+        return "orange"
+    return "green"
 
 
 # ---------- WEB ----------
@@ -1411,17 +1385,11 @@ def menu_personal(request: Request):
                 productivity_status = compute_productivity_indicator(weekly)
                 deviation_status = compute_deviation_indicator(weekly)
                 phase_status = compute_phase_indicator(phases_history)
-                indicator_statuses = [
-                    _indicator_to_color(productivity_status),
-                    _indicator_to_color(deviation_status),
-                    _indicator_to_color(phase_status),
-                ]
-                if "red" in indicator_statuses:
-                    overall_status = "red"
-                elif "orange" in indicator_statuses:
-                    overall_status = "orange"
-                else:
-                    overall_status = "green"
+                overall_status = compute_area_personal_indicator_status(
+                    productivity_status,
+                    deviation_status,
+                    phase_status,
+                )
 
                 ordered_total = row[5]
                 if ordered_total is None and (row[6] is not None or row[7] is not None):
