@@ -165,7 +165,7 @@ async function fetchJson(url) {
 
 function computeProductivityIndicator(weekly) {
   if (weekly.length < 2) {
-    return { status: "orange", label: "N/A", detail: "Sin semana anterior" };
+    return { status: "green", label: "N/A", detail: "Sin semana anterior" };
   }
   const latest = weekly[weekly.length - 1];
   const prev = weekly[weekly.length - 2];
@@ -181,7 +181,7 @@ function computeProductivityIndicator(weekly) {
     latestTheoretical === null ||
     prevTheoretical === null
   ) {
-    return { status: "orange", label: "N/A", detail: "Datos insuficientes" };
+    return { status: "green", label: "N/A", detail: "Datos insuficientes" };
   }
 
   const gradientReal = latestReal - prevReal;
@@ -203,13 +203,13 @@ function computeProductivityIndicator(weekly) {
 
 function computeDeviationIndicator(weekly) {
   if (!weekly.length) {
-    return { status: "orange", label: "N/A", detail: "Sin datos" };
+    return { status: "green", label: "N/A", detail: "Sin datos" };
   }
   const latest = weekly[weekly.length - 1];
 
   const latestDev = toNumber(latest.desviacion_pct);
   if (latestDev === null) {
-    return { status: "orange", label: "N/A", detail: "Datos insuficientes" };
+    return { status: "green", label: "N/A", detail: "Datos insuficientes" };
   }
   if (latestDev > 0) {
     return {
@@ -240,7 +240,7 @@ function computePhaseIndicator(phasesHistory, projectCode) {
 
   if (phasesHistory.length < 2) {
     return {
-      status: "orange",
+      status: "green",
       label: "N/A",
       detail: "Sin semana anterior",
       resetKey,
