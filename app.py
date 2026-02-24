@@ -785,7 +785,10 @@ def ensure_details_columns(cur: psycopg.Cursor) -> None:
         ADD COLUMN IF NOT EXISTS hours_hypercare NUMERIC DEFAULT 0,
         ADD COLUMN IF NOT EXISTS hours_pm NUMERIC DEFAULT 0,
         ADD COLUMN IF NOT EXISTS hours_consultant NUMERIC DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS hours_technician NUMERIC DEFAULT 0;
+        ADD COLUMN IF NOT EXISTS hours_technician NUMERIC DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS consumed_hours_pm NUMERIC DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS consumed_hours_consultant NUMERIC DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS consumed_hours_technician NUMERIC DEFAULT 0;
         """
     )
 
@@ -1730,7 +1733,8 @@ def project_details(project_code: str):
                 SELECT id, project_code, project_name, client, company, team, project_manager, consultant, status,
                        comments,
                        hours_design, hours_development, hours_pem, hours_hypercare,
-                       hours_pm, hours_consultant, hours_technician
+                       hours_pm, hours_consultant, hours_technician,
+                       consumed_hours_pm, consumed_hours_consultant, consumed_hours_technician
                 FROM projects
                 WHERE project_code = %s
                   AND COALESCE(is_historical, FALSE) = FALSE
@@ -1787,6 +1791,12 @@ def project_details(project_code: str):
         "technician": float(p[16] or 0),
     }
 
+    consumed_hours_role = {
+        "pm": float(p[17] or 0),
+        "consultant": float(p[18] or 0),
+        "technician": float(p[19] or 0),
+    }
+
     project = {
         "id": p[0],
         "project_code": p[1],
@@ -1806,6 +1816,7 @@ def project_details(project_code: str):
         "latest": latest_dict,
         "assigned_hours_phase": assigned_hours_phase,
         "assigned_hours_role": assigned_hours_role,
+        "consumed_hours_role": consumed_hours_role,
         "project_comment": normalize_comment(project_comment),
         "excel_comments": normalize_comment(excel_comments),
     }
@@ -2485,6 +2496,33 @@ def update_assigned_hours_role(project_id: int, payload: AssignedHoursRoleIn):
             )
         conn.commit()
     return {"status": "ok"}
+
+
+@app.post("/projects/{project_id}/consumed-hours/role")
+def update_consumed_hours_role(project_id: int, payload: AssignedHoursRoleIn):
+    if payload.role not in ROLES:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    hours = payload.hours if payload.hours is not None else 0
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_details_columns(cur)
+            column_map = {
+                "pm": "consumed_hours_pm",
+                "consultant": "consumed_hours_consultant",
+                "technician": "consumed_hours_technician",
+            }
+            column = column_map[payload.role]
+            cur.execute(
+                f"""
+                UPDATE projects
+                SET {column} = %s
+                WHERE id = %s
+                """,
+                (hours, project_id),
+            )
+        conn.commit()
+    return {"status": "ok"}
+
 
 
 @app.post("/projects/{project_id}/comments")

@@ -382,6 +382,30 @@
             </div>
           </div>
 
+          <div class="card shadow-soft mb-3">
+            <div class="card-body">
+              <div class="fw-semibold mb-2">Horas consumidas por rol</div>
+              <div class="row g-2">
+                <div class="col-12 col-md-4">
+                  <label class="muted small fw-semibold" for="consumed_role_pm">Project Manager (PM)</label>
+                  <input id="consumed_role_pm" type="number" step="0.01" class="form-control" />
+                </div>
+                <div class="col-12 col-md-4">
+                  <label class="muted small fw-semibold" for="consumed_role_consultant">Consultor</label>
+                  <input id="consumed_role_consultant" type="number" step="0.01" class="form-control" />
+                </div>
+                <div class="col-12 col-md-4">
+                  <label class="muted small fw-semibold" for="consumed_role_technician">Técnico</label>
+                  <input id="consumed_role_technician" type="number" step="0.01" class="form-control" />
+                </div>
+              </div>
+              <div class="d-flex align-items-center gap-2 mt-2">
+                <button id="saveConsumedRole" class="btn btn-sm btn-dark">Guardar consumidas</button>
+                <div id="consumedRoleStatus" class="muted small"></div>
+              </div>
+            </div>
+          </div>
+
           <div class="card shadow-soft">
             <div class="card-body">
               <div class="fw-semibold mb-2">Estado económico</div>
@@ -413,6 +437,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=6"></script>
+  <script src="/static/app.js?v=7"></script>
 </body>
 </html>

@@ -157,6 +157,9 @@ function resetUI() {
   setValue("role_pm", "");
   setValue("role_consultant", "");
   setValue("role_technician", "");
+  setValue("consumed_role_pm", "");
+  setValue("consumed_role_consultant", "");
+  setValue("consumed_role_technician", "");
   setValue("project_comment_input", "");
 }
 
@@ -328,6 +331,11 @@ async function loadProject(code) {
   setValue("role_consultant", toInputValue(roleValues.consultant ?? 0));
   setValue("role_technician", toInputValue(roleValues.technician ?? 0));
 
+  const consumedRoleValues = s.consumed_hours_role || {};
+  setValue("consumed_role_pm", toInputValue(consumedRoleValues.pm ?? 0));
+  setValue("consumed_role_consultant", toInputValue(consumedRoleValues.consultant ?? 0));
+  setValue("consumed_role_technician", toInputValue(consumedRoleValues.technician ?? 0));
+
   setValue("project_comment_input", s.project_comment ?? "");
   updateTaskCounterLinks();
   loadTaskCounters(currentProjectCode);
@@ -399,6 +407,35 @@ async function saveRoleHours() {
       postJson(`${API}/projects/${currentProjectId}/assigned-hours/role`, {
         role: "technician",
         hours: Number($("role_technician").value || 0),
+      }),
+    ]);
+    if (status) status.textContent = "Guardado";
+  } catch (err) {
+    if (status) status.textContent = "Error al guardar";
+    alert(err.message);
+  }
+}
+
+async function saveConsumedRoleHours() {
+  if (!currentProjectId) {
+    alert("Carga un proyecto antes de guardar.");
+    return;
+  }
+  const status = $("consumedRoleStatus");
+  if (status) status.textContent = "Guardando...";
+  try {
+    await Promise.all([
+      postJson(`${API}/projects/${currentProjectId}/consumed-hours/role`, {
+        role: "pm",
+        hours: Number($("consumed_role_pm").value || 0),
+      }),
+      postJson(`${API}/projects/${currentProjectId}/consumed-hours/role`, {
+        role: "consultant",
+        hours: Number($("consumed_role_consultant").value || 0),
+      }),
+      postJson(`${API}/projects/${currentProjectId}/consumed-hours/role`, {
+        role: "technician",
+        hours: Number($("consumed_role_technician").value || 0),
       }),
     ]);
     if (status) status.textContent = "Guardado";
@@ -536,6 +573,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const saveRole = $("saveRole");
   if (saveRole) saveRole.addEventListener("click", saveRoleHours);
+
+  const saveConsumedRole = $("saveConsumedRole");
+  if (saveConsumedRole) saveConsumedRole.addEventListener("click", saveConsumedRoleHours);
 
   const saveComment = $("saveProjectComment");
   if (saveComment) saveComment.addEventListener("click", saveProjectComment);
