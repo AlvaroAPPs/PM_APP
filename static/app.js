@@ -97,10 +97,12 @@ function setActionsEnabled(isEnabled) {
   const actCharts = $("actCharts");
   const actReport = $("actReport");
   const btnExportPdf = $("btnExportPdf");
+  const reportFormat = $("reportFormat");
   if (actTasks) actTasks.disabled = !isEnabled;
   if (actCharts) actCharts.disabled = !isEnabled;
   if (actReport) actReport.disabled = !isEnabled;
   if (btnExportPdf) btnExportPdf.disabled = !isEnabled;
+  if (reportFormat) reportFormat.disabled = !isEnabled;
 }
 
 function resetUI() {
@@ -474,12 +476,14 @@ function onLoadClick() {
   loadProject(code);
 }
 
-function exportSnapshotPdf() {
+function exportSnapshotReport() {
   if (!currentProjectCode) {
     alert("Carga un proyecto antes de exportar.");
     return;
   }
-  window.location.href = `${API}/projects/${encodeURIComponent(currentProjectCode)}/report.pdf`;
+  const selectedFormat = $("reportFormat")?.value || "pdf";
+  const extension = selectedFormat === "word" ? "word" : "pdf";
+  window.location.href = `${API}/projects/${encodeURIComponent(currentProjectCode)}/report.${extension}`;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -557,14 +561,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const actReport = $("actReport");
   if (actReport) {
     actReport.addEventListener("click", () => {
-      exportSnapshotPdf();
+      exportSnapshotReport();
     });
   }
 
   const btnExportPdf = $("btnExportPdf");
   if (btnExportPdf) {
     btnExportPdf.addEventListener("click", () => {
-      exportSnapshotPdf();
+      exportSnapshotReport();
     });
   }
 

@@ -4,6 +4,7 @@ import tempfile
 import urllib.parse
 from datetime import date
 import re
+import html
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -1856,6 +1857,43 @@ def project_details(project_code: str):
     }
 
 
+
+
+def build_snapshot_report_word(payload: dict) -> bytes:
+    project = payload["project"]
+    latest = payload["latest"]
+    weekly = payload["weekly"]
+    week_label = f"{latest.get('snapshot_year')}-W{int(latest.get('snapshot_week') or 0):02d}"
+    rows = []
+    for item in weekly:
+        rows.append(
+            f"<tr><td>{html.escape(str(item.get('year') or ''))}-W{int(item.get('week') or 0):02d}</td>"
+            f"<td>{html.escape(str(item.get('progress_w') if item.get('progress_w') is not None else 'N/A'))}</td>"
+            f"<td>{html.escape(str(item.get('real_hours') if item.get('real_hours') is not None else 'N/A'))}</td>"
+            f"<td>{html.escape(str(item.get('horas_teoricas') if item.get('horas_teoricas') is not None else 'N/A'))}</td></tr>"
+        )
+    body = f"""
+    <html><head><meta charset="utf-8"></head><body>
+    <h1>Informe de proyecto</h1>
+    <p><b>Proyecto:</b> {html.escape(str(project.get('project_name') or 'N/A'))}</p>
+    <p><b>Código:</b> {html.escape(str(project.get('project_code') or 'N/A'))}</p>
+    <p><b>Semana:</b> {html.escape(week_label)}</p>
+    <h2>Snapshots</h2>
+    <table border="1" cellspacing="0" cellpadding="4">
+      <tr><th>Semana</th><th>Avance</th><th>Horas reales</th><th>Horas teóricas</th></tr>
+      {''.join(rows)}
+    </table>
+    </body></html>
+    """
+    return body.encode("utf-8")
+
+
+def build_report_filename(project_name: object, project_code: object, snapshot_week: object, extension: str) -> str:
+    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", str(project_name or project_code or "proyecto")).strip("_") or "proyecto"
+    safe_code = re.sub(r"[^A-Za-z0-9_-]+", "_", str(project_code or "codigo")).strip("_") or "codigo"
+    week_label = f"W{int(snapshot_week or 0):02d}"
+    return f"{safe_name}_{safe_code}_{week_label}.{extension}"
+
 @app.get("/projects/{project_code}/report.pdf")
 def project_snapshot_pdf(project_code: str):
     with psycopg.connect(DB_DSN) as conn:
@@ -2000,7 +2038,7 @@ def project_snapshot_pdf(project_code: str):
         },
     }
     pdf_bytes = build_snapshot_report_pdf(payload)
-    filename = f"snapshot_{project_code}_{latest_dict.get('snapshot_year')}_W{int(latest_dict.get('snapshot_week') or 0):02d}.pdf"
+    filename = build_report_filename(project.get("project_name"), project_code, latest_dict.get("snapshot_week"), "pdf")
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
@@ -2595,3 +2633,86 @@ def update_project_comment(project_id: int, payload: ProjectCommentIn):
             )
         conn.commit()
     return {"status": "ok"}
+
+
+@app.get("/projects/{project_code}/report.word")
+def project_snapshot_word(project_code: str):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_details_columns(cur)
+            cur.execute(
+                """
+                SELECT id, project_code, project_name, client, team, project_manager, consultant
+                FROM projects
+                WHERE project_code = %s
+                  AND COALESCE(is_historical, FALSE) = FALSE
+                """,
+                (project_code,),
+            )
+            project_row = cur.fetchone()
+            if not project_row:
+                raise HTTPException(status_code=404, detail="Project not found")
+            project_id = project_row[0]
+
+            cur.execute(
+                """
+                SELECT *
+                FROM project_snapshot
+                WHERE project_id = %s
+                ORDER BY snapshot_year DESC, snapshot_week DESC, snapshot_at DESC
+                LIMIT 1
+                """,
+                (project_id,),
+            )
+            latest = cur.fetchone()
+            if not latest:
+                raise HTTPException(status_code=404, detail="No snapshots for project")
+            latest_cols = [desc[0] for desc in cur.description]
+            latest_dict = dict(zip(latest_cols, latest))
+
+            cur.execute(
+                """
+                SELECT snapshot_year, snapshot_week,
+                       progress_w, desviacion_pct,
+                       real_hours, horas_teoricas
+                FROM project_snapshot
+                WHERE project_id = %s
+                ORDER BY snapshot_year ASC, snapshot_week ASC
+                """,
+                (project_id,),
+            )
+            weekly_rows = cur.fetchall()
+
+    weekly = [
+        {
+            "year": r[0],
+            "week": r[1],
+            "progress_w": to_float(r[2]),
+            "desviacion_pct": to_float(r[3]),
+            "real_hours": to_float(r[4]),
+            "horas_teoricas": to_float(r[5]),
+        }
+        for r in weekly_rows
+    ]
+
+    project = {
+        "id": project_row[0],
+        "project_code": project_row[1],
+        "project_name": project_row[2],
+        "client": project_row[3],
+        "team": project_row[4],
+        "project_manager": project_row[5],
+        "consultant": project_row[6],
+    }
+    payload = {
+        "project": project,
+        "latest": latest_dict,
+        "weekly": weekly,
+    }
+    word_bytes = build_snapshot_report_word(payload)
+    filename = build_report_filename(project.get("project_name"), project_code, latest_dict.get("snapshot_week"), "doc")
+    return StreamingResponse(
+        io.BytesIO(word_bytes),
+        media_type="application/msword",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
