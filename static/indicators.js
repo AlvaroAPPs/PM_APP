@@ -388,6 +388,11 @@ function buildBarChart(ctx, labels, datasets, domain, showValueLabels = false) {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
+        legend: {
+          display: true,
+          align: "center",
+          fullSize: false,
+        },
         tooltip: {
           callbacks: {
             label: (context) => formatInt(context.parsed.y),
@@ -443,7 +448,11 @@ function buildSCurveChart(ctx, actualPoints, pendingPoints, productivityPoints) 
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: true },
+        legend: {
+          display: true,
+          align: "center",
+          fullSize: false,
+        },
         tooltip: {
           callbacks: {
             label: (context) =>

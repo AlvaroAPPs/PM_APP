@@ -136,9 +136,23 @@ def _pdf_escape(value: object) -> str:
     return re.sub(r"[\x00-\x1F]", " ", text)
 
 
-def _pdf_text(stream: list[str], x: float, y: float, text: str, size: int = 9, bold: bool = False) -> None:
+def _pdf_text(
+    stream: list[str],
+    x: float,
+    y: float,
+    text: str,
+    size: int = 9,
+    bold: bool = False,
+    color_rgb: tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> None:
     font = "F2" if bold else "F1"
-    stream.extend(["BT", f"/{font} {size} Tf", "0 0 0 rg", f"1 0 0 1 {x:.2f} {y:.2f} Tm ({_pdf_escape(text)}) Tj", "ET"])
+    stream.extend([
+        "BT",
+        f"/{font} {size} Tf",
+        f"{color_rgb[0]:.2f} {color_rgb[1]:.2f} {color_rgb[2]:.2f} rg",
+        f"1 0 0 1 {x:.2f} {y:.2f} Tm ({_pdf_escape(text)}) Tj",
+        "ET",
+    ])
 
 
 def _pdf_rect(stream: list[str], x: float, y: float, w: float, h: float, fill_rgb: tuple[float, float, float] | None = None,
@@ -213,13 +227,14 @@ def _pdf_multi_line_chart(
         py = chart_y + (chart_h * tick / 4)
         _pdf_text(stream, x + 2, py - 2, f"{value:.1f}", size=7)
 
-    legend_x = x + 8
+    legend_slot = 92
+    legend_x = x + (w - (len(series) * legend_slot)) / 2
     legend_y = y + h - 26
     for name, color, values in series:
         stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
         stream.append(f"{legend_x:.2f} {legend_y:.2f} 8.00 3.00 re f")
         _pdf_text(stream, legend_x + 11, legend_y - 1, name, size=7)
-        legend_x += 92
+        legend_x += legend_slot
 
         points: list[tuple[float, float]] = []
         for idx, value in enumerate(values):
@@ -289,13 +304,14 @@ def _pdf_grouped_bar_chart(
     group_count = max(1, len(week_labels))
     group_w = chart_w / group_count
     bar_w = max(4.0, min(14.0, group_w / max(2, len(series) + 1)))
-    legend_x = x + 8
+    legend_slot = 96
+    legend_x = x + (w - (len(series) * legend_slot)) / 2
     legend_y = y + h - 26
     for name, color, _values in series:
         stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
         stream.append(f"{legend_x:.2f} {legend_y:.2f} 8.00 3.00 re f")
         _pdf_text(stream, legend_x + 11, legend_y - 1, name, size=7)
-        legend_x += 96
+        legend_x += legend_slot
 
     for group_idx, label in enumerate(week_labels):
         gx = chart_x + group_w * group_idx
@@ -394,6 +410,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
 
     _pdf_rect(content, 32, 686, 531, 78, fill_rgb=(0.89, 0.90, 0.92), stroke_rgb=(0.80, 0.83, 0.88))
     _pdf_text(content, 40, 744, f"Proyecto: {project.get('project_name') or 'N/A'}", size=13, bold=True)
+    _pdf_text(content, 430, 744, "MECALUX", size=13, bold=True, color_rgb=(0.02, 0.33, 0.66))
     header_lines = [
         f"Semana: {snapshot_label}",
         f"Codigo / ID: {project.get('project_code') or 'N/A'}",
@@ -482,15 +499,31 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         week_labels,
         [("Desv %", (0.86, 0.15, 0.15), deviation_series)],
     )
-    _pdf_multi_line_chart(
+    assigned_hours_role = payload.get("assigned_hours_role") or {}
+    consumed_hours_role = payload.get("consumed_hours_role") or {}
+    role_labels = ["PM", "Consultor", "Tecnico"]
+    assigned_role_series = [
+        to_float(assigned_hours_role.get("pm")) or 0.0,
+        to_float(assigned_hours_role.get("consultant")) or 0.0,
+        to_float(assigned_hours_role.get("technician")) or 0.0,
+    ]
+    consumed_role_series = [
+        to_float(consumed_hours_role.get("pm")) or 0.0,
+        to_float(consumed_hours_role.get("consultant")) or 0.0,
+        to_float(consumed_hours_role.get("technician")) or 0.0,
+    ]
+    _pdf_grouped_bar_chart(
         content,
         32,
         140,
         258,
         140,
-        "Horas reales",
-        week_labels,
-        [("Horas reales", (0.05, 0.65, 0.91), real_series)],
+        "Horas por rol",
+        role_labels,
+        [
+            ("Asignadas", (0.11, 0.31, 0.85), assigned_role_series),
+            ("Consumidas", (0.98, 0.45, 0.09), consumed_role_series),
+        ],
     )
     _pdf_grouped_bar_chart(
         content,
@@ -1843,6 +1876,17 @@ def project_snapshot_pdf(project_code: str):
 
             cur.execute(
                 """
+                SELECT hours_pm, hours_consultant, hours_technician,
+                       consumed_hours_pm, consumed_hours_consultant, consumed_hours_technician
+                FROM projects
+                WHERE id = %s
+                """,
+                (project_id,),
+            )
+            role_hours_row = cur.fetchone()
+
+            cur.execute(
+                """
                 SELECT *
                 FROM project_snapshot
                 WHERE project_id = %s
@@ -1937,6 +1981,16 @@ def project_snapshot_pdf(project_code: str):
         "latest": latest_dict,
         "weekly": weekly,
         "phases": phases_history,
+        "assigned_hours_role": {
+            "pm": to_float(role_hours_row[0]) if role_hours_row else 0.0,
+            "consultant": to_float(role_hours_row[1]) if role_hours_row else 0.0,
+            "technician": to_float(role_hours_row[2]) if role_hours_row else 0.0,
+        },
+        "consumed_hours_role": {
+            "pm": to_float(role_hours_row[3]) if role_hours_row else 0.0,
+            "consultant": to_float(role_hours_row[4]) if role_hours_row else 0.0,
+            "technician": to_float(role_hours_row[5]) if role_hours_row else 0.0,
+        },
         "comment": comment_text,
         "indicators": {
             "productivity": compute_productivity_indicator(weekly),
