@@ -361,16 +361,16 @@ function buildBarChart(ctx, labels, datasets, domain, showValueLabels = false) {
         const secondBar = secondMeta.data[index];
         if (!firstBar || !secondBar) return;
 
-        const yTop = Math.min(firstBar.y, secondBar.y) - 6;
-        const x = firstBar.x;
+        const firstYTop = firstBar.y - 6;
+        const secondYTop = secondBar.y - 6;
 
         if (Number.isFinite(firstRaw)) {
           ctx.fillStyle = "#1d4ed8";
-          ctx.fillText(String(Math.round(firstRaw)), x - 14, yTop);
+          ctx.fillText(String(Math.round(firstRaw)), firstBar.x, firstYTop);
         }
         if (Number.isFinite(secondRaw)) {
           ctx.fillStyle = "#f97316";
-          ctx.fillText(String(Math.round(secondRaw)), x + 14, yTop);
+          ctx.fillText(String(Math.round(secondRaw)), secondBar.x, secondYTop);
         }
       });
       ctx.restore();

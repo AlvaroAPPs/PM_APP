@@ -225,7 +225,7 @@ def _pdf_multi_line_chart(
     for tick in range(5):
         value = vmin + ((vmax - vmin) * tick / 4)
         py = chart_y + (chart_h * tick / 4)
-        _pdf_text(stream, x + 2, py - 2, f"{value:.1f}", size=7)
+        _pdf_text(stream, x + 2, py - 2, f"{value:.0f}", size=7)
 
     legend_slot = 92
     legend_x = x + (w - (len(series) * legend_slot)) / 2
@@ -259,7 +259,9 @@ def _pdf_multi_line_chart(
                 continue
             px = chart_x + (chart_w * idx / max(1, len(values) - 1))
             py = chart_y + ((value - vmin) / (vmax - vmin)) * chart_h
-            _pdf_text(stream, px - 8, py + 4, f"{value:.1f}", size=6)
+            if idx == 0:
+                continue
+            _pdf_text(stream, px - 8, py + 4, f"{value:.0f}", size=6)
 
 
 def _pdf_grouped_bar_chart(
@@ -325,7 +327,7 @@ def _pdf_grouped_bar_chart(
             bx = gx + 4 + (series_idx * (bar_w + 2))
             stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
             stream.append(f"{bx:.2f} {chart_y:.2f} {bar_w:.2f} {bar_h:.2f} re f")
-            _pdf_text(stream, bx - 2, chart_y + bar_h + 3, f"{value:.0f}", size=6)
+            _pdf_text(stream, bx + (bar_w / 2) - 3, chart_y + bar_h + 3, f"{value:.0f}", size=6)
 
     for tick in range(5):
         value = vmin + ((vmax - vmin) * tick / 4)
@@ -410,7 +412,6 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
 
     _pdf_rect(content, 32, 686, 531, 78, fill_rgb=(0.89, 0.90, 0.92), stroke_rgb=(0.80, 0.83, 0.88))
     _pdf_text(content, 40, 744, f"Proyecto: {project.get('project_name') or 'N/A'}", size=13, bold=True)
-    _pdf_text(content, 430, 744, "MECALUX", size=13, bold=True, color_rgb=(0.02, 0.33, 0.66))
     header_lines = [
         f"Semana: {snapshot_label}",
         f"Codigo / ID: {project.get('project_code') or 'N/A'}",
@@ -464,7 +465,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
     indicator_cards = [
         ("Productividad", indicators.get("productivity") or "N/A"),
         ("Desviacion", indicators.get("deviation") or "N/A"),
-        ("Fases", indicators.get("phase") or "N/A"),
+        ("Planificación", indicators.get("phase") or "N/A"),
     ]
     for idx, (label, value) in enumerate(indicator_cards):
         cx = 32 + (idx * 180)
