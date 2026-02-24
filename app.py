@@ -194,7 +194,7 @@ def _pdf_multi_line_chart(
     chart_h = h - 42
 
     numeric = [value for _name, _color, values in series for value in values if value is not None]
-    if len(numeric) < 2:
+    if len(numeric) < 1:
         _pdf_text(stream, x + 8, y + 8, "Sin datos", size=8)
         return
 
@@ -244,14 +244,13 @@ def _pdf_multi_line_chart(
             px = chart_x + (chart_w * idx / max(1, len(values) - 1))
             py = chart_y + ((value - vmin) / (vmax - vmin)) * chart_h
             points.append((px, py))
-        if len(points) < 2:
-            continue
-        stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} RG 1.2 w")
-        p0x, p0y = points[0]
-        stream.append(f"{p0x:.2f} {p0y:.2f} m")
-        for px, py in points[1:]:
-            stream.append(f"{px:.2f} {py:.2f} l")
-        stream.append("S")
+        if len(points) >= 2:
+            stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} RG 1.2 w")
+            p0x, p0y = points[0]
+            stream.append(f"{p0x:.2f} {p0y:.2f} m")
+            for px, py in points[1:]:
+                stream.append(f"{px:.2f} {py:.2f} l")
+            stream.append("S")
         for px, py in points:
             stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
             stream.append(f"{px - 1.8:.2f} {py - 1.8:.2f} 3.60 3.60 re f")
