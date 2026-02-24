@@ -339,13 +339,36 @@ function buildLineChart(ctx, labels, datasetLabel, data, color, domain) {
   });
 }
 
-function buildBarChart(ctx, labels, datasets, domain) {
+function buildBarChart(ctx, labels, datasets, domain, showValueLabels = false) {
+  const valueLabelsPlugin = {
+    id: "valueLabels",
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.fillStyle = "#374151";
+      ctx.font = "600 11px system-ui";
+      chart.data.datasets.forEach((dataset, datasetIndex) => {
+        const meta = chart.getDatasetMeta(datasetIndex);
+        if (!meta || meta.hidden) return;
+        meta.data.forEach((bar, index) => {
+          const raw = dataset.data[index];
+          if (!Number.isFinite(raw)) return;
+          ctx.fillText(String(Math.round(raw)), bar.x, bar.y - 4);
+        });
+      });
+      ctx.restore();
+    },
+  };
+
   return new Chart(ctx, {
     type: "bar",
     data: {
       labels,
       datasets,
     },
+    plugins: showValueLabels ? [valueLabelsPlugin] : [],
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -660,7 +683,8 @@ function renderCharts(weekly, totalHours, roleHours) {
         categoryPercentage: 0.7,
       },
     ],
-    roleHoursDomain
+    roleHoursDomain,
+    true
   );
 
   buildBarChart(
