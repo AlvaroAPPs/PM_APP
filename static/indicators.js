@@ -4,6 +4,7 @@ const MAX_CHART_POINTS = 25;
 const DEFAULT_TOTAL_HOURS = null;
 let activeProjectCode = null;
 let activeTotalHours = DEFAULT_TOTAL_HOURS;
+let activeRoleHours = null;
 const STATUS_CLASSES = {
   red: "status-red",
   amber: "status-amber",
@@ -546,7 +547,7 @@ function buildProjectionForHours(progressWeekly, realCumulative, weekLabels, tot
   };
 }
 
-function renderCharts(weekly, totalHours) {
+function renderCharts(weekly, totalHours, roleHours) {
   const visibleWeekly = windowSeries(weekly);
   const labels = visibleWeekly.map((item) =>
     formatWeekLabel(item.year, item.week)
@@ -593,7 +594,6 @@ function renderCharts(weekly, totalHours) {
 
   const progressDomain = calculateDomain(progressData);
   const deviationDomain = calculateDomain(deviationData);
-  const realHoursDomain = calculateDomain(realWeeklyHours);
   const hoursCompareWeekly = visibleWeekly.filter(
     (item) => item.progress_w_delta !== null && item.progress_w_delta !== undefined
   );
@@ -627,15 +627,40 @@ function renderCharts(weekly, totalHours) {
     "#dc2626",
     deviationDomain
   );
-  buildLineChart(
+  const roleLabels = ["PM", "Consultor", "Técnico"];
+  const assignedByRole = [
+    toNumber(roleHours?.assigned_hours_role?.pm) ?? 0,
+    toNumber(roleHours?.assigned_hours_role?.consultant) ?? 0,
+    toNumber(roleHours?.assigned_hours_role?.technician) ?? 0,
+  ];
+  const consumedByRole = [
+    toNumber(roleHours?.consumed_hours_role?.pm) ?? 0,
+    toNumber(roleHours?.consumed_hours_role?.consultant) ?? 0,
+    toNumber(roleHours?.consumed_hours_role?.technician) ?? 0,
+  ];
+  const roleHoursDomain = calculateDomain(assignedByRole.concat(consumedByRole));
+  buildBarChart(
     $("chartRealHours"),
-    labels,
-    "Horas reales",
-    realWeeklyHours.map((value) =>
-      value === null ? null : Math.round(value)
-    ),
-    "#0ea5e9",
-    realHoursDomain
+    roleLabels,
+    [
+      {
+        label: "Horas asignadas",
+        data: assignedByRole.map((value) => Math.round(value)),
+        backgroundColor: "#1d4ed8",
+        grouped: false,
+        barPercentage: 0.95,
+        categoryPercentage: 0.7,
+      },
+      {
+        label: "Horas consumidas",
+        data: consumedByRole.map((value) => Math.round(value)),
+        backgroundColor: "#f97316",
+        grouped: false,
+        barPercentage: 0.55,
+        categoryPercentage: 0.7,
+      },
+    ],
+    roleHoursDomain
   );
 
   buildBarChart(
@@ -765,7 +790,7 @@ async function loadIndicators() {
       });
     }
 
-    renderCharts(weekly, activeTotalHours);
+    renderCharts(weekly, activeTotalHours, activeRoleHours);
     renderPhaseChangesTable(phases);
   } catch (err) {
     const noData = $("noDataMessage");
@@ -811,13 +836,20 @@ async function init() {
   if (!projectCode) return;
 
   let projectName = projectNameParam;
-  if (!projectName) {
-    try {
-      const details = await fetchJson(
-        `/projects/${encodeURIComponent(projectCode)}/details`
-      );
-      projectName = details?.project?.project_name;
-    } catch (err) {
+  let roleHours = null;
+  try {
+    const details = await fetchJson(
+      `/projects/${encodeURIComponent(projectCode)}/details`
+    );
+    if (!projectName) {
+      projectName = details?.project?.project_name || "";
+    }
+    roleHours = {
+      assigned_hours_role: details?.assigned_hours_role || {},
+      consumed_hours_role: details?.consumed_hours_role || {},
+    };
+  } catch (err) {
+    if (!projectName) {
       projectName = "";
     }
   }
@@ -827,6 +859,7 @@ async function init() {
 
   activeProjectCode = projectCode;
   activeTotalHours = totalHours;
+  activeRoleHours = roleHours;
   await loadIndicators();
 }
 
