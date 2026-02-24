@@ -102,6 +102,91 @@
       </div>
     </section>
 
+    <section id="projectDatesKpis" class="mb-4 d-none">
+      <h2 class="h5 fw-semibold mb-3">Project dates</h2>
+      <div class="row row-cols-1 row-cols-md-3 row-cols-xl-6 g-3">
+        <div class="col">
+          <div class="card shadow-soft"><div class="card-body">
+            <div class="muted fw-semibold">Kick-off</div><div class="fw-bold" id="date_kickoff">—</div>
+          </div></div>
+        </div>
+        <div class="col">
+          <div class="card shadow-soft"><div class="card-body">
+            <div class="muted fw-semibold">Design</div><div class="fw-bold" id="date_design">—</div>
+          </div></div>
+        </div>
+        <div class="col">
+          <div class="card shadow-soft"><div class="card-body">
+            <div class="muted fw-semibold">Validation</div><div class="fw-bold" id="date_validation">—</div>
+          </div></div>
+        </div>
+        <div class="col">
+          <div class="card shadow-soft"><div class="card-body">
+            <div class="muted fw-semibold">Go-Live</div><div class="fw-bold" id="date_golive">—</div>
+          </div></div>
+        </div>
+        <div class="col">
+          <div class="card shadow-soft"><div class="card-body">
+            <div class="muted fw-semibold">Reception</div><div class="fw-bold" id="date_reception">—</div>
+          </div></div>
+        </div>
+        <div class="col">
+          <div class="card shadow-soft"><div class="card-body">
+            <div class="muted fw-semibold">End</div><div class="fw-bold" id="date_end">—</div>
+          </div></div>
+        </div>
+      </div>
+
+      <h2 class="h5 fw-semibold mt-4 mb-3">Project KPIs</h2>
+      <div class="row g-3 row-cols-1 row-cols-md-5">
+        <div class="col">
+          <div class="card shadow-soft">
+            <div class="card-body">
+              <div class="muted fw-semibold">Avance (W)</div>
+              <div class="fw-bold" id="kpi_avance_w">—</div>
+              <div class="muted small">Progreso semanal</div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card shadow-soft">
+            <div class="card-body">
+              <div class="muted fw-semibold">Horas proyecto</div>
+              <div class="fw-bold" id="kpi_horas_proyecto">—</div>
+              <div class="muted small">Total (Ordered total)</div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card shadow-soft">
+            <div class="card-body">
+              <div class="muted fw-semibold">Horas teóricas</div>
+              <div class="fw-bold" id="kpi_horas_teoricas">—</div>
+              <div class="muted small">Total * Avance</div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card shadow-soft">
+            <div class="card-body">
+              <div class="muted fw-semibold">Horas reales</div>
+              <div class="fw-bold" id="kpi_horas_reales">—</div>
+              <div class="muted small">Real</div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card shadow-soft">
+            <div class="card-body">
+              <div class="muted fw-semibold">Desviación %</div>
+              <div class="fw-bold" id="kpi_desviacion_pct">—</div>
+              <div class="muted small">Real vs Teóricas</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="mb-4">
       <h2 class="h5 fw-semibold mb-3">Gráficas</h2>
       <div class="row g-3">
@@ -179,5 +264,64 @@
     window.PROJECT_CODE = "{{ project_code }}";
   </script>
   <script src="/static/indicators.js?v=1"></script>
+  <script>
+    (() => {
+      const $ = (id) => document.getElementById(id);
+      const asNum = (v) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+      const asText = (v, suffix = "") => {
+        if (v === null || v === undefined || Number.isNaN(v)) return "—";
+        return `${Number(v).toLocaleString("es-ES", { maximumFractionDigits: 2 })}${suffix}`;
+      };
+      const asDate = (v) => {
+        if (!v) return "—";
+        const d = new Date(`${v}T00:00:00`);
+        return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString("es-ES");
+      };
+      const sortByWeek = (list) => [...list].sort((a, b) => (a.year !== b.year ? a.year - b.year : a.week - b.week));
+
+      document.addEventListener("DOMContentLoaded", async () => {
+        const code = window.PROJECT_CODE;
+        if (!code) return;
+        try {
+          const [weeklyRaw, phasesRaw] = await Promise.all([
+            fetch(`/projects/${encodeURIComponent(code)}/metrics/weekly`).then((r) => r.ok ? r.json() : []),
+            fetch(`/projects/${encodeURIComponent(code)}/metrics/phases`).then((r) => r.ok ? r.json() : []),
+          ]);
+          const weekly = sortByWeek(Array.isArray(weeklyRaw) ? weeklyRaw : []);
+          const phases = sortByWeek(Array.isArray(phasesRaw) ? phasesRaw : []);
+          if (!weekly.length || !phases.length) return;
+
+          const latestWeek = weekly[weekly.length - 1];
+          const latestPhases = phases[phases.length - 1];
+          const totalHours = asNum(new URLSearchParams(window.location.search).get("totalHours"));
+
+          $("date_kickoff").textContent = asDate(latestPhases.date_kickoff);
+          $("date_design").textContent = asDate(latestPhases.date_design);
+          $("date_validation").textContent = asDate(latestPhases.date_validation);
+          $("date_golive").textContent = asDate(latestPhases.date_golive);
+          $("date_reception").textContent = asDate(latestPhases.date_reception);
+          $("date_end").textContent = asDate(latestPhases.date_end);
+
+          const progressW = asNum(latestWeek.progress_w);
+          const realHours = asNum(latestWeek.real_hours);
+          const theoretical = asNum(latestWeek.horas_teoricas);
+          const deviation = asNum(latestWeek.desviacion_pct);
+
+          $("kpi_avance_w").textContent = progressW === null ? "—" : `${progressW.toFixed(2)} %`;
+          $("kpi_horas_proyecto").textContent = asText(totalHours, " h");
+          $("kpi_horas_teoricas").textContent = asText(theoretical, " h");
+          $("kpi_horas_reales").textContent = asText(realHours, " h");
+          $("kpi_desviacion_pct").textContent = asText(deviation, " %");
+
+          $("projectDatesKpis").classList.remove("d-none");
+        } catch (_err) {
+          // Keep section hidden on data errors.
+        }
+      });
+    })();
+  </script>
 </body>
 </html>
