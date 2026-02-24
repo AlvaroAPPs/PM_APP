@@ -368,6 +368,52 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
             next_year += 1
         return next_year, next_week
 
+    def is_likely_cumulative(values: list[float | None]) -> bool:
+        numeric_values = [value for value in values if value is not None]
+        if len(numeric_values) < 3:
+            return False
+        non_decreasing = 0
+        negative = 0
+        diffs: list[float] = []
+        for idx in range(1, len(values)):
+            prev = values[idx - 1]
+            curr = values[idx]
+            if prev is None or curr is None:
+                continue
+            diff = curr - prev
+            diffs.append(abs(diff))
+            if diff >= 0:
+                non_decreasing += 1
+            else:
+                negative += 1
+        effective_diffs = len(diffs) or 1
+        avg_diff = sum(diffs) / effective_diffs
+        first = numeric_values[0]
+        last = numeric_values[-1]
+        mostly_non_decreasing = negative <= max(1, int(effective_diffs * 0.2))
+        return mostly_non_decreasing and last >= first and last >= avg_diff * 2
+
+    def to_delta_series(values: list[float | None]) -> list[float | None]:
+        if not values:
+            return []
+        result: list[float | None] = []
+        for idx, value in enumerate(values):
+            if value is None:
+                result.append(None)
+                continue
+            if idx == 0:
+                result.append(value)
+                continue
+            prev = values[idx - 1]
+            if prev is None:
+                result.append(None)
+                continue
+            result.append(value - prev)
+        return result
+
+    def safe_weekly_series(values: list[float | None]) -> list[float | None]:
+        return to_delta_series(values) if is_likely_cumulative(values) else values
+
     def compute_projection_meta() -> tuple[float | None, str]:
         if not weekly:
             return None, "N/A"
@@ -479,6 +525,8 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
     deviation_series = [to_float(item.get("desviacion_pct")) for item in weekly]
     real_series = [to_float(item.get("real_hours")) for item in weekly]
     theor_series = [to_float(item.get("horas_teoricas")) for item in weekly]
+    real_weekly_series = safe_weekly_series(real_series)
+    theor_weekly_series = safe_weekly_series(theor_series)
     _pdf_text(content, 32, 435, "Graficas", size=10, bold=True)
     _pdf_multi_line_chart(
         content,
@@ -534,7 +582,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         140,
         "Horas reales vs Teoricas",
         week_labels,
-        [("Horas reales", (0.11, 0.31, 0.85), real_series), ("Horas teoricas", (0.98, 0.45, 0.09), theor_series)],
+        [("Horas reales", (0.11, 0.31, 0.85), real_weekly_series), ("Horas teoricas", (0.98, 0.45, 0.09), theor_weekly_series)],
     )
 
     cumulative = []
