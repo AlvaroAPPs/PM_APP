@@ -203,7 +203,7 @@ def _pdf_multi_line_chart(
     if vmin == vmax:
         vmin -= 1.0
         vmax += 1.0
-    pad = (vmax - vmin) * 0.1
+    pad = (vmax - vmin) * 0.05
     vmin -= pad
     vmax += pad
 
@@ -254,14 +254,6 @@ def _pdf_multi_line_chart(
         for px, py in points:
             stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
             stream.append(f"{px - 1.8:.2f} {py - 1.8:.2f} 3.60 3.60 re f")
-        for idx, value in enumerate(values):
-            if value is None:
-                continue
-            px = chart_x + (chart_w * idx / max(1, len(values) - 1))
-            py = chart_y + ((value - vmin) / (vmax - vmin)) * chart_h
-            if idx == 0:
-                continue
-            _pdf_text(stream, px - 8, py + 4, f"{value:.0f}", size=6)
 
 
 def _pdf_grouped_bar_chart(
@@ -273,6 +265,7 @@ def _pdf_grouped_bar_chart(
     title: str,
     week_labels: list[str],
     series: list[tuple[str, tuple[float, float, float], list[float | None]]],
+    show_value_labels: bool = False,
 ) -> None:
     _pdf_rect(stream, x, y, w, h, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.86, 0.88, 0.92), line_width=0.8)
     _pdf_text(stream, x + 8, y + h - 14, title, size=9, bold=True)
@@ -291,7 +284,7 @@ def _pdf_grouped_bar_chart(
     vmax = max(numeric)
     if vmax <= vmin:
         vmax = vmin + 1.0
-    pad = (vmax - vmin) * 0.1
+    pad = (vmax - vmin) * 0.05
     vmax += pad
 
     for idx in range(5):
@@ -327,7 +320,8 @@ def _pdf_grouped_bar_chart(
             bx = gx + 4 + (series_idx * (bar_w + 2))
             stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
             stream.append(f"{bx:.2f} {chart_y:.2f} {bar_w:.2f} {bar_h:.2f} re f")
-            _pdf_text(stream, bx + (bar_w / 2) - 3, chart_y + bar_h + 3, f"{value:.0f}", size=6)
+            if show_value_labels:
+                _pdf_text(stream, bx + (bar_w / 2) - 3, chart_y + bar_h + 3, f"{value:.0f}", size=6)
 
     for tick in range(5):
         value = vmin + ((vmax - vmin) * tick / 4)
@@ -534,7 +528,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         286,
         258,
         140,
-        "Progreso",
+        "Progreso semanal",
         week_labels,
         [("Avance", (0.15, 0.39, 0.92), progress_series)],
     )
@@ -544,7 +538,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         286,
         258,
         140,
-        "Desviacion",
+        "Desviación semanal",
         week_labels,
         [("Desv %", (0.86, 0.15, 0.15), deviation_series)],
     )
@@ -567,12 +561,13 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         140,
         258,
         140,
-        "Horas por rol",
+        "Horas asignadas vs consumidas por rol",
         role_labels,
         [
             ("Asignadas", (0.11, 0.31, 0.85), assigned_role_series),
             ("Consumidas", (0.98, 0.45, 0.09), consumed_role_series),
         ],
+        True,
     )
     _pdf_grouped_bar_chart(
         content,
@@ -608,7 +603,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         26,
         531,
         108,
-        "S con proyeccion",
+        "Curva S con proyección",
         week_labels,
         [("Acumulado", (0.15, 0.39, 0.92), cumulative), ("Proyeccion", (0.98, 0.45, 0.09), projected)],
     )
