@@ -1427,6 +1427,8 @@ def menu_personal(request: Request):
                     deviation_status,
                     phase_status,
                 )
+                if productivity_status == "green" and deviation_status == "green":
+                    overall_status = "green"
 
                 ordered_total = row[5]
                 if ordered_total is None and (row[6] is not None or row[7] is not None):
