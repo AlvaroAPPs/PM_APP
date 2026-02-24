@@ -344,19 +344,34 @@ function buildBarChart(ctx, labels, datasets, domain, showValueLabels = false) {
     id: "valueLabels",
     afterDatasetsDraw(chart) {
       const { ctx } = chart;
+      const firstDataset = chart.data.datasets[0];
+      const secondDataset = chart.data.datasets[1];
+      const firstMeta = chart.getDatasetMeta(0);
+      const secondMeta = chart.getDatasetMeta(1);
+      if (!firstDataset || !secondDataset || !firstMeta || !secondMeta) return;
+
       ctx.save();
       ctx.textAlign = "center";
       ctx.textBaseline = "bottom";
-      ctx.fillStyle = "#374151";
       ctx.font = "600 11px system-ui";
-      chart.data.datasets.forEach((dataset, datasetIndex) => {
-        const meta = chart.getDatasetMeta(datasetIndex);
-        if (!meta || meta.hidden) return;
-        meta.data.forEach((bar, index) => {
-          const raw = dataset.data[index];
-          if (!Number.isFinite(raw)) return;
-          ctx.fillText(String(Math.round(raw)), bar.x, bar.y - 4);
-        });
+      labels.forEach((_, index) => {
+        const firstRaw = firstDataset.data[index];
+        const secondRaw = secondDataset.data[index];
+        const firstBar = firstMeta.data[index];
+        const secondBar = secondMeta.data[index];
+        if (!firstBar || !secondBar) return;
+
+        const yTop = Math.min(firstBar.y, secondBar.y) - 6;
+        const x = firstBar.x;
+
+        if (Number.isFinite(firstRaw)) {
+          ctx.fillStyle = "#1d4ed8";
+          ctx.fillText(String(Math.round(firstRaw)), x - 14, yTop);
+        }
+        if (Number.isFinite(secondRaw)) {
+          ctx.fillStyle = "#f97316";
+          ctx.fillText(String(Math.round(secondRaw)), x + 14, yTop);
+        }
       });
       ctx.restore();
     },
