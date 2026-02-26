@@ -1783,6 +1783,33 @@ def search_projects(q: str = Query(..., min_length=1), limit: int = 20):
 
 
 # ---------- API: Project state ----------
+
+
+@app.get("/projects/non-historical")
+def list_non_historical_projects(limit: int = 500):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, project_code, project_name
+                FROM projects
+                WHERE COALESCE(is_historical, FALSE) = FALSE
+                ORDER BY project_code ASC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            rows = cur.fetchall()
+
+    return [
+        {
+            "id": r[0],
+            "project_code": r[1],
+            "project_name": r[2],
+        }
+        for r in rows
+    ]
+
 @app.get("/projects/{project_code}/state")
 def project_state(project_code: str, weeks_back: int = 20):
     with psycopg.connect(DB_DSN) as conn:

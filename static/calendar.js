@@ -669,7 +669,8 @@ function openCreateNoteModal() {
 async function setupNoteProjectPicker() {
   const select = $("noteProject");
   if (!select) return;
-  const res = await fetch(`${API}/projects/search?q=%20&limit=200`);
+  select.innerHTML = '<option value="">General</option>';
+  const res = await fetch(`${API}/projects/non-historical?limit=500`);
   const rows = res.ok ? await res.json() : [];
   for (const row of rows) {
     const opt = document.createElement("option");
