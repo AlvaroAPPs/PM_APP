@@ -401,6 +401,7 @@ function openNoteModal(note = null) {
   $("noteTitle").value = note?.title || "";
   $("noteComment").value = note?.comment || "";
   $("noteDate").value = note?.date || toIsoDate(new Date());
+  if ($("noteProjectSearch")) $("noteProjectSearch").value = "";
   $("noteType").value = note?.type || "General";
   $("noteProject").value = note?.projectId ? String(note.projectId) : "";
   $("noteError").textContent = "";
@@ -666,18 +667,40 @@ function openCreateNoteModal() {
 
 
 
-async function setupNoteProjectPicker() {
+function renderNoteProjectOptions(rows) {
   const select = $("noteProject");
   if (!select) return;
   select.innerHTML = '<option value="">General</option>';
-  const res = await fetch(`${API}/projects/non-historical?limit=500`);
-  const rows = res.ok ? await res.json() : [];
   for (const row of rows) {
     const opt = document.createElement("option");
     opt.value = String(row.id);
     opt.textContent = `${row.project_code || "—"} - ${row.project_name || "—"}`;
     select.appendChild(opt);
   }
+}
+
+async function setupNoteProjectPicker() {
+  const select = $("noteProject");
+  const searchInput = $("noteProjectSearch");
+  if (!select || !searchInput) return;
+
+  const allRes = await fetch(`${API}/projects/non-historical?limit=500`);
+  const allRows = allRes.ok ? await allRes.json() : [];
+  renderNoteProjectOptions(allRows);
+
+  let timer = null;
+  searchInput.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const query = (searchInput.value || "").trim();
+      if (!query) {
+        renderNoteProjectOptions(allRows);
+        return;
+      }
+      const rows = await searchProjects(query);
+      renderNoteProjectOptions(rows);
+    }, 250);
+  });
 }
 
 async function toggleNoteChecklistItem(index, done) {
