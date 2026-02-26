@@ -61,8 +61,10 @@ class ProjectCommentIn(BaseModel):
 TASK_TYPES = {"TASK", "PP"}
 TASK_OWNER_ROLES = {"PM", "CONSULTORIA", "TECH", "COMERCIAL", "CLIENTE"}
 TASK_STATUSES = {"OPEN", "IN_PROGRESS", "PAUSED", "CLOSED"}
+NOTE_TYPES = {"GENERAL", "REUNION"}
 GENERAL_INTERNAL_PROJECT_CODE = "AMPLIACIONES_VARIOS"
 GENERAL_INTERNAL_PROJECT_NAME = "Ampliaciones Varios"
+SUBTASKS_MARKER = "\n\n---SUBTASKS---\n"
 
 
 class ProjectTaskCreateIn(BaseModel):
@@ -88,6 +90,10 @@ class ProjectTaskUpdateIn(BaseModel):
     description: str
 
 
+class ChecklistToggleIn(BaseModel):
+    done: bool
+
+
 class NoteChecklistItemIn(BaseModel):
     text: str
     done: bool = False
@@ -97,6 +103,8 @@ class NoteCreateIn(BaseModel):
     title: str
     comment: str | None = None
     date: str
+    projectId: int | None = None
+    type: str = "General"
     checklist: list[NoteChecklistItemIn] = []
 
 
@@ -104,6 +112,8 @@ class NoteUpdateIn(BaseModel):
     title: str
     comment: str | None = None
     date: str
+    projectId: int | None = None
+    type: str = "General"
     checklist: list[NoteChecklistItemIn] = []
 
 
@@ -982,8 +992,10 @@ def ensure_project_notes_storage(cur: psycopg.Cursor) -> None:
         """
         CREATE TABLE IF NOT EXISTS project_notes (
             id BIGSERIAL PRIMARY KEY,
+            project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL,
             title TEXT NOT NULL,
             comment TEXT,
+            note_type TEXT NOT NULL DEFAULT 'GENERAL' CHECK (note_type IN ('GENERAL', 'REUNION')),
             note_date DATE NOT NULL,
             checklist JSONB NOT NULL DEFAULT '[]'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -991,9 +1003,28 @@ def ensure_project_notes_storage(cur: psycopg.Cursor) -> None:
         );
         """
     )
+    cur.execute(
+        """
+        ALTER TABLE project_notes
+        ADD COLUMN IF NOT EXISTS project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL;
+        """
+    )
+    cur.execute(
+        """
+        ALTER TABLE project_notes
+        ADD COLUMN IF NOT EXISTS note_type TEXT NOT NULL DEFAULT 'GENERAL';
+        """
+    )
+    cur.execute(
+        """
+        UPDATE project_notes
+        SET note_type = 'GENERAL'
+        WHERE note_type IS NULL OR BTRIM(note_type) = '';
+        """
+    )
 
 
-def _normalize_note_payload(payload: NoteCreateIn | NoteUpdateIn) -> tuple[str, str | None, date, list[dict[str, object]]]:
+def _normalize_note_payload(payload: NoteCreateIn | NoteUpdateIn) -> tuple[int | None, str, str | None, str, date, list[dict[str, object]]]:
     title = (payload.title or "").strip()
     comment = (payload.comment or "").strip()
     if not title:
@@ -1005,6 +1036,11 @@ def _normalize_note_payload(payload: NoteCreateIn | NoteUpdateIn) -> tuple[str, 
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date")
 
+    project_id = payload.projectId if payload.projectId and payload.projectId > 0 else None
+    note_type = (payload.type or "General").strip().upper()
+    if note_type not in NOTE_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid note type")
+
     checklist: list[dict[str, object]] = []
     for item in payload.checklist or []:
         text = (item.text or "").strip()
@@ -1012,7 +1048,34 @@ def _normalize_note_payload(payload: NoteCreateIn | NoteUpdateIn) -> tuple[str, 
             continue
         checklist.append({"text": text, "done": bool(item.done)})
 
-    return title, (comment or None), parsed_date, checklist
+    return project_id, title, (comment or None), note_type, parsed_date, checklist
+
+
+def _split_description_subtasks(raw_description: str | None) -> tuple[str, list[dict[str, object]]]:
+    text = (raw_description or "")
+    marker_idx = text.find(SUBTASKS_MARKER)
+    if marker_idx < 0:
+        return text, []
+    description = text[:marker_idx].rstrip()
+    tail = text[marker_idx + len(SUBTASKS_MARKER):]
+    subtasks: list[dict[str, object]] = []
+    for line in tail.splitlines():
+        row = line.strip()
+        if row.startswith("[ ] "):
+            subtasks.append({"text": row[4:].strip(), "done": False})
+        elif row.startswith("[x] ") or row.startswith("[X] "):
+            subtasks.append({"text": row[4:].strip(), "done": True})
+    return description, [item for item in subtasks if item.get("text")]
+
+
+def _compose_description_subtasks(description: str, subtasks: list[dict[str, object]]) -> str:
+    clean_description = (description or "").strip()
+    clean_subtasks = [item for item in subtasks if (item.get("text") or "").strip()]
+    if not clean_subtasks:
+        return clean_description
+    lines = [f"[{'x' if bool(item.get('done')) else ' '}] {(item.get('text') or '').strip()}" for item in clean_subtasks]
+    return clean_description + SUBTASKS_MARKER + '\n'.join(lines)
+
 def ensure_general_internal_project(cur: psycopg.Cursor) -> None:
     cur.execute(
         """
@@ -2322,21 +2385,100 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
 
 
 
-@app.post("/notes")
-@app.post("/project-notes")
-def create_note(payload: NoteCreateIn):
-    title, comment, parsed_date, checklist = _normalize_note_payload(payload)
+@app.patch("/project-tasks/{task_id}/subtasks/{subtask_index}")
+def toggle_project_task_subtask(task_id: int, subtask_index: int, payload: ChecklistToggleIn):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_tasks_storage(cur)
+            cur.execute(
+                """
+                SELECT description
+                FROM project_tasks
+                WHERE id = %s
+                """,
+                (task_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Task not found")
+            description, subtasks = _split_description_subtasks(row[0])
+            if subtask_index < 0 or subtask_index >= len(subtasks):
+                raise HTTPException(status_code=404, detail="Checklist item not found")
+            subtasks[subtask_index]["done"] = bool(payload.done)
+            cur.execute(
+                """
+                UPDATE project_tasks
+                SET description = %s,
+                    updated_at = now()
+                WHERE id = %s
+                """,
+                (_compose_description_subtasks(description, subtasks), task_id),
+            )
+        conn.commit()
+    return {"status": "ok"}
 
+
+@app.patch("/project-notes/{note_id}/checklist/{item_index}")
+@app.patch("/notes/{note_id}/checklist/{item_index}")
+def toggle_note_checklist(note_id: int, item_index: int, payload: ChecklistToggleIn):
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             ensure_project_notes_storage(cur)
             cur.execute(
                 """
-                INSERT INTO project_notes (title, comment, note_date, checklist)
-                VALUES (%s, %s, %s, %s::jsonb)
+                SELECT checklist
+                FROM project_notes
+                WHERE id = %s
+                """,
+                (note_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Note not found")
+            checklist = list(row[0] or [])
+            if item_index < 0 or item_index >= len(checklist):
+                raise HTTPException(status_code=404, detail="Checklist item not found")
+            checklist[item_index]["done"] = bool(payload.done)
+            cur.execute(
+                """
+                UPDATE project_notes
+                SET checklist = %s::jsonb,
+                    updated_at = now()
+                WHERE id = %s
+                """,
+                (Json(checklist), note_id),
+            )
+        conn.commit()
+    return {"status": "ok"}
+
+
+@app.post("/notes")
+@app.post("/project-notes")
+def create_note(payload: NoteCreateIn):
+    project_id, title, comment, note_type, parsed_date, checklist = _normalize_note_payload(payload)
+
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_notes_storage(cur)
+            if project_id is not None:
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM projects
+                    WHERE id = %s
+                      AND COALESCE(is_historical, FALSE) = FALSE
+                    """,
+                    (project_id,),
+                )
+                if not cur.fetchone():
+                    raise HTTPException(status_code=404, detail="Project not found")
+            cur.execute(
+                """
+                INSERT INTO project_notes (project_id, title, comment, note_type, note_date, checklist)
+                VALUES (%s, %s, %s, %s, %s, %s::jsonb)
                 RETURNING id
                 """,
-                (title, comment, parsed_date, Json(checklist)),
+                (project_id, title, comment, note_type, parsed_date, Json(checklist)),
             )
             row = cur.fetchone()
         conn.commit()
@@ -2346,23 +2488,37 @@ def create_note(payload: NoteCreateIn):
 @app.put("/notes/{note_id}")
 @app.put("/project-notes/{note_id}")
 def update_note(note_id: int, payload: NoteUpdateIn):
-    title, comment, parsed_date, checklist = _normalize_note_payload(payload)
+    project_id, title, comment, note_type, parsed_date, checklist = _normalize_note_payload(payload)
 
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             ensure_project_notes_storage(cur)
+            if project_id is not None:
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM projects
+                    WHERE id = %s
+                      AND COALESCE(is_historical, FALSE) = FALSE
+                    """,
+                    (project_id,),
+                )
+                if not cur.fetchone():
+                    raise HTTPException(status_code=404, detail="Project not found")
             cur.execute(
                 """
                 UPDATE project_notes
-                SET title = %s,
+                SET project_id = %s,
+                    title = %s,
                     comment = %s,
+                    note_type = %s,
                     note_date = %s,
                     checklist = %s::jsonb,
                     updated_at = now()
                 WHERE id = %s
                 RETURNING id
                 """,
-                (title, comment, parsed_date, Json(checklist), note_id),
+                (project_id, title, comment, note_type, parsed_date, Json(checklist), note_id),
             )
             row = cur.fetchone()
             if not row:
@@ -2394,7 +2550,7 @@ def delete_note(note_id: int):
 
 @app.get("/notes")
 @app.get("/project-notes")
-def list_notes(start_date: str | None = None, end_date: str | None = None):
+def list_notes(start_date: str | None = None, end_date: str | None = None, projectId: int | None = None):
     parsed_start: date | None = None
     parsed_end: date | None = None
     if start_date:
@@ -2413,11 +2569,14 @@ def list_notes(start_date: str | None = None, end_date: str | None = None):
     where: list[str] = []
     params: list[object] = []
     if parsed_start:
-        where.append("note_date >= %s")
+        where.append("n.note_date >= %s")
         params.append(parsed_start)
     if parsed_end:
-        where.append("note_date <= %s")
+        where.append("n.note_date <= %s")
         params.append(parsed_end)
+    if projectId is not None:
+        where.append("n.project_id = %s")
+        params.append(projectId)
 
     where_sql = "" if not where else f"WHERE {' AND '.join(where)}"
     with psycopg.connect(DB_DSN) as conn:
@@ -2425,10 +2584,12 @@ def list_notes(start_date: str | None = None, end_date: str | None = None):
             ensure_project_notes_storage(cur)
             cur.execute(
                 f"""
-                SELECT id, title, comment, note_date, checklist, created_at, updated_at
-                FROM project_notes
+                SELECT n.id, n.project_id, p.project_code, p.project_name,
+                       n.title, n.comment, n.note_type, n.note_date, n.checklist, n.created_at, n.updated_at
+                FROM project_notes n
+                LEFT JOIN projects p ON p.id = n.project_id
                 {where_sql}
-                ORDER BY note_date ASC, created_at DESC, id DESC
+                ORDER BY n.note_date ASC, n.created_at DESC, n.id DESC
                 """,
                 params,
             )
@@ -2437,12 +2598,16 @@ def list_notes(start_date: str | None = None, end_date: str | None = None):
     return [
         {
             "id": r[0],
-            "title": r[1],
-            "comment": normalize_comment(r[2]),
-            "date": to_date_iso(r[3]),
-            "checklist": r[4] or [],
-            "created_at": r[5].isoformat() if r[5] else None,
-            "updated_at": r[6].isoformat() if r[6] else None,
+            "projectId": r[1],
+            "project_code": r[2],
+            "project_name": r[3],
+            "title": r[4],
+            "comment": normalize_comment(r[5]),
+            "type": (r[6] or "GENERAL").capitalize(),
+            "date": to_date_iso(r[7]),
+            "checklist": r[8] or [],
+            "created_at": r[9].isoformat() if r[9] else None,
+            "updated_at": r[10].isoformat() if r[10] else None,
         }
         for r in rows
     ]
@@ -2478,11 +2643,22 @@ def project_task_counters(project_code: str):
                 (project_id,),
             )
             counts = {r[0]: int(r[1]) for r in cur.fetchall()}
+            ensure_project_notes_storage(cur)
+            cur.execute(
+                """
+                SELECT COUNT(*)
+                FROM project_notes
+                WHERE project_id = %s
+                """,
+                (project_id,),
+            )
+            notes_count_row = cur.fetchone()
 
     return {
         "project_id": project_id,
         "task_open_count": counts.get("TASK", 0),
         "pp_open_count": counts.get("PP", 0),
+        "notes_count": int(notes_count_row[0] if notes_count_row else 0),
     }
 
 

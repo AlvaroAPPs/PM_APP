@@ -162,8 +162,20 @@ function openTaskDetail(task) {
       detailSubtasks.textContent = "—";
     } else {
       detailSubtasks.innerHTML = parsed.subtasks
-        .map((row) => `<div>${row.done ? "☑" : "☐"} ${row.text}</div>`)
+        .map((row, index) => `<div><input type="checkbox" class="form-check-input me-2 task-subtask-toggle" data-index="${index}" ${row.done ? "checked" : ""}/> ${row.text}</div>`)
         .join("");
+      detailSubtasks.querySelectorAll(".task-subtask-toggle").forEach((input) => {
+        input.addEventListener("change", async (event) => {
+          const idx = Number(event.currentTarget.dataset.index || "-1");
+          await fetch(`${API}/project-tasks/${task.id}/subtasks/${idx}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ done: Boolean(event.currentTarget.checked) }),
+          });
+          await loadTasks();
+          openTaskDetail({ ...task, description: composeDescriptionWithSubtasks(parsed.description || "", parsed.subtasks.map((item, i) => i === idx ? ({ ...item, done: Boolean(event.currentTarget.checked) }) : item)) });
+        });
+      });
     }
   }
   taskDetailModal.show();

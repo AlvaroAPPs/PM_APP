@@ -15,6 +15,7 @@ let detailModal = null;
 let editModal = null;
 let noteModal = null;
 let createTaskModal = null;
+let notesProjectFilterId = null;
 const SUBTASKS_MARKER = "\n\n---SUBTASKS---\n";
 
 function toIsoDate(date) {
@@ -76,6 +77,10 @@ function buildEditChecklistItem(text = "", done = false) {
     <button type="button" class="btn btn-sm btn-outline-danger">×</button>
   `;
   wrap.querySelector("button").addEventListener("click", () => wrap.remove());
+  const check = wrap.querySelector('input[type="checkbox"]');
+  if (editingNote && index >= 0) {
+    check.addEventListener("change", (event) => toggleNoteChecklistItem(index, event.currentTarget.checked));
+  }
   return wrap;
 }
 
@@ -151,6 +156,7 @@ async function fetchWeekNotes() {
   const params = new URLSearchParams();
   params.set("start_date", toIsoDate(start));
   params.set("end_date", toIsoDate(end));
+  if (notesProjectFilterId) params.set("projectId", String(notesProjectFilterId));
   const res = await fetchNotesWithFallback(`/project-notes?${params.toString()}`);
   weekNotes = res.ok ? await res.json() : [];
 }
@@ -334,8 +340,20 @@ function openTaskDetail(task) {
     checklistEl.textContent = "—";
   } else {
     checklistEl.innerHTML = `<ul class="detail-checklist">${parsed.subtasks
-      .map((item) => `<li><span class="check-icon">${item.done ? "✅" : "⬜"}</span><span>${item.text}</span></li>`)
+      .map((item, index) => `<li><input type="checkbox" class="form-check-input task-check-toggle" data-index="${index}" ${item.done ? "checked" : ""} /><span>${item.text}</span></li>`)
       .join("")}</ul>`;
+    checklistEl.querySelectorAll(".task-check-toggle").forEach((input) => {
+      input.addEventListener("change", async (event) => {
+        if (!selectedTask) return;
+        const idx = Number(event.currentTarget.dataset.index || "-1");
+        await fetch(`${API}/project-tasks/${selectedTask.id}/subtasks/${idx}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ done: Boolean(event.currentTarget.checked) }),
+        });
+        await refreshCalendarData();
+      });
+    });
   }
 
   detailModal.show();
@@ -361,7 +379,7 @@ function openEditModal() {
   editModal.show();
 }
 
-function buildChecklistItem(text = "", done = false) {
+function buildChecklistItem(text = "", done = false, index = -1) {
   const wrap = document.createElement("div");
   wrap.className = "note-checklist-item";
   wrap.innerHTML = `
@@ -370,6 +388,10 @@ function buildChecklistItem(text = "", done = false) {
     <button type="button" class="btn btn-sm btn-outline-danger">×</button>
   `;
   wrap.querySelector("button").addEventListener("click", () => wrap.remove());
+  const check = wrap.querySelector('input[type="checkbox"]');
+  if (editingNote && index >= 0 && check) {
+    check.addEventListener("change", (event) => toggleNoteChecklistItem(index, event.currentTarget.checked));
+  }
   return wrap;
 }
 
@@ -379,12 +401,14 @@ function openNoteModal(note = null) {
   $("noteTitle").value = note?.title || "";
   $("noteComment").value = note?.comment || "";
   $("noteDate").value = note?.date || toIsoDate(new Date());
+  $("noteType").value = note?.type || "General";
+  $("noteProject").value = note?.projectId ? String(note.projectId) : "";
   $("noteError").textContent = "";
   $("deleteNote").classList.toggle("d-none", !note);
   const checklist = $("noteChecklist");
   checklist.innerHTML = "";
   const items = Array.isArray(note?.checklist) && note.checklist.length ? note.checklist : [{ text: "", done: false }];
-  items.forEach((item) => checklist.appendChild(buildChecklistItem(item.text || "", Boolean(item.done))));
+  items.forEach((item, index) => checklist.appendChild(buildChecklistItem(item.text || "", Boolean(item.done), index)));
   noteModal.show();
 }
 
@@ -421,6 +445,8 @@ async function saveNote() {
     title: ($("noteTitle").value || "").trim(),
     comment: ($("noteComment").value || "").trim(),
     date: $("noteDate").value,
+    projectId: $("noteProject").value ? Number($("noteProject").value) : null,
+    type: $("noteType").value || "General",
     checklist: readChecklistFromUi(),
   };
   if (!payload.title || !payload.date) {
@@ -639,12 +665,39 @@ function openCreateNoteModal() {
 }
 
 
+
+async function setupNoteProjectPicker() {
+  const select = $("noteProject");
+  if (!select) return;
+  const res = await fetch(`${API}/projects/search?q=%20&limit=200`);
+  const rows = res.ok ? await res.json() : [];
+  for (const row of rows) {
+    const opt = document.createElement("option");
+    opt.value = String(row.id);
+    opt.textContent = `${row.project_code || "—"} - ${row.project_name || "—"}`;
+    select.appendChild(opt);
+  }
+}
+
+async function toggleNoteChecklistItem(index, done) {
+  if (!editingNote) return;
+  await fetchNotesWithFallback(`/project-notes/${editingNote.id}/checklist/${index}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ done: Boolean(done) }),
+  });
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   detailModal = new bootstrap.Modal($("taskDetailModal"));
   editModal = new bootstrap.Modal($("taskEditModal"));
   noteModal = new bootstrap.Modal($("noteEditModal"));
   createTaskModal = new bootstrap.Modal($("createTaskModal"));
   await setupCreateProjectPicker();
+  const params = new URLSearchParams(window.location.search);
+  const projectId = Number(params.get("projectId") || 0);
+  notesProjectFilterId = Number.isFinite(projectId) && projectId > 0 ? projectId : null;
+  await setupNoteProjectPicker();
 
   $("viewMonth")?.addEventListener("click", () => setView("month"));
   $("viewWeek")?.addEventListener("click", () => setView("week"));

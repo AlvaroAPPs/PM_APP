@@ -148,6 +148,7 @@ function resetUI() {
     "economic_paid_pct",
     "openTaskCount",
     "openPpCount",
+    "notesCount",
   ];
   idsToClear.forEach((id) => setText(id, "—"));
   updateTaskCounterLinks();
@@ -169,10 +170,12 @@ function resetUI() {
 function updateTaskCounterLinks() {
   const taskLink = $("openTaskCountLink");
   const ppLink = $("openPpCountLink");
-  if (!taskLink || !ppLink) return;
+  const notesLink = $("notesCountLink");
+  if (!taskLink || !ppLink || !notesLink) return;
   if (!currentProjectId || !currentProjectCode) {
     taskLink.href = "/tasks";
     ppLink.href = "/tasks";
+    notesLink.href = "/calendar";
     return;
   }
   const base = new URLSearchParams();
@@ -180,6 +183,7 @@ function updateTaskCounterLinks() {
   base.set("project_code", currentProjectCode);
   taskLink.href = `/tasks?${base.toString()}&type=TASK`;
   ppLink.href = `/tasks?${base.toString()}&type=PP`;
+  notesLink.href = `/calendar?projectId=${encodeURIComponent(String(currentProjectId))}`;
 }
 
 function configureTopBackButton() {
@@ -202,6 +206,7 @@ async function loadTaskCounters(code) {
     const data = await res.json();
     setText("openTaskCount", fmtNum(data.task_open_count));
     setText("openPpCount", fmtNum(data.pp_open_count));
+    setText("notesCount", fmtNum(data.notes_count));
   } catch (_err) {
     // no-op
   }
