@@ -286,9 +286,10 @@
         const code = window.PROJECT_CODE;
         if (!code) return;
         try {
-          const [weeklyRaw, phasesRaw] = await Promise.all([
+          const [weeklyRaw, phasesRaw, details] = await Promise.all([
             fetch(`/projects/${encodeURIComponent(code)}/metrics/weekly`).then((r) => r.ok ? r.json() : []),
             fetch(`/projects/${encodeURIComponent(code)}/metrics/phases`).then((r) => r.ok ? r.json() : []),
+            fetch(`/projects/${encodeURIComponent(code)}/details`).then((r) => r.ok ? r.json() : null),
           ]);
           const weekly = sortByWeek(Array.isArray(weeklyRaw) ? weeklyRaw : []);
           const phases = sortByWeek(Array.isArray(phasesRaw) ? phasesRaw : []);
@@ -296,7 +297,13 @@
 
           const latestWeek = weekly[weekly.length - 1];
           const latestPhases = phases[phases.length - 1];
-          const totalHours = asNum(new URLSearchParams(window.location.search).get("totalHours"));
+          const totalHoursParam = asNum(new URLSearchParams(window.location.search).get("totalHours"));
+          const detailLatest = details && details.latest ? details.latest : null;
+          const totalHours = totalHoursParam !== null
+            ? totalHoursParam
+            : detailLatest
+            ? (asNum(detailLatest.ordered_total) ?? ((asNum(detailLatest.ordered_n) ?? 0) + (asNum(detailLatest.ordered_e) ?? 0)))
+            : null;
 
           $("date_kickoff").textContent = asDate(latestPhases.date_kickoff);
           $("date_design").textContent = asDate(latestPhases.date_design);
