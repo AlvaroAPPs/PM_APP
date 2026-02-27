@@ -151,11 +151,13 @@ async function fetchNotesWithFallback(path, options) {
 }
 
 async function fetchWeekNotes() {
-  const start = startOfWeek(selectedDate);
-  const end = endOfWeek(selectedDate);
   const params = new URLSearchParams();
-  params.set("start_date", toIsoDate(start));
-  params.set("end_date", toIsoDate(end));
+  if (!notesProjectFilterId) {
+    const start = startOfWeek(selectedDate);
+    const end = endOfWeek(selectedDate);
+    params.set("start_date", toIsoDate(start));
+    params.set("end_date", toIsoDate(end));
+  }
   if (notesProjectFilterId) params.set("projectId", String(notesProjectFilterId));
   const res = await fetchNotesWithFallback(`/project-notes?${params.toString()}`);
   weekNotes = res.ok ? await res.json() : [];
