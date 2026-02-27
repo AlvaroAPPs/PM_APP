@@ -1455,7 +1455,10 @@ def menu_personal(request: Request):
                        s.real_hours,
                        s.desviacion_pct,
                        s.progress_w,
-                       s.payment_inv
+                       s.payment_inv,
+                       COALESCE(task_counts.task_open_count, 0) AS task_open_count,
+                       COALESCE(task_counts.pp_open_count, 0) AS pp_open_count,
+                       COALESCE(notes_counts.notes_count, 0) AS notes_count
                 FROM projects p
                 LEFT JOIN LATERAL (
                     SELECT ordered_total,
@@ -1470,6 +1473,17 @@ def menu_personal(request: Request):
                     ORDER BY snapshot_year DESC, snapshot_week DESC, snapshot_at DESC
                     LIMIT 1
                 ) s ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT COUNT(*) FILTER (WHERE t.type = 'TASK' AND t.status <> 'CLOSED') AS task_open_count,
+                           COUNT(*) FILTER (WHERE t.type = 'PP' AND t.status <> 'CLOSED') AS pp_open_count
+                    FROM project_tasks t
+                    WHERE t.project_id = p.id
+                ) task_counts ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT COUNT(*) AS notes_count
+                    FROM project_notes n
+                    WHERE n.project_id = p.id
+                ) notes_counts ON TRUE
                 WHERE p.project_manager = %s
                   AND COALESCE(p.is_historical, FALSE) = FALSE
                 """,
@@ -1541,6 +1555,7 @@ def menu_personal(request: Request):
                     ordered_total = (row[6] or 0) + (row[7] or 0)
                 projects.append(
                     {
+                        "project_id": project_id,
                         "project_code": row[1],
                         "project_name": row[2],
                         "client": row[3],
@@ -1550,6 +1565,9 @@ def menu_personal(request: Request):
                         "desviacion_pct": row[9],
                         "progress_w": row[10],
                         "payment_inv": row[11],
+                        "tasks_count": int(row[12] or 0),
+                        "pp_count": int(row[13] or 0),
+                        "notes_count": int(row[14] or 0),
                         "indicator_status": overall_status,
                     }
                 )

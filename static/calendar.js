@@ -663,6 +663,10 @@ function openCreateTaskModal(type) {
 
 function openCreateNoteModal() {
   openNoteModal(null);
+  const projectId = Number(new URLSearchParams(window.location.search).get("projectId") || 0);
+  if (Number.isFinite(projectId) && projectId > 0 && $("noteProject")) {
+    $("noteProject").value = String(projectId);
+  }
 }
 
 
@@ -748,6 +752,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("saveCreateTask")?.addEventListener("click", saveCreateTask);
   $("addCreateChecklistItem")?.addEventListener("click", () => $("createChecklist").appendChild(buildCreateChecklistItem()));
   $("noteEditModal")?.addEventListener("hidden.bs.modal", () => { editingNote = null; });
+
+  if (params.get("create_note") === "1") {
+    openCreateNoteModal();
+  }
 
   await refreshCalendarData();
 });

@@ -207,7 +207,8 @@ function resetTaskForm() {
   $("saveTask").textContent = "Guardar";
   $("taskFormError").textContent = "";
   $("taskTitle").value = "";
-  $("taskType").value = "TASK";
+  const filters = getListFilters();
+  $("taskType").value = filters.type || "TASK";
   $("ownerRole").value = "PM";
   $("plannedDate").value = "";
   $("taskStatus").value = "OPEN";
