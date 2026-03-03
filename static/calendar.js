@@ -10,6 +10,9 @@ let weekTasks = [];
 let weekPp = [];
 let weekNotes = [];
 let selectedTask = null;
+let selectedNote = null;
+let detailEntity = "task";
+let notesOnlyMode = false;
 let editingNote = null;
 let detailModal = null;
 let editModal = null;
@@ -219,11 +222,11 @@ function renderListBlock(containerId, items, emptyText, onClick, rightText) {
 function renderWeekSidebar() {
   const start = startOfWeek(selectedDate);
   const end = endOfWeek(selectedDate);
-  $("weekLabel").textContent = `${fmtDate(start)} - ${fmtDate(end)}`;
+  $("weekLabel").textContent = notesOnlyMode ? "All Notes" : `${fmtDate(start)} - ${fmtDate(end)}`;
 
   renderListBlock("weekTasks", weekTasks, "No tasks", openTaskDetail, (item) => fmtDate(item.planned_date));
   renderListBlock("weekPp", weekPp, "No PP", openTaskDetail, (item) => fmtDate(item.planned_date));
-  renderListBlock("weekNotes", weekNotes, "No notes this week", openNoteModal, (item) => fmtDate(item.date));
+  renderListBlock("weekNotes", weekNotes, notesOnlyMode ? "No notes" : "No notes this week", openNoteDetail, (item) => fmtDate(item.date));
 }
 
 function renderCalendar() {
@@ -327,7 +330,12 @@ function buildDayCell(day, tasksByDay, notesByDay, outsideMonth) {
 }
 
 function openTaskDetail(task) {
+  detailEntity = "task";
+  selectedNote = null;
   selectedTask = task;
+  const modalTitle = $("detailModalTitle");
+  if (modalTitle) modalTitle.textContent = "Detalle de tarea";
+  $("detailClose").textContent = "Close";
   const parsed = splitDescriptionAndSubtasks(task.description || "");
   $("detailProject").textContent = `${task.project_code || "—"} - ${task.project_name || "—"}`;
   $("detailTitle").textContent = task.title || "—";
@@ -361,7 +369,40 @@ function openTaskDetail(task) {
   detailModal.show();
 }
 
+
+function openNoteDetail(note) {
+  selectedNote = note;
+  selectedTask = null;
+  detailEntity = "note";
+  const modalTitle = $("detailModalTitle");
+  if (modalTitle) modalTitle.textContent = "Detalle de nota";
+  $("detailProject").textContent = `${note.project_code || "—"} - ${note.project_name || "—"}`;
+  $("detailTitle").textContent = note.title || "—";
+  $("detailType").textContent = note.type || "Note";
+  $("detailStatus").textContent = "—";
+  $("detailOwner").textContent = "—";
+  $("detailDate").textContent = fmtDate(note.date);
+  $("detailDescription").textContent = note.comment || "—";
+  const checklistEl = $("detailChecklist");
+  const checklist = Array.isArray(note.checklist) ? note.checklist.filter((item) => item && item.text) : [];
+  if (!checklist.length) {
+    checklistEl.textContent = "—";
+  } else {
+    checklistEl.innerHTML = `<ul class="detail-checklist">${checklist
+      .map((item) => `<li><span class="check-icon">${item.done ? "✅" : "⬜"}</span><span>${item.text}</span></li>`)
+      .join("")}</ul>`;
+  }
+
+  $("detailClose").textContent = "Delete";
+  detailModal.show();
+}
+
 function openEditModal() {
+  if (detailEntity === "note") {
+    if (!selectedNote) return;
+    openNoteModal(selectedNote);
+    return;
+  }
   if (!selectedTask) return;
   const parsed = splitDescriptionAndSubtasks(selectedTask.description || "");
   $("editTitle").value = selectedTask.title || "";
@@ -505,6 +546,15 @@ async function saveEdit() {
 }
 
 async function closeTask() {
+  if (detailEntity === "note") {
+    if (!selectedNote) return;
+    if (!window.confirm("¿Eliminar esta nota?")) return;
+    const res = await fetchNotesWithFallback(`/project-notes/${selectedNote.id}`, { method: "DELETE" });
+    if (!res.ok) return;
+    detailModal.hide();
+    await refreshCalendarData();
+    return;
+  }
   if (!selectedTask) return;
   const res = await fetch(`${API}/project-tasks/${selectedTask.id}/status`, {
     method: "PATCH",
@@ -517,6 +567,14 @@ async function closeTask() {
 }
 
 function navigateTask() {
+  if (detailEntity === "note") {
+    if (!selectedNote) return;
+    const params = new URLSearchParams();
+    if (selectedNote.projectId) params.set("projectId", String(selectedNote.projectId));
+    params.set("notes", "1");
+    window.location.href = `/calendar?${params.toString()}`;
+    return;
+  }
   if (!selectedTask) return;
   const params = new URLSearchParams();
   params.set("project_id", String(selectedTask.project_id));
@@ -525,9 +583,10 @@ function navigateTask() {
 }
 
 function goProject() {
-  if (!selectedTask) return;
+  const projectCode = detailEntity === "note" ? (selectedNote?.project_code || "") : (selectedTask?.project_code || "");
+  if (!projectCode) return;
   const params = new URLSearchParams();
-  params.set("q", selectedTask.project_code || "");
+  params.set("q", projectCode);
   params.set("return_to", window.location.pathname);
   window.location.href = `/estado-proyecto?${params.toString()}`;
 }
@@ -727,6 +786,20 @@ document.addEventListener("DOMContentLoaded", async () => {
   const params = new URLSearchParams(window.location.search);
   const projectId = Number(params.get("projectId") || 0);
   notesProjectFilterId = Number.isFinite(projectId) && projectId > 0 ? projectId : null;
+  notesOnlyMode = params.get("notes") === "1";
+  if (notesOnlyMode) {
+    const mainCol = $("calendarMainCol");
+    if (mainCol) mainCol.classList.add("d-none");
+    const sideCol = $("calendarSideCol");
+    if (sideCol) {
+      sideCol.classList.remove("col-lg-4");
+      sideCol.classList.add("col-12");
+    }
+    const tasksBlock = $("tasksSidebarBlock");
+    if (tasksBlock) tasksBlock.classList.add("d-none");
+    const ppBlock = $("ppSidebarBlock");
+    if (ppBlock) ppBlock.classList.add("d-none");
+  }
   await setupNoteProjectPicker();
 
   $("viewMonth")?.addEventListener("click", () => setView("month"));
