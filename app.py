@@ -1626,7 +1626,10 @@ def fetch_stopped_unplanned_results(
     if selected_status not in {"planned", "stopped", "both"}:
         selected_status = "both"
 
-    where_clauses = ["COALESCE(p.is_historical, FALSE) = FALSE"]
+    where_clauses = [
+        "COALESCE(p.is_historical, FALSE) = FALSE",
+        "NOT EXISTS (SELECT 1 FROM projects_historical h WHERE h.project_code = p.project_code)",
+    ]
     params: list[object] = []
     if teams:
         where_clauses.append("p.team = ANY(%s::text[])")
