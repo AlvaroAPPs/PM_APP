@@ -1297,7 +1297,10 @@ def estado_proyecto(request: Request):
 
 @app.get("/consultas", response_class=HTMLResponse)
 def consultas(request: Request):
-    supported_queries = {"desviaciones": "Desviaciones"}
+    supported_queries = {
+        "desviaciones": "Desviaciones",
+        "stopped_unplanned": "Stopped / No planificados",
+    }
     consulta = request.query_params.get("consulta")
     if consulta not in supported_queries:
         consulta = None
@@ -1309,10 +1312,18 @@ def consultas(request: Request):
     selected_phases = [
         value for value in request.query_params.getlist("order_phase") if value
     ]
+    selected_status = (request.query_params.get("status") or "both").strip().lower()
+    if selected_status not in {"planned", "stopped", "both"}:
+        selected_status = "both"
 
     if consulta == "desviaciones" and applied:
         results, columns, numeric_columns, row_styles = fetch_deviations_results(
             selected_teams, selected_phases
+        )
+    elif consulta == "stopped_unplanned" and applied:
+        results, columns, numeric_columns, row_styles = fetch_stopped_unplanned_results(
+            selected_teams,
+            selected_status,
         )
     else:
         results, columns, numeric_columns, row_styles = [], [], set(), []
@@ -1321,8 +1332,10 @@ def consultas(request: Request):
     export_params = {"consulta": consulta} if consulta else {}
     if selected_teams:
         export_params["equipo"] = selected_teams
-    if selected_phases:
+    if consulta == "desviaciones" and selected_phases:
         export_params["order_phase"] = selected_phases
+    if consulta == "stopped_unplanned":
+        export_params["status"] = selected_status
     export_url = "/consultas/export"
     if export_params:
         export_url = f"{export_url}?{urllib.parse.urlencode(export_params, doseq=True)}"
@@ -1338,10 +1351,11 @@ def consultas(request: Request):
             "phases": phases,
             "selected_teams": selected_teams,
             "selected_phases": selected_phases,
+            "selected_status": selected_status,
             "selected_query": consulta,
             "supported_queries": supported_queries,
             "export_url": export_url,
-            "show_results": consulta == "desviaciones" and applied,
+            "show_results": applied and consulta in supported_queries,
             "row_styles": row_styles,
         },
     )
@@ -1356,13 +1370,27 @@ def consultas_export(request: Request):
     selected_phases = [
         value for value in request.query_params.getlist("order_phase") if value
     ]
-    if consulta != "desviaciones":
+    selected_status = (request.query_params.get("status") or "both").strip().lower()
+
+    if consulta == "desviaciones":
+        results, columns, _numeric_columns, row_styles = fetch_deviations_results(
+            selected_teams, selected_phases
+        )
+        filename = "consultas_desviaciones.xlsx"
+    elif consulta == "stopped_unplanned":
+        results, columns, _numeric_columns, row_styles = fetch_stopped_unplanned_results(
+            selected_teams,
+            selected_status,
+        )
+        filename = "consultas_stopped_unplanned.xlsx"
+    else:
         raise HTTPException(status_code=400, detail="Consulta no soportada")
 
-    results, columns, _numeric_columns, row_styles = fetch_deviations_results(
-        selected_teams, selected_phases
-    )
-    df = pd.DataFrame(results, columns=columns)
+    clean_results = [
+        {key: value for key, value in row.items() if not str(key).startswith("_")}
+        for row in results
+    ]
+    df = pd.DataFrame(clean_results, columns=columns)
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Consultas")
@@ -1381,10 +1409,7 @@ def consultas_export(request: Request):
             max_len = len(str(col_name))
             for value in df[col_name].astype(str).tolist():
                 max_len = max(max_len, len(value))
-            if col_name == "Comentario":
-                width = min(max_len + 2, 60)
-            else:
-                width = min(max_len + 2, 24)
+            width = min(max_len + 2, 60 if col_name == "Comentario" else 24)
             worksheet.column_dimensions[get_column_letter(col_idx)].width = max(10, width)
 
         comment_idx = columns.index("Comentario") + 1 if "Comentario" in columns else None
@@ -1397,6 +1422,8 @@ def consultas_export(request: Request):
                 fill = PatternFill("solid", fgColor="FFF3CD")
             elif excel_row_style == "success":
                 fill = PatternFill("solid", fgColor="D1E7DD")
+            elif excel_row_style == "info":
+                fill = PatternFill("solid", fgColor="D6E4FF")
             for col_idx in range(1, len(columns) + 1):
                 cell = worksheet.cell(row=row_idx, column=col_idx)
                 cell.border = border
@@ -1407,7 +1434,6 @@ def consultas_export(request: Request):
         worksheet.freeze_panes = "A2"
         worksheet.auto_filter.ref = worksheet.dimensions
     buffer.seek(0)
-    filename = "consultas_desviaciones.xlsx"
     headers = {
         "Content-Disposition": f'attachment; filename="{filename}"'
     }
@@ -1592,122 +1618,129 @@ def menu_personal(request: Request):
     )
 
 
-def fetch_stopped_unplanned_projects(pm_name: str, team: str, status: str) -> tuple[list[str], list[dict], str, str]:
-    selected_team = (team or "").strip()
+def fetch_stopped_unplanned_results(
+    teams: list[str],
+    status: str,
+) -> tuple[list[dict], list[str], set[str], list[str | None]]:
     selected_status = (status or "both").strip().lower()
     if selected_status not in {"planned", "stopped", "both"}:
         selected_status = "both"
 
-    where_status = "(s.order_phase = 'Stopped' OR s.date_end IS NULL)"
+    where_clauses = ["COALESCE(p.is_historical, FALSE) = FALSE"]
+    params: list[object] = []
+    if teams:
+        where_clauses.append("p.team = ANY(%s::text[])")
+        params.append(teams)
     if selected_status == "stopped":
-        where_status = "s.order_phase = 'Stopped'"
+        where_clauses.append("s.order_phase = 'Stopped'")
     elif selected_status == "planned":
-        where_status = "s.date_end IS NULL"
+        where_clauses.append("s.date_end IS NULL")
+    else:
+        where_clauses.append("(s.order_phase = 'Stopped' OR s.date_end IS NULL)")
 
-    team_filters: list[str] = []
-    query_params: list[object] = [pm_name]
-    if selected_team:
-        team_filters.append("p.team = %s")
-        query_params.append(selected_team)
+    where_sql = "WHERE " + " AND ".join(where_clauses)
 
-    team_where = f" AND {' AND '.join(team_filters)}" if team_filters else ""
+    sql = f"""
+    SELECT p.id AS project_id,
+           p.project_code,
+           p.project_name,
+           p.team,
+           s.order_phase,
+           s.ordered_total,
+           s.ordered_n,
+           s.ordered_e,
+           s.real_hours,
+           s.desviacion_pct,
+           s.progress_w,
+           s.payment_inv,
+           s.report_date,
+           s.date_end,
+           s.last_hito,
+           COALESCE(task_counts.task_open_count, 0) AS task_open_count,
+           COALESCE(task_counts.pp_open_count, 0) AS pp_open_count,
+           COALESCE(notes_counts.notes_count, 0) AS notes_count
+    FROM projects p
+    LEFT JOIN LATERAL (
+        SELECT ps.ordered_total,
+               ps.ordered_n,
+               ps.ordered_e,
+               ps.real_hours,
+               ps.desviacion_pct,
+               ps.progress_w,
+               ps.payment_inv,
+               ps.report_date,
+               ps.order_phase,
+               ps.date_end,
+               milestone.last_hito
+        FROM project_snapshot ps
+        LEFT JOIN LATERAL (
+            SELECT m.title AS last_hito
+            FROM (
+                VALUES
+                    ('Kick-off', ps.kickoff_ok, ps.date_kickoff, 1),
+                    ('Design', ps.design_ok, ps.date_design, 2),
+                    ('Validation', ps.validation_ok, ps.date_validation, 3),
+                    ('Go-live', ps.golive_ok, ps.date_golive, 4),
+                    ('Reception', ps.reception_ok, ps.date_reception, 5),
+                    ('End', ps.end_ok, ps.date_end, 6)
+            ) AS m(title, done, completed_at, seq)
+            WHERE m.done IS TRUE
+            ORDER BY m.completed_at DESC NULLS LAST, m.seq DESC
+            LIMIT 1
+        ) milestone ON TRUE
+        WHERE ps.project_id = p.id
+        ORDER BY ps.snapshot_year DESC, ps.snapshot_week DESC, ps.snapshot_at DESC
+        LIMIT 1
+    ) s ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT COUNT(*) FILTER (WHERE t.type = 'TASK' AND t.status <> 'CLOSED') AS task_open_count,
+               COUNT(*) FILTER (WHERE t.type = 'PP' AND t.status <> 'CLOSED') AS pp_open_count
+        FROM project_tasks t
+        WHERE t.project_id = p.id
+    ) task_counts ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT COUNT(*) AS notes_count
+        FROM project_notes n
+        WHERE n.project_id = p.id
+    ) notes_counts ON TRUE
+    {where_sql}
+    ORDER BY s.report_date DESC, p.id DESC
+    """
 
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT DISTINCT p.team
-                FROM projects p
-                WHERE p.project_manager = %s
-                  AND COALESCE(p.is_historical, FALSE) = FALSE
-                  AND p.team IS NOT NULL
-                  AND BTRIM(p.team) <> ''
-                ORDER BY p.team
-                """,
-                (pm_name,),
-            )
-            teams = [row[0] for row in cur.fetchall()]
-
-            cur.execute(
-                f"""
-                SELECT p.id,
-                       p.project_code,
-                       p.project_name,
-                       p.client,
-                       p.team,
-                       s.ordered_total,
-                       s.ordered_n,
-                       s.ordered_e,
-                       s.real_hours,
-                       s.desviacion_pct,
-                       s.progress_w,
-                       s.payment_inv,
-                       s.report_date,
-                       s.order_phase,
-                       s.date_end,
-                       s.last_hito,
-                       COALESCE(task_counts.task_open_count, 0) AS task_open_count,
-                       COALESCE(task_counts.pp_open_count, 0) AS pp_open_count,
-                       COALESCE(notes_counts.notes_count, 0) AS notes_count
-                FROM projects p
-                LEFT JOIN LATERAL (
-                    SELECT ps.ordered_total,
-                           ps.ordered_n,
-                           ps.ordered_e,
-                           ps.real_hours,
-                           ps.desviacion_pct,
-                           ps.progress_w,
-                           ps.payment_inv,
-                           ps.report_date,
-                           ps.order_phase,
-                           ps.date_end,
-                           milestone.last_hito
-                    FROM project_snapshot ps
-                    LEFT JOIN LATERAL (
-                        SELECT m.title AS last_hito
-                        FROM (
-                            VALUES
-                                ('Kick-off', ps.kickoff_ok, ps.date_kickoff, 1),
-                                ('Design', ps.design_ok, ps.date_design, 2),
-                                ('Validation', ps.validation_ok, ps.date_validation, 3),
-                                ('Go-live', ps.golive_ok, ps.date_golive, 4),
-                                ('Reception', ps.reception_ok, ps.date_reception, 5),
-                                ('End', ps.end_ok, ps.date_end, 6)
-                        ) AS m(title, done, completed_at, seq)
-                        WHERE m.done IS TRUE
-                        ORDER BY m.completed_at DESC NULLS LAST, m.seq DESC
-                        LIMIT 1
-                    ) milestone ON TRUE
-                    WHERE ps.project_id = p.id
-                    ORDER BY ps.snapshot_year DESC, ps.snapshot_week DESC, ps.snapshot_at DESC
-                    LIMIT 1
-                ) s ON TRUE
-                LEFT JOIN LATERAL (
-                    SELECT COUNT(*) FILTER (WHERE t.type = 'TASK' AND t.status <> 'CLOSED') AS task_open_count,
-                           COUNT(*) FILTER (WHERE t.type = 'PP' AND t.status <> 'CLOSED') AS pp_open_count
-                    FROM project_tasks t
-                    WHERE t.project_id = p.id
-                ) task_counts ON TRUE
-                LEFT JOIN LATERAL (
-                    SELECT COUNT(*) AS notes_count
-                    FROM project_notes n
-                    WHERE n.project_id = p.id
-                ) notes_counts ON TRUE
-                WHERE p.project_manager = %s
-                  AND COALESCE(p.is_historical, FALSE) = FALSE
-                  AND {where_status}
-                  {team_where}
-                ORDER BY s.report_date DESC, p.id DESC
-                """,
-                tuple(query_params),
-            )
+            cur.execute(sql, params)
             rows = cur.fetchall()
 
-    projects = []
-    with psycopg.connect(DB_DSN) as conn:
-        with conn.cursor() as cur:
-            for row in rows:
-                project_id = row[0]
+    columns = [
+        "Proyecto",
+        "Código",
+        "Equipo",
+        "Order phase",
+        "Date",
+        "Hito",
+        "H.Total",
+        "H.Real",
+        "Desviación",
+        "% Avance",
+        "% Facturación",
+        "Nº Tasks",
+        "Nº PP",
+        "Nº Notes",
+    ]
+    numeric_columns = {"H.Total", "H.Real", "Desviación", "% Avance", "% Facturación"}
+    results: list[dict] = []
+    row_styles: list[str | None] = []
+
+    for row in rows:
+        ordered_total = row[5]
+        if ordered_total is None and (row[6] is not None or row[7] is not None):
+            ordered_total = (row[6] or 0) + (row[7] or 0)
+
+        weekly = []
+        phases_history = []
+        with psycopg.connect(DB_DSN) as conn:
+            with conn.cursor() as cur:
                 cur.execute(
                     """
                     SELECT progress_w, desviacion_pct, real_hours, horas_teoricas
@@ -1715,7 +1748,7 @@ def fetch_stopped_unplanned_projects(pm_name: str, team: str, status: str) -> tu
                     WHERE project_id = %s
                     ORDER BY snapshot_year ASC, snapshot_week ASC
                     """,
-                    (project_id,),
+                    (row[0],),
                 )
                 weekly_rows = cur.fetchall()
                 weekly = [
@@ -1736,7 +1769,7 @@ def fetch_stopped_unplanned_projects(pm_name: str, team: str, status: str) -> tu
                     WHERE project_id = %s
                     ORDER BY snapshot_year ASC, snapshot_week ASC
                     """,
-                    (project_id,),
+                    (row[0],),
                 )
                 phase_rows = cur.fetchall()
                 phases_history = [
@@ -1751,132 +1784,47 @@ def fetch_stopped_unplanned_projects(pm_name: str, team: str, status: str) -> tu
                     for r in phase_rows
                 ]
 
-                productivity_status = compute_productivity_indicator(weekly)
-                deviation_status = compute_deviation_indicator(weekly)
-                phase_status = compute_phase_indicator(phases_history)
-                overall_status = compute_area_personal_indicator_status(
-                    productivity_status,
-                    deviation_status,
-                    phase_status,
-                )
-                if productivity_status == "green" and deviation_status == "green":
-                    overall_status = "green"
+        productivity_status = compute_productivity_indicator(weekly)
+        deviation_status = compute_deviation_indicator(weekly)
+        phase_status = compute_phase_indicator(phases_history)
+        overall_status = compute_area_personal_indicator_status(
+            productivity_status,
+            deviation_status,
+            phase_status,
+        )
+        if productivity_status == "green" and deviation_status == "green":
+            overall_status = "green"
 
-                ordered_total = row[5]
-                if ordered_total is None and (row[6] is not None or row[7] is not None):
-                    ordered_total = (row[6] or 0) + (row[7] or 0)
+        is_stopped = row[4] == "Stopped"
+        is_unplanned = row[13] is None
+        row_class = stopped_unplanned_row_class(is_stopped, is_unplanned)
+        row_style = "danger" if row_class == "row-stopped" else "info" if row_class == "row-unplanned" else None
 
-                is_stopped = row[13] == "Stopped"
-                is_unplanned = row[14] is None
-                row_class = stopped_unplanned_row_class(is_stopped, is_unplanned)
-
-                projects.append(
-                    {
-                        "project_id": project_id,
-                        "project_code": row[1],
-                        "project_name": row[2],
-                        "client": row[3],
-                        "team": row[4],
-                        "ordered_total": ordered_total,
-                        "real_hours": row[8],
-                        "desviacion_pct": row[9],
-                        "progress_w": row[10],
-                        "payment_inv": row[11],
-                        "report_date": row[12],
-                        "last_hito": row[15],
-                        "tasks_count": int(row[16] or 0),
-                        "pp_count": int(row[17] or 0),
-                        "notes_count": int(row[18] or 0),
-                        "indicator_status": overall_status,
-                        "row_class": row_class,
-                    }
-                )
-
-    return teams, projects, selected_team, selected_status
-
-
-@app.get("/menu-personal/stopped-unplanned", response_class=HTMLResponse)
-def menu_personal_stopped_unplanned(
-    request: Request,
-    team: str = Query(""),
-    status: str = Query("both"),
-):
-    pm_name = "Alvaro Blanco Pérez"
-    teams, projects, selected_team, selected_status = fetch_stopped_unplanned_projects(pm_name, team, status)
-    export_url = f"/menu-personal/stopped-unplanned/export?{urllib.parse.urlencode({'team': selected_team, 'status': selected_status})}"
-    return templates.TemplateResponse(
-        "menu_personal_stopped_unplanned.html",
-        {
-            "request": request,
-            "pm_name": pm_name,
-            "projects": projects,
-            "teams": teams,
-            "selected_team": selected_team,
-            "selected_status": selected_status,
-            "export_url": export_url,
-        },
-    )
-
-
-@app.get("/menu-personal/stopped-unplanned/export")
-def menu_personal_stopped_unplanned_export(
-    team: str = Query(""),
-    status: str = Query("both"),
-):
-    pm_name = "Alvaro Blanco Pérez"
-    _teams, projects, _selected_team, _selected_status = fetch_stopped_unplanned_projects(pm_name, team, status)
-    columns = [
-        "Indicador",
-        "Nombre del proyecto",
-        "Codigo",
-        "Date",
-        "Hito",
-        "Horas totales",
-        "Horas reales",
-        "Desviación",
-        "% Avance",
-        "% Facturación",
-        "Nº Tasks",
-        "Nº PP",
-        "Nº Notes",
-    ]
-    rows = []
-    for project in projects:
-        rows.append(
+        results.append(
             {
-                "Indicador": project.get("indicator_status"),
-                "Nombre del proyecto": project.get("project_name"),
-                "Codigo": project.get("project_code"),
-                "Date": to_date_iso(project.get("report_date")) or "",
-                "Hito": project.get("last_hito") or "",
-                "Horas totales": project.get("ordered_total"),
-                "Horas reales": project.get("real_hours"),
-                "Desviación": project.get("desviacion_pct"),
-                "% Avance": project.get("progress_w"),
-                "% Facturación": project.get("payment_inv"),
-                "Nº Tasks": project.get("tasks_count"),
-                "Nº PP": project.get("pp_count"),
-                "Nº Notes": project.get("notes_count"),
+                "Proyecto": row[2],
+                "Código": row[1],
+                "Equipo": row[3],
+                "Order phase": row[4],
+                "Date": row[12],
+                "Hito": row[14],
+                "H.Total": to_float(ordered_total),
+                "H.Real": to_float(row[8]),
+                "Desviación": to_float(row[9]),
+                "% Avance": to_float(row[10]),
+                "% Facturación": to_float(row[11]),
+                "Nº Tasks": int(row[15] or 0),
+                "Nº PP": int(row[16] or 0),
+                "Nº Notes": int(row[17] or 0),
+                "_project_id": row[0],
+                "_project_code": row[1],
+                "_ordered_total": to_float(ordered_total),
+                "_indicator_status": overall_status,
             }
         )
+        row_styles.append(row_style)
 
-    df = pd.DataFrame(rows, columns=columns)
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="StoppedUnplanned")
-        worksheet = writer.sheets["StoppedUnplanned"]
-        for idx, col_name in enumerate(columns, start=1):
-            width = max(10, min(36, len(col_name) + 4))
-            worksheet.column_dimensions[get_column_letter(idx)].width = width
-        worksheet.freeze_panes = "A2"
-        worksheet.auto_filter.ref = worksheet.dimensions
-    buffer.seek(0)
-    filename = "stopped_unplanned_projects.xlsx"
-    return StreamingResponse(
-        buffer,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return results, columns, numeric_columns, row_styles
 
 
 @app.get("/tasks", response_class=HTMLResponse)

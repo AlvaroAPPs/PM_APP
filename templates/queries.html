@@ -81,6 +81,8 @@
     .table-wrapper tbody tr.table-success .sticky-code {
       background: var(--bs-table-bg);
     }
+    .table-wrapper tbody tr.row-stopped td { color: #dc3545; }
+    .table-wrapper tbody tr.row-unplanned td { color: #0d3b66; }
     .dropdown-menu { max-height: 240px; overflow-y: auto; }
     .summary-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .status-dot {
@@ -154,6 +156,7 @@
             </div>
             <div class="hidden-inputs" data-inputs="equipo"></div>
           </div>
+          {% if selected_query == 'desviaciones' %}
           <div class="col-12 col-md-4">
             <label class="form-label">Order phase</label>
             <div class="dropdown w-100">
@@ -183,6 +186,16 @@
             </div>
             <div class="hidden-inputs" data-inputs="order_phase"></div>
           </div>
+          {% elif selected_query == 'stopped_unplanned' %}
+          <div class="col-12 col-md-4">
+            <label class="form-label">Estado</label>
+            <select class="form-select" name="status">
+              <option value="both" {% if selected_status == 'both' %}selected{% endif %}>Ambos</option>
+              <option value="stopped" {% if selected_status == 'stopped' %}selected{% endif %}>Stopped</option>
+              <option value="planned" {% if selected_status == 'planned' %}selected{% endif %}>No planificado</option>
+            </select>
+          </div>
+          {% endif %}
           <div class="col-12 d-flex gap-2">
             <input type="hidden" name="applied" value="1">
             <button class="btn btn-dark" type="submit">Aplicar filtros</button>
@@ -195,7 +208,7 @@
 
     {% if show_results %}
     <div class="d-flex justify-content-between align-items-center mb-2">
-      <div class="fw-semibold">Consulta: Desviaciones (último y penúltimo snapshot)</div>
+      <div class="fw-semibold">Consulta: {{ supported_queries.get(selected_query) }}</div>
       <a class="btn btn-outline-success" href="{{ export_url }}">
         Exportar a Excel
       </a>
@@ -217,13 +230,15 @@
             <tbody>
               {% for row in results %}
               {% set row_style = row_styles[loop.index0] if loop.index0 < row_styles|length else None %}
-              {% set indicator_status = 'orange' %}
-              {% if row_style == 'danger' %}
-                {% set indicator_status = 'red' %}
-              {% elif row_style == 'success' %}
-                {% set indicator_status = 'green' %}
+              {% set indicator_status = row.get('_indicator_status') or 'orange' %}
+              {% if not row.get('_indicator_status') %}
+                {% if row_style == 'danger' %}
+                  {% set indicator_status = 'red' %}
+                {% elif row_style == 'success' %}
+                  {% set indicator_status = 'green' %}
+                {% endif %}
               {% endif %}
-              <tr class="{% if row_style == 'danger' %}table-danger{% elif row_style == 'warning' %}table-warning{% elif row_style == 'success' %}table-success{% endif %}">
+              <tr class="{% if row_style == 'danger' %}row-stopped{% elif row_style == 'info' %}row-unplanned{% elif row_style == 'warning' %}table-warning{% elif row_style == 'success' %}table-success{% endif %}">
                 <td class="sticky-indicator">
                   <span class="status-dot status-{{ indicator_status }}" aria-label="{{ indicator_status }}"></span>
                 </td>
@@ -279,7 +294,7 @@
               {% else %}
               <tr>
                 <td colspan="{{ columns|length + 2 }}" class="muted">
-                  No se encontraron proyectos con desviación en los dos últimos snapshots.
+                  No se encontraron resultados para los filtros seleccionados.
                 </td>
               </tr>
               {% endfor %}
