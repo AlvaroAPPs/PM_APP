@@ -33,6 +33,47 @@
       background: #f6f7fb;
       z-index: 1;
     }
+
+    .sticky-indicator,
+    .sticky-project,
+    .sticky-code {
+      position: sticky;
+    }
+    .sticky-indicator {
+      left: 0;
+      min-width: 44px;
+      z-index: 6;
+    }
+    .sticky-project {
+      left: 44px;
+      min-width: 240px;
+      z-index: 5;
+    }
+    .sticky-code {
+      left: 284px;
+      min-width: 130px;
+      z-index: 5;
+    }
+    .table-wrapper tbody .sticky-indicator,
+    .table-wrapper tbody .sticky-project,
+    .table-wrapper tbody .sticky-code {
+      background: #fff;
+    }
+    .table-wrapper tbody tr.table-danger .sticky-indicator,
+    .table-wrapper tbody tr.table-danger .sticky-project,
+    .table-wrapper tbody tr.table-danger .sticky-code {
+      background: var(--bs-table-bg);
+    }
+    .table-wrapper tbody tr.table-warning .sticky-indicator,
+    .table-wrapper tbody tr.table-warning .sticky-project,
+    .table-wrapper tbody tr.table-warning .sticky-code {
+      background: var(--bs-table-bg);
+    }
+    .table-wrapper tbody tr.table-success .sticky-indicator,
+    .table-wrapper tbody tr.table-success .sticky-project,
+    .table-wrapper tbody tr.table-success .sticky-code {
+      background: var(--bs-table-bg);
+    }
     .dropdown-menu { max-height: 240px; overflow-y: auto; }
     .summary-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .status-dot {
@@ -159,9 +200,9 @@
           <table class="table table-hover align-middle mb-0">
             <thead>
               <tr>
-                <th style="width: 44px;">Indicador</th>
+                <th class="sticky-indicator" style="width: 44px;">Indicador</th>
                 {% for col in columns %}
-                <th>{{ col }}</th>
+                <th class="{% if col == 'Proyecto' %}sticky-project{% elif col == 'Código' %}sticky-code{% endif %}">{{ col }}</th>
                 {% endfor %}
                 <th class="text-end" style="width: 170px;">Acciones</th>
               </tr>
@@ -176,12 +217,12 @@
                 {% set indicator_status = 'green' %}
               {% endif %}
               <tr class="{% if row_style == 'danger' %}table-danger{% elif row_style == 'warning' %}table-warning{% elif row_style == 'success' %}table-success{% endif %}">
-                <td>
+                <td class="sticky-indicator">
                   <span class="status-dot status-{{ indicator_status }}" aria-label="{{ indicator_status }}"></span>
                 </td>
                 {% for col in columns %}
                 {% set value = row.get(col) %}
-                <td class="{% if col in numeric_columns %}text-end{% endif %}">
+                <td class="{% if col == 'Proyecto' %}sticky-project{% elif col == 'Código' %}sticky-code{% endif %} {% if col in numeric_columns %}text-end{% endif %}">
                   {% if col in numeric_columns %}
                     {% if value is not none %}
                       {{ "%.2f"|format(value) }}
