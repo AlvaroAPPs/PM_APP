@@ -792,6 +792,9 @@ def fetch_deviations_results(
             "Fecha": latest.get("report_date"),
             "H.Total": to_float(latest.get("ordered_total")),
             "H.Real": to_float(latest.get("real_hours")),
+            "_project_id": latest.get("project_id"),
+            "_project_code": latest.get("project_code"),
+            "_ordered_total": to_float(latest.get("ordered_total")),
         }
 
         by_label: dict[str, dict[str, float | None]] = {}
