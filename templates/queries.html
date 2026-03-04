@@ -41,19 +41,26 @@
     }
     .sticky-indicator {
       left: 0;
-      min-width: 44px;
+      width: 64px;
+      min-width: 64px;
+      max-width: 64px;
       z-index: 6;
     }
     .sticky-project {
-      left: 44px;
-      min-width: 240px;
+      left: 64px;
+      width: 260px;
+      min-width: 260px;
       z-index: 5;
     }
     .sticky-code {
-      left: 284px;
-      min-width: 130px;
+      left: 324px;
+      width: 140px;
+      min-width: 140px;
       z-index: 5;
     }
+    .table-wrapper thead .sticky-indicator { z-index: 9; }
+    .table-wrapper thead .sticky-project,
+    .table-wrapper thead .sticky-code { z-index: 8; }
     .table-wrapper tbody .sticky-indicator,
     .table-wrapper tbody .sticky-project,
     .table-wrapper tbody .sticky-code {
@@ -200,7 +207,7 @@
           <table class="table table-hover align-middle mb-0">
             <thead>
               <tr>
-                <th class="sticky-indicator" style="width: 44px;">Indicador</th>
+                <th class="sticky-indicator">Indicador</th>
                 {% for col in columns %}
                 <th class="{% if col == 'Proyecto' %}sticky-project{% elif col == 'Código' %}sticky-code{% endif %}">{{ col }}</th>
                 {% endfor %}
