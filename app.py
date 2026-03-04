@@ -1628,7 +1628,7 @@ def fetch_stopped_unplanned_results(
 
     where_clauses = [
         "COALESCE(p.is_historical, FALSE) = FALSE",
-        "NOT EXISTS (SELECT 1 FROM projects_historical h WHERE h.project_code = p.project_code)",
+        "NOT EXISTS (SELECT 1 FROM projects_historical h WHERE UPPER(BTRIM(h.project_code)) = UPPER(BTRIM(p.project_code)))",
     ]
     params: list[object] = []
     if teams:
