@@ -253,6 +253,9 @@ function renderCalendar() {
   const grid = $("calendarGrid");
   if (!grid) return;
   grid.innerHTML = "";
+  grid.style.gridTemplateColumns = viewMode === "today" ? "1fr" : "repeat(7, 1fr)";
+  const weekdays = $("calendarWeekdays");
+  if (weekdays) weekdays.style.display = viewMode === "today" ? "none" : "grid";
 
   const weekStart = startOfWeek(selectedDate);
   const weekEnd = endOfWeek(selectedDate);
@@ -319,7 +322,7 @@ function buildDayCell(day, tasksByDay, notesByDay, outsideMonth) {
   const list = document.createElement("div");
   list.className = "mt-1 d-flex flex-column gap-1";
 
-  const visible = tasks.slice(0, 3);
+  const visible = viewMode === "today" ? tasks : tasks.slice(0, 3);
   for (const task of visible) {
     const chip = document.createElement("button");
     chip.type = "button";
@@ -334,7 +337,7 @@ function buildDayCell(day, tasksByDay, notesByDay, outsideMonth) {
     list.appendChild(chip);
   }
 
-  if (tasks.length > 3) {
+  if (viewMode !== "today" && tasks.length > 3) {
     const more = document.createElement("span");
     more.className = "small muted";
     more.textContent = `+${tasks.length - 3} más`;
