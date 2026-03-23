@@ -545,6 +545,15 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  const notesLink = $("notesCountLink");
+  if (notesLink) {
+    notesLink.addEventListener("click", (event) => {
+      if (!currentProjectId) return;
+      event.preventDefault();
+      window.location.href = `/calendar?notes=1&projectId=${encodeURIComponent(String(currentProjectId))}`;
+    });
+  }
+
   const actCharts = $("actCharts");
   if (actCharts) {
     actCharts.addEventListener("click", () => {
