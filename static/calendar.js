@@ -109,6 +109,17 @@ function endOfWeek(date) {
   return d;
 }
 
+function startOfDay(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function endOfDay(date) {
+  const d = startOfDay(date);
+  return d;
+}
+
 function sameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
@@ -124,6 +135,9 @@ function inSelectedWeek(dateValue) {
 function getVisibleCalendarRange() {
   if (viewMode === "week") {
     return { start: startOfWeek(anchorDate), end: endOfWeek(anchorDate) };
+  }
+  if (viewMode === "today") {
+    return { start: startOfDay(anchorDate), end: endOfDay(anchorDate) };
   }
   const first = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
   const start = startOfWeek(first);
@@ -156,8 +170,8 @@ async function fetchNotesWithFallback(path, options) {
 async function fetchWeekNotes() {
   const params = new URLSearchParams();
   if (!notesProjectFilterId) {
-    const start = startOfWeek(selectedDate);
-    const end = endOfWeek(selectedDate);
+    const start = viewMode === "today" ? startOfDay(selectedDate) : startOfWeek(selectedDate);
+    const end = viewMode === "today" ? endOfDay(selectedDate) : endOfWeek(selectedDate);
     params.set("start_date", toIsoDate(start));
     params.set("end_date", toIsoDate(end));
   }
@@ -168,15 +182,19 @@ async function fetchWeekNotes() {
 
 function splitWeekSidebarData() {
   const weekStart = startOfWeek(selectedDate);
-  const inWeekOrPrevious = (plannedDate) => {
+  const inVisibleRange = (plannedDate) => {
+    if (viewMode === "today") {
+      const parsed = parseIsoDate(plannedDate);
+      return parsed ? sameDay(parsed, selectedDate) : false;
+    }
     if (!plannedDate) return true;
     if (inSelectedWeek(plannedDate)) return true;
     const parsed = parseIsoDate(plannedDate);
     return parsed ? parsed < weekStart : false;
   };
 
-  const taskItems = allOpenTasks.filter((t) => t.type === "TASK" && inWeekOrPrevious(t.planned_date));
-  const ppItems = allOpenTasks.filter((t) => t.type === "PP" && inWeekOrPrevious(t.planned_date));
+  const taskItems = allOpenTasks.filter((t) => t.type === "TASK" && inVisibleRange(t.planned_date));
+  const ppItems = allOpenTasks.filter((t) => t.type === "PP" && inVisibleRange(t.planned_date));
   weekTasks = taskItems;
   weekPp = ppItems;
 }
@@ -220,9 +238,11 @@ function renderListBlock(containerId, items, emptyText, onClick, rightText) {
 }
 
 function renderWeekSidebar() {
-  const start = startOfWeek(selectedDate);
-  const end = endOfWeek(selectedDate);
-  $("weekLabel").textContent = notesOnlyMode ? "All Notes" : `${fmtDate(start)} - ${fmtDate(end)}`;
+  const start = viewMode === "today" ? startOfDay(selectedDate) : startOfWeek(selectedDate);
+  const end = viewMode === "today" ? endOfDay(selectedDate) : endOfWeek(selectedDate);
+  $("weekLabel").textContent = notesOnlyMode
+    ? "All Notes"
+    : (viewMode === "today" ? fmtDate(start) : `${fmtDate(start)} - ${fmtDate(end)}`);
 
   renderListBlock("weekTasks", weekTasks, "No tasks", openTaskDetail, (item) => fmtDate(item.planned_date));
   renderListBlock("weekPp", weekPp, "No PP", openTaskDetail, (item) => fmtDate(item.planned_date));
@@ -233,12 +253,16 @@ function renderCalendar() {
   const grid = $("calendarGrid");
   if (!grid) return;
   grid.innerHTML = "";
+  grid.style.gridTemplateColumns = viewMode === "today" ? "1fr" : "repeat(7, 1fr)";
+  const weekdays = $("calendarWeekdays");
+  if (weekdays) weekdays.style.display = viewMode === "today" ? "none" : "grid";
 
   const weekStart = startOfWeek(selectedDate);
   const weekEnd = endOfWeek(selectedDate);
+  const todayStart = startOfDay(selectedDate);
   $("calendarRangeLabel").textContent = viewMode === "month"
     ? anchorDate.toLocaleDateString("es-ES", { month: "long", year: "numeric" })
-    : `${fmtDate(weekStart)} - ${fmtDate(weekEnd)}`;
+    : (viewMode === "today" ? fmtDate(todayStart) : `${fmtDate(weekStart)} - ${fmtDate(weekEnd)}`);
 
   const tasksByDay = new Map();
   for (const task of calendarTasks) {
@@ -257,6 +281,11 @@ function renderCalendar() {
       day.setDate(start.getDate() + i);
       grid.appendChild(buildDayCell(day, tasksByDay, notesByDay, false));
     }
+    return;
+  }
+
+  if (viewMode === "today") {
+    grid.appendChild(buildDayCell(startOfDay(anchorDate), tasksByDay, notesByDay, false));
     return;
   }
 
@@ -293,7 +322,7 @@ function buildDayCell(day, tasksByDay, notesByDay, outsideMonth) {
   const list = document.createElement("div");
   list.className = "mt-1 d-flex flex-column gap-1";
 
-  const visible = tasks.slice(0, 3);
+  const visible = viewMode === "today" ? tasks : tasks.slice(0, 3);
   for (const task of visible) {
     const chip = document.createElement("button");
     chip.type = "button";
@@ -308,7 +337,7 @@ function buildDayCell(day, tasksByDay, notesByDay, outsideMonth) {
     list.appendChild(chip);
   }
 
-  if (tasks.length > 3) {
+  if (viewMode !== "today" && tasks.length > 3) {
     const more = document.createElement("span");
     more.className = "small muted";
     more.textContent = `+${tasks.length - 3} más`;
@@ -592,7 +621,11 @@ function goProject() {
 }
 
 async function moveRange(step) {
-  if (viewMode === "month") {
+  if (viewMode === "today") {
+    anchorDate = new Date(anchorDate);
+    anchorDate.setDate(anchorDate.getDate() + step);
+    selectedDate = new Date(anchorDate);
+  } else if (viewMode === "month") {
     anchorDate = new Date(anchorDate.getFullYear(), anchorDate.getMonth() + step, 1);
     if (selectedDate.getMonth() !== anchorDate.getMonth() || selectedDate.getFullYear() !== anchorDate.getFullYear()) {
       selectedDate = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
@@ -609,6 +642,7 @@ async function setView(mode) {
   viewMode = mode;
   $("viewMonth").className = mode === "month" ? "btn btn-dark" : "btn btn-outline-dark";
   $("viewWeek").className = mode === "week" ? "btn btn-dark" : "btn btn-outline-dark";
+  $("viewToday").className = mode === "today" ? "btn btn-dark" : "btn btn-outline-dark";
   await refreshCalendarData();
 }
 
@@ -804,6 +838,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   $("viewMonth")?.addEventListener("click", () => setView("month"));
   $("viewWeek")?.addEventListener("click", () => setView("week"));
+  $("viewToday")?.addEventListener("click", () => setView("today"));
   $("prevRange")?.addEventListener("click", () => moveRange(-1));
   $("nextRange")?.addEventListener("click", () => moveRange(1));
   $("todayRange")?.addEventListener("click", async () => {

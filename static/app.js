@@ -183,7 +183,7 @@ function updateTaskCounterLinks() {
   base.set("project_code", currentProjectCode);
   taskLink.href = `/tasks?${base.toString()}&type=TASK`;
   ppLink.href = `/tasks?${base.toString()}&type=PP`;
-  notesLink.href = `/calendar?projectId=${encodeURIComponent(String(currentProjectId))}`;
+  notesLink.href = `/calendar?notes=1&projectId=${encodeURIComponent(String(currentProjectId))}`;
 }
 
 function configureTopBackButton() {
@@ -542,6 +542,15 @@ document.addEventListener("DOMContentLoaded", () => {
       params.set("project_id", String(currentProjectId));
       params.set("project_code", currentProjectCode);
       window.location.href = `/tasks?${params.toString()}`;
+    });
+  }
+
+  const notesLink = $("notesCountLink");
+  if (notesLink) {
+    notesLink.addEventListener("click", (event) => {
+      if (!currentProjectId) return;
+      event.preventDefault();
+      window.location.href = `/calendar?notes=1&projectId=${encodeURIComponent(String(currentProjectId))}`;
     });
   }
 
