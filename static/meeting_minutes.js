@@ -2,6 +2,9 @@ const I18N = {
   es: {
     pageTitle: "Acta de Reunión",
     labelLanguage: "Idioma",
+    labelProjectLink: "Proyecto",
+    labelAlbaran: "Albarán",
+    labelTitle: "Título del acta",
     labelProject: "Proyecto / Asunto",
     labelDate: "Fecha",
     labelStart: "Hora inicio",
@@ -19,11 +22,18 @@ const I18N = {
     labelDiscussion: "Detalle de la discusión",
     labelDecisions: "Decisiones / Acciones",
     labelPlanning: "Planificación / Próximos pasos",
-    btnExport: "Generar DOCX"
+    btnExport: "Generar DOCX",
+    btnSave: "Guardar acta",
+    viewSavedBtn: "Ver actas guardadas",
+    saveOk: "Acta guardada correctamente",
+    saveError: "No se pudo guardar el acta",
   },
   en: {
     pageTitle: "Meeting Minutes",
     labelLanguage: "Language",
+    labelProjectLink: "Project",
+    labelAlbaran: "Delivery note",
+    labelTitle: "Minutes title",
     labelProject: "Project / Subject",
     labelDate: "Meeting date",
     labelStart: "Start time",
@@ -41,12 +51,18 @@ const I18N = {
     labelDiscussion: "Detailed content",
     labelDecisions: "Decisions / Actions",
     labelPlanning: "Planning / Next steps",
-    btnExport: "Export DOCX"
+    btnExport: "Export DOCX",
+    btnSave: "Save minutes",
+    viewSavedBtn: "View saved minutes",
+    saveOk: "Minutes saved",
+    saveError: "Could not save minutes",
   }
 };
 
-function $(id) {
-  return document.getElementById(id);
+function $(id) { return document.getElementById(id); }
+
+function currentLang() {
+  return $("language")?.value || "es";
 }
 
 function applyLanguage(lang) {
@@ -67,45 +83,13 @@ function getParticipants() {
   }));
 }
 
-function renderParticipants() {
-  const lang = $("language").value;
-  const t = I18N[lang] || I18N.es;
-  const container = $("participantsContainer");
-  const rows = Array.from(container.querySelectorAll(".participant-row"));
-  rows.forEach((row) => {
-    row.querySelector(".participant-name").placeholder = t.name;
-    row.querySelector(".participant-department").placeholder = t.department;
-    row.querySelector(".participant-notes").placeholder = t.notes;
-    row.querySelector(".participant-absent-label").textContent = t.absent;
-    row.querySelector(".participant-remove").textContent = t.remove;
-  });
-}
-
-function addParticipantRow(initialData = {}) {
-  const container = $("participantsContainer");
-  const row = document.createElement("div");
-  row.className = "participant-row border rounded p-2 mb-2";
-  row.innerHTML = `
-    <div class="row g-2 align-items-center">
-      <div class="col-md-3"><input class="form-control participant-name" type="text" value="${initialData.name || ""}" /></div>
-      <div class="col-md-3"><input class="form-control participant-department" type="text" value="${initialData.department || ""}" /></div>
-      <div class="col-md-2"><div class="form-check"><input class="form-check-input participant-absent" type="checkbox" ${initialData.absent ? "checked" : ""} /><label class="form-check-label participant-absent-label">Ausente</label></div></div>
-      <div class="col-md-3"><input class="form-control participant-notes" type="text" value="${initialData.notes || ""}" /></div>
-      <div class="col-md-1"><button type="button" class="btn btn-sm btn-outline-danger participant-remove">Eliminar</button></div>
-    </div>
-  `;
-  row.querySelector(".participant-remove").addEventListener("click", () => {
-    row.remove();
-  });
-  container.appendChild(row);
-  renderParticipants();
-}
-
-async function exportDocx(event) {
-  event.preventDefault();
-  const payload = {
-    language: $("language").value,
+function collectPayload() {
+  return {
+    language: currentLang(),
+    project_id: $("project_id").value ? Number($("project_id").value) : null,
+    title: $("title").value,
     project_subject: $("project_subject").value,
+    albaran_number: $("albaran_number").value,
     meeting_date: $("meeting_date").value,
     start_time: $("start_time").value,
     end_time: $("end_time").value,
@@ -117,7 +101,62 @@ async function exportDocx(event) {
     decisions_actions: $("decisions_actions").value,
     planning_next_steps: $("planning_next_steps").value,
   };
+}
 
+function updateSavedMinutesLink() {
+  const link = $("viewSavedBtn");
+  if (!link) return;
+  const projectId = $("project_id")?.value;
+  link.href = projectId ? `/meeting-minutes/list?project_id=${encodeURIComponent(projectId)}` : "/meeting-minutes/list";
+}
+
+function renderParticipants() {
+  const t = I18N[currentLang()] || I18N.es;
+  const rows = Array.from(document.querySelectorAll(".participant-row"));
+  rows.forEach((row) => {
+    row.querySelector(".participant-name").placeholder = t.name;
+    row.querySelector(".participant-department").placeholder = t.department;
+    row.querySelector(".participant-notes").placeholder = t.notes;
+    row.querySelector(".participant-absent-label").textContent = t.absent;
+    row.querySelector(".participant-remove").textContent = t.remove;
+  });
+}
+
+function addParticipantRow(initialData = {}) {
+  const row = document.createElement("div");
+  row.className = "participant-row border rounded p-2 mb-2";
+  row.innerHTML = `
+    <div class="row g-2 align-items-center">
+      <div class="col-md-3"><input class="form-control participant-name" type="text" value="${initialData.name || ""}" /></div>
+      <div class="col-md-3"><input class="form-control participant-department" type="text" value="${initialData.department || ""}" /></div>
+      <div class="col-md-2"><div class="form-check"><input class="form-check-input participant-absent" type="checkbox" ${initialData.absent ? "checked" : ""} /><label class="form-check-label participant-absent-label">Ausente</label></div></div>
+      <div class="col-md-3"><input class="form-control participant-notes" type="text" value="${initialData.notes || ""}" /></div>
+      <div class="col-md-1"><button type="button" class="btn btn-sm btn-outline-danger participant-remove">Eliminar</button></div>
+    </div>
+  `;
+  row.querySelector(".participant-remove").addEventListener("click", () => row.remove());
+  $("participantsContainer").appendChild(row);
+  renderParticipants();
+}
+
+async function saveMinutes() {
+  const t = I18N[currentLang()] || I18N.es;
+  const payload = collectPayload();
+  const res = await fetch("/meeting-minutes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    alert(t.saveError);
+    return;
+  }
+  alert(t.saveOk);
+}
+
+async function exportDocx(event) {
+  event.preventDefault();
+  const payload = collectPayload();
   const res = await fetch("/meeting-minutes/export.docx", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -139,6 +178,9 @@ document.addEventListener("DOMContentLoaded", () => {
   addParticipantRow();
   $("addParticipant").addEventListener("click", () => addParticipantRow());
   $("language").addEventListener("change", (e) => applyLanguage(e.target.value));
+  $("project_id").addEventListener("change", updateSavedMinutesLink);
+  $("btnSave").addEventListener("click", saveMinutes);
   $("meetingMinutesForm").addEventListener("submit", exportDocx);
-  applyLanguage($("language").value);
+  applyLanguage(currentLang());
+  updateSavedMinutesLink();
 });

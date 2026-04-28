@@ -20,6 +20,7 @@ from openpyxl.utils import get_column_letter
 
 from importer import read_and_normalize_excel, map_row, upsert_project, upsert_snapshot, compute_deltas
 from meeting_minutes.router import router as meeting_minutes_router
+from meeting_minutes.storage import ensure_meeting_minutes_storage
 
 app = FastAPI()
 app.include_router(meeting_minutes_router)
@@ -39,6 +40,7 @@ def startup_init() -> None:
             ensure_historical_storage(cur)
             ensure_project_tasks_storage(cur)
             ensure_project_notes_storage(cur)
+            ensure_meeting_minutes_storage(cur)
             ensure_general_internal_project(cur)
         conn.commit()
 
@@ -1482,6 +1484,7 @@ def menu_personal(request: Request):
     pm_name = "Alvaro Blanco Pérez"
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
+            ensure_meeting_minutes_storage(cur)
             cur.execute(
                 """
                 SELECT p.id,
@@ -1498,7 +1501,8 @@ def menu_personal(request: Request):
                        s.payment_inv,
                        COALESCE(task_counts.task_open_count, 0) AS task_open_count,
                        COALESCE(task_counts.pp_open_count, 0) AS pp_open_count,
-                       COALESCE(notes_counts.notes_count, 0) AS notes_count
+                       COALESCE(notes_counts.notes_count, 0) AS notes_count,
+                       COALESCE(minutes_counts.minutes_count, 0) AS minutes_count
                 FROM projects p
                 LEFT JOIN LATERAL (
                     SELECT ordered_total,
@@ -1524,6 +1528,11 @@ def menu_personal(request: Request):
                     FROM project_notes n
                     WHERE n.project_id = p.id
                 ) notes_counts ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT COUNT(*) AS minutes_count
+                    FROM meeting_minutes m
+                    WHERE m.project_id = p.id
+                ) minutes_counts ON TRUE
                 WHERE p.project_manager = %s
                   AND COALESCE(p.is_historical, FALSE) = FALSE
                 """,
@@ -1608,6 +1617,7 @@ def menu_personal(request: Request):
                         "tasks_count": int(row[12] or 0),
                         "pp_count": int(row[13] or 0),
                         "notes_count": int(row[14] or 0),
+                        "minutes_count": int(row[15] or 0),
                         "indicator_status": overall_status,
                     }
                 )

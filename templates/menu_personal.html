@@ -102,6 +102,7 @@
                 <th class="text-end text-nowrap">Nº Tasks</th>
                 <th class="text-end text-nowrap">Nº PP</th>
                 <th class="text-end text-nowrap">Nº Notes</th>
+                <th class="text-end text-nowrap">Nº Actas</th>
                 <th class="text-end" style="width: 170px;">Acciones</th>
               </tr>
             </thead>
@@ -158,6 +159,9 @@
                   <a class="count-link" href="/calendar?notes=1&projectId={{ project.project_id }}">{{ project.notes_count }}</a>
                 </td>
                 <td class="text-end">
+                  <a class="count-link" href="/meeting-minutes/list?project_id={{ project.project_id }}">{{ project.minutes_count }}</a>
+                </td>
+                <td class="text-end">
                   <div class="project-actions">
                     <a
                       href="/estado-proyecto?q={{ project.project_code }}"
@@ -190,7 +194,7 @@
               </tr>
               {% else %}
               <tr>
-                <td colspan="12" class="muted">No hay proyectos asignados.</td>
+                <td colspan="13" class="muted">No hay proyectos asignados.</td>
               </tr>
               {% endfor %}
             </tbody>

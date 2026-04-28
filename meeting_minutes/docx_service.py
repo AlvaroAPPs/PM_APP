@@ -9,8 +9,10 @@ from .models import MeetingMinutesPayload
 
 TRANSLATIONS = {
     "es": {
-        "title": "Acta de Reunión",
+        "document_title": "Acta de Reunión",
         "project": "Proyecto / Asunto",
+        "minutes_title_label": "Título del acta",
+        "albaran": "Albarán",
         "date": "Fecha",
         "time": "Hora",
         "location": "Ubicación",
@@ -28,8 +30,10 @@ TRANSLATIONS = {
         "no": "No",
     },
     "en": {
-        "title": "Meeting Minutes",
+        "document_title": "Meeting Minutes",
         "project": "Project / Subject",
+        "minutes_title_label": "Minutes title",
+        "albaran": "Delivery note",
         "date": "Meeting date",
         "time": "Start - End",
         "location": "Location",
@@ -106,8 +110,10 @@ def _participants_table(payload: MeetingMinutesPayload, t: dict[str, str]) -> st
 def build_meeting_minutes_docx(payload: MeetingMinutesPayload) -> bytes:
     t = TRANSLATIONS[payload.language]
     body_parts = [
-        _p(t["title"], bold=True),
+        _p(t["document_title"], bold=True),
+        _p(f"{t['minutes_title_label']}: {payload.title}"),
         _p(f"{t['project']}: {payload.project_subject}"),
+        _p(f"{t['albaran']}: {payload.albaran_number}"),
         _p(f"{t['date']}: {payload.meeting_date}"),
         _p(f"{t['time']}: {payload.start_time} - {payload.end_time}"),
         _p(f"{t['location']}: {payload.location}"),

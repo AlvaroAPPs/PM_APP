@@ -8,7 +8,10 @@
   </head>
   <body class="bg-light">
     <div class="container py-4">
-      <h1 id="pageTitle" class="mb-3">Acta de Reunión</h1>
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 id="pageTitle" class="mb-0">Acta de Reunión</h1>
+        <a class="btn btn-outline-secondary" href="/meeting-minutes/list" id="viewSavedBtn">Ver actas guardadas</a>
+      </div>
 
       <div class="card">
         <div class="card-body">
@@ -21,7 +24,27 @@
               </select>
             </div>
 
-            <div class="col-md-8">
+            <div class="col-md-4">
+              <label id="labelProjectLink" class="form-label" for="project_id">Proyecto</label>
+              <select id="project_id" class="form-select">
+                <option value="">Sin asociar</option>
+                {% for project in projects %}
+                <option value="{{ project.id }}">{{ project.project_code }} - {{ project.project_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-4">
+              <label id="labelAlbaran" class="form-label" for="albaran_number">Albarán</label>
+              <input id="albaran_number" class="form-control" type="text" />
+            </div>
+
+            <div class="col-md-6">
+              <label id="labelTitle" class="form-label" for="title">Título del acta</label>
+              <input id="title" class="form-control" type="text" required />
+            </div>
+
+            <div class="col-md-6">
               <label id="labelProject" class="form-label" for="project_subject">Proyecto / Asunto</label>
               <input id="project_subject" class="form-control" type="text" required />
             </div>
@@ -71,7 +94,8 @@
               <textarea id="planning_next_steps" class="form-control" rows="3"></textarea>
             </div>
 
-            <div class="col-12">
+            <div class="col-12 d-flex gap-2">
+              <button class="btn btn-outline-dark" type="button" id="btnSave">Guardar acta</button>
               <button class="btn btn-primary" type="submit" id="btnExport">Generar DOCX</button>
             </div>
           </form>

@@ -10,7 +10,10 @@ class MeetingParticipant(BaseModel):
 
 class MeetingMinutesPayload(BaseModel):
     language: str = Field(default="es", pattern="^(es|en)$")
+    project_id: int | None = None
+    title: str = ""
     project_subject: str = ""
+    albaran_number: str = ""
     meeting_date: str = ""
     start_time: str = ""
     end_time: str = ""
