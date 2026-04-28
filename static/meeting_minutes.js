@@ -4,7 +4,7 @@ const I18N = {
     labelLanguage: "Idioma",
     labelProjectLink: "Proyecto",
     labelAlbaran: "Albarán",
-    labelLookup: "Buscar proyecto / albarán",
+    labelLookup: "Resultados albarán",
     labelTitle: "Título del acta",
     labelProject: "Proyecto / Asunto",
     labelDate: "Fecha",
@@ -28,7 +28,6 @@ const I18N = {
     viewSavedBtn: "Ver actas guardadas",
     saveOk: "Acta guardada correctamente",
     saveError: "No se pudo guardar el acta",
-    lookupProject: "Proyecto:",
     lookupAlbaran: "Albarán:",
   },
   en: {
@@ -36,7 +35,7 @@ const I18N = {
     labelLanguage: "Language",
     labelProjectLink: "Project",
     labelAlbaran: "Delivery note",
-    labelLookup: "Search project / delivery note",
+    labelLookup: "Delivery note results",
     labelTitle: "Minutes title",
     labelProject: "Project / Subject",
     labelDate: "Meeting date",
@@ -60,16 +59,12 @@ const I18N = {
     viewSavedBtn: "View saved minutes",
     saveOk: "Minutes saved",
     saveError: "Could not save minutes",
-    lookupProject: "Project:",
     lookupAlbaran: "Delivery note:",
   }
 };
 
 function $(id) { return document.getElementById(id); }
-
-function currentLang() {
-  return $("language")?.value || "es";
-}
+function currentLang() { return $("language")?.value || "es"; }
 
 function applyLanguage(lang) {
   const t = I18N[lang] || I18N.es;
@@ -118,8 +113,7 @@ function updateSavedMinutesLink() {
 
 function renderParticipants() {
   const t = I18N[currentLang()] || I18N.es;
-  const rows = Array.from(document.querySelectorAll(".participant-row"));
-  rows.forEach((row) => {
+  Array.from(document.querySelectorAll(".participant-row")).forEach((row) => {
     row.querySelector(".participant-name").placeholder = t.name;
     row.querySelector(".participant-department").placeholder = t.department;
     row.querySelector(".participant-notes").placeholder = t.notes;
@@ -138,52 +132,58 @@ function addParticipantRow(initialData = {}) {
       <div class="col-md-2"><div class="form-check"><input class="form-check-input participant-absent" type="checkbox" ${initialData.absent ? "checked" : ""} /><label class="form-check-label participant-absent-label">Ausente</label></div></div>
       <div class="col-md-3"><input class="form-control participant-notes" type="text" value="${initialData.notes || ""}" /></div>
       <div class="col-md-1"><button type="button" class="btn btn-sm btn-outline-danger participant-remove">Eliminar</button></div>
-    </div>
-  `;
+    </div>`;
   row.querySelector(".participant-remove").addEventListener("click", () => row.remove());
   $("participantsContainer").appendChild(row);
   renderParticipants();
 }
 
-async function lookupProjectOrAlbaran() {
-  const query = $("lookup_query")?.value || "";
-  const res = await fetch(`/meeting-minutes/lookups?q=${encodeURIComponent(query)}`);
-  if (!res.ok) return;
+async function searchProjects(query) {
+  if (!query || query.trim().length < 1) return [];
+  const res = await fetch(`/projects/search?q=${encodeURIComponent(query.trim())}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+function renderProjectOptions(options) {
+  const select = $("project_id");
+  const current = select.value;
+  select.innerHTML = '<option value="">Sin asociar</option>';
+  for (const p of options) {
+    const opt = document.createElement("option");
+    opt.value = String(p.id);
+    opt.textContent = `${p.project_code} - ${p.project_name}`;
+    select.appendChild(opt);
+  }
+  if (current && Array.from(select.options).some((opt) => opt.value === current)) {
+    select.value = current;
+  }
+  updateSavedMinutesLink();
+}
+
+async function searchAlbaranes(query) {
+  const res = await fetch(`/meeting-minutes/albaranes/search?q=${encodeURIComponent(query || "")}`);
+  if (!res.ok) return [];
   const data = await res.json();
+  return data.items || [];
+}
+
+function renderAlbaranResults(items) {
+  const select = $("albaran_results");
   const t = I18N[currentLang()] || I18N.es;
-
-  const projectContainer = $("lookup_project_results");
-  projectContainer.innerHTML = "";
-  data.projects.forEach((project) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn btn-sm btn-outline-primary";
-    btn.textContent = `${t.lookupProject} ${project.project_code} - ${project.project_name}`;
-    btn.addEventListener("click", () => {
-      $("project_id").value = String(project.id);
-      updateSavedMinutesLink();
-    });
-    projectContainer.appendChild(btn);
-  });
-
-  const albaranContainer = $("lookup_albaran_results");
-  albaranContainer.innerHTML = "";
-  data.albaranes.forEach((albaran) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn btn-sm btn-outline-secondary";
-    btn.textContent = `${t.lookupAlbaran} ${albaran}`;
-    btn.addEventListener("click", () => {
-      $("albaran_number").value = albaran;
-    });
-    albaranContainer.appendChild(btn);
-  });
+  select.innerHTML = "";
+  for (const item of items) {
+    const opt = document.createElement("option");
+    opt.value = item;
+    opt.textContent = `${t.lookupAlbaran} ${item}`;
+    select.appendChild(opt);
+  }
 }
 
 async function saveMinutes() {
   const t = I18N[currentLang()] || I18N.es;
   const payload = collectPayload();
-  const res = await fetch("/meeting-minutes", {
+  const res = await fetch("/meeting-minutes/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -193,9 +193,7 @@ async function saveMinutes() {
     try {
       const data = await res.json();
       detail = data.detail ? `: ${data.detail}` : "";
-    } catch (_err) {
-      detail = "";
-    }
+    } catch (_err) {}
     alert(`${t.saveError}${detail}`);
     return;
   }
@@ -205,7 +203,7 @@ async function saveMinutes() {
 async function exportDocx(event) {
   event.preventDefault();
   const payload = collectPayload();
-  const res = await fetch("/meeting-minutes/export.docx", {
+  const res = await fetch("/meeting-minutes/export.docx/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -225,18 +223,25 @@ async function exportDocx(event) {
 document.addEventListener("DOMContentLoaded", () => {
   addParticipantRow();
   $("addParticipant").addEventListener("click", () => addParticipantRow());
-  $("language").addEventListener("change", (e) => applyLanguage(e.target.value));
+  $("language").addEventListener("change", () => {
+    applyLanguage(currentLang());
+    searchAlbaranes($("albaran_search").value || "").then(renderAlbaranResults);
+  });
   $("project_id").addEventListener("change", updateSavedMinutesLink);
-  $("lookup_btn").addEventListener("click", lookupProjectOrAlbaran);
-  $("lookup_query").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      lookupProjectOrAlbaran();
-    }
+  $("project_search").addEventListener("input", async (event) => {
+    const options = await searchProjects(event.target.value || "");
+    renderProjectOptions(options);
+  });
+  $("albaran_search").addEventListener("input", async (event) => {
+    const items = await searchAlbaranes(event.target.value || "");
+    renderAlbaranResults(items);
+  });
+  $("albaran_results").addEventListener("change", (event) => {
+    if (event.target.value) $("albaran_number").value = event.target.value;
   });
   $("btnSave").addEventListener("click", saveMinutes);
   $("meetingMinutesForm").addEventListener("submit", exportDocx);
   applyLanguage(currentLang());
   updateSavedMinutesLink();
-  lookupProjectOrAlbaran();
+  searchAlbaranes("").then(renderAlbaranResults);
 });

@@ -26,6 +26,7 @@
 
             <div class="col-md-4">
               <label id="labelProjectLink" class="form-label" for="project_id">Proyecto</label>
+              <input id="project_search" class="form-control mb-2" type="text" placeholder="Buscar por código o nombre" />
               <select id="project_id" class="form-select">
                 <option value="">Sin asociar</option>
                 {% for project in projects %}
@@ -36,20 +37,12 @@
 
             <div class="col-md-4">
               <label id="labelAlbaran" class="form-label" for="albaran_number">Albarán</label>
+              <input id="albaran_search" class="form-control mb-2" type="text" placeholder="Buscar albarán guardado" />
               <input id="albaran_number" class="form-control" type="text" />
             </div>
             <div class="col-md-4">
-              <label class="form-label" for="lookup_query" id="labelLookup">Buscar proyecto / albarán</label>
-              <div class="input-group">
-                <input id="lookup_query" class="form-control" type="text" placeholder="Escribe código, nombre o albarán" />
-                <button id="lookup_btn" class="btn btn-outline-secondary" type="button">Buscar</button>
-              </div>
-            </div>
-            <div class="col-md-8">
-              <div id="lookup_project_results" class="d-flex flex-wrap gap-2"></div>
-            </div>
-            <div class="col-md-4">
-              <div id="lookup_albaran_results" class="d-flex flex-wrap gap-2"></div>
+              <label class="form-label" for="albaran_results" id="labelLookup">Resultados albarán</label>
+              <select id="albaran_results" class="form-select" size="3"></select>
             </div>
 
             <div class="col-md-6">
