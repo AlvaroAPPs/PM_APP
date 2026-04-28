@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Meeting Minutes</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  </head>
+  <body class="bg-light">
+    <div class="container py-4">
+      <h1 id="pageTitle" class="mb-3">Acta de Reunión</h1>
+
+      <div class="card">
+        <div class="card-body">
+          <form id="meetingMinutesForm" class="row g-3">
+            <div class="col-md-4">
+              <label id="labelLanguage" class="form-label" for="language">Idioma</label>
+              <select id="language" class="form-select">
+                <option value="es" selected>Spanish</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+
+            <div class="col-md-8">
+              <label id="labelProject" class="form-label" for="project_subject">Proyecto / Asunto</label>
+              <input id="project_subject" class="form-control" type="text" required />
+            </div>
+            <div class="col-md-4">
+              <label id="labelDate" class="form-label" for="meeting_date">Fecha</label>
+              <input id="meeting_date" class="form-control" type="date" required />
+            </div>
+            <div class="col-md-4">
+              <label id="labelStart" class="form-label" for="start_time">Hora inicio</label>
+              <input id="start_time" class="form-control" type="time" required />
+            </div>
+            <div class="col-md-4">
+              <label id="labelEnd" class="form-label" for="end_time">Hora fin</label>
+              <input id="end_time" class="form-control" type="time" required />
+            </div>
+            <div class="col-md-8">
+              <label id="labelLocation" class="form-label" for="location">Ubicación</label>
+              <input id="location" class="form-control" type="text" />
+            </div>
+            <div class="col-md-4">
+              <label id="labelPhase" class="form-label" for="phase">Fase</label>
+              <input id="phase" class="form-control" type="text" />
+            </div>
+
+            <div class="col-12">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h4 id="participantsTitle" class="mb-0">Participantes</h4>
+                <button id="addParticipant" type="button" class="btn btn-sm btn-outline-primary">Añadir participante</button>
+              </div>
+              <div id="participantsContainer"></div>
+            </div>
+
+            <div class="col-12">
+              <label id="labelTopics" class="form-label" for="topics">Temas tratados</label>
+              <textarea id="topics" class="form-control" rows="3"></textarea>
+            </div>
+            <div class="col-12">
+              <label id="labelDiscussion" class="form-label" for="discussion">Detalle de la discusión</label>
+              <textarea id="discussion" class="form-control" rows="4"></textarea>
+            </div>
+            <div class="col-12">
+              <label id="labelDecisions" class="form-label" for="decisions_actions">Decisiones / Acciones</label>
+              <textarea id="decisions_actions" class="form-control" rows="3"></textarea>
+            </div>
+            <div class="col-12">
+              <label id="labelPlanning" class="form-label" for="planning_next_steps">Planificación / Próximos pasos</label>
+              <textarea id="planning_next_steps" class="form-control" rows="3"></textarea>
+            </div>
+
+            <div class="col-12">
+              <button class="btn btn-primary" type="submit" id="btnExport">Generar DOCX</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/meeting_minutes.js"></script>
+  </body>
+</html>

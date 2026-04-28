@@ -19,8 +19,10 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from importer import read_and_normalize_excel, map_row, upsert_project, upsert_snapshot, compute_deltas
+from meeting_minutes.router import router as meeting_minutes_router
 
 app = FastAPI()
+app.include_router(meeting_minutes_router)
 
 # Static + templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
