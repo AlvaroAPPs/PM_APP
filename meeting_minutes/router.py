@@ -45,6 +45,44 @@ def meeting_minutes_page(request: Request):
     return templates.TemplateResponse("meeting_minutes.html", {"request": request, "projects": projects})
 
 
+@router.get("/meeting-minutes/lookups")
+def meeting_minutes_lookups(q: str = ""):
+    query = (q or "").strip()
+    like = f"%{query}%"
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_meeting_minutes_storage(cur)
+            cur.execute(
+                """
+                SELECT id, project_code, project_name
+                FROM projects
+                WHERE COALESCE(is_historical, FALSE) = FALSE
+                  AND (%s = '' OR project_code ILIKE %s OR project_name ILIKE %s)
+                ORDER BY project_name ASC, project_code ASC
+                LIMIT 12
+                """,
+                (query, like, like),
+            )
+            projects = [
+                {"id": int(row[0]), "project_code": row[1], "project_name": row[2]}
+                for row in cur.fetchall()
+            ]
+            cur.execute(
+                """
+                SELECT DISTINCT m.albaran_number
+                FROM meeting_minutes m
+                WHERE m.albaran_number IS NOT NULL
+                  AND m.albaran_number <> ''
+                  AND (%s = '' OR m.albaran_number ILIKE %s)
+                ORDER BY m.albaran_number ASC
+                LIMIT 12
+                """,
+                (query, like),
+            )
+            albaranes = [row[0] for row in cur.fetchall()]
+    return {"projects": projects, "albaranes": albaranes}
+
+
 @router.get("/meeting-minutes/list", response_class=HTMLResponse)
 def list_meeting_minutes(
     request: Request,
@@ -131,7 +169,7 @@ def list_meeting_minutes(
 
 @router.post("/meeting-minutes")
 def create_meeting_minutes(payload: MeetingMinutesPayload):
-    title = (payload.title or "").strip()
+    title = (payload.title or "").strip() or (payload.project_subject or "").strip()
     if not title:
         raise HTTPException(status_code=400, detail="Title is required")
 

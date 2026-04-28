@@ -38,6 +38,19 @@
               <label id="labelAlbaran" class="form-label" for="albaran_number">Albarán</label>
               <input id="albaran_number" class="form-control" type="text" />
             </div>
+            <div class="col-md-4">
+              <label class="form-label" for="lookup_query" id="labelLookup">Buscar proyecto / albarán</label>
+              <div class="input-group">
+                <input id="lookup_query" class="form-control" type="text" placeholder="Escribe código, nombre o albarán" />
+                <button id="lookup_btn" class="btn btn-outline-secondary" type="button">Buscar</button>
+              </div>
+            </div>
+            <div class="col-md-8">
+              <div id="lookup_project_results" class="d-flex flex-wrap gap-2"></div>
+            </div>
+            <div class="col-md-4">
+              <div id="lookup_albaran_results" class="d-flex flex-wrap gap-2"></div>
+            </div>
 
             <div class="col-md-6">
               <label id="labelTitle" class="form-label" for="title">Título del acta</label>

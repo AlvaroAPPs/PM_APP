@@ -4,6 +4,7 @@ const I18N = {
     labelLanguage: "Idioma",
     labelProjectLink: "Proyecto",
     labelAlbaran: "Albarán",
+    labelLookup: "Buscar proyecto / albarán",
     labelTitle: "Título del acta",
     labelProject: "Proyecto / Asunto",
     labelDate: "Fecha",
@@ -27,12 +28,15 @@ const I18N = {
     viewSavedBtn: "Ver actas guardadas",
     saveOk: "Acta guardada correctamente",
     saveError: "No se pudo guardar el acta",
+    lookupProject: "Proyecto:",
+    lookupAlbaran: "Albarán:",
   },
   en: {
     pageTitle: "Meeting Minutes",
     labelLanguage: "Language",
     labelProjectLink: "Project",
     labelAlbaran: "Delivery note",
+    labelLookup: "Search project / delivery note",
     labelTitle: "Minutes title",
     labelProject: "Project / Subject",
     labelDate: "Meeting date",
@@ -56,6 +60,8 @@ const I18N = {
     viewSavedBtn: "View saved minutes",
     saveOk: "Minutes saved",
     saveError: "Could not save minutes",
+    lookupProject: "Project:",
+    lookupAlbaran: "Delivery note:",
   }
 };
 
@@ -139,6 +145,41 @@ function addParticipantRow(initialData = {}) {
   renderParticipants();
 }
 
+async function lookupProjectOrAlbaran() {
+  const query = $("lookup_query")?.value || "";
+  const res = await fetch(`/meeting-minutes/lookups?q=${encodeURIComponent(query)}`);
+  if (!res.ok) return;
+  const data = await res.json();
+  const t = I18N[currentLang()] || I18N.es;
+
+  const projectContainer = $("lookup_project_results");
+  projectContainer.innerHTML = "";
+  data.projects.forEach((project) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn btn-sm btn-outline-primary";
+    btn.textContent = `${t.lookupProject} ${project.project_code} - ${project.project_name}`;
+    btn.addEventListener("click", () => {
+      $("project_id").value = String(project.id);
+      updateSavedMinutesLink();
+    });
+    projectContainer.appendChild(btn);
+  });
+
+  const albaranContainer = $("lookup_albaran_results");
+  albaranContainer.innerHTML = "";
+  data.albaranes.forEach((albaran) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn btn-sm btn-outline-secondary";
+    btn.textContent = `${t.lookupAlbaran} ${albaran}`;
+    btn.addEventListener("click", () => {
+      $("albaran_number").value = albaran;
+    });
+    albaranContainer.appendChild(btn);
+  });
+}
+
 async function saveMinutes() {
   const t = I18N[currentLang()] || I18N.es;
   const payload = collectPayload();
@@ -148,7 +189,14 @@ async function saveMinutes() {
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
-    alert(t.saveError);
+    let detail = "";
+    try {
+      const data = await res.json();
+      detail = data.detail ? `: ${data.detail}` : "";
+    } catch (_err) {
+      detail = "";
+    }
+    alert(`${t.saveError}${detail}`);
     return;
   }
   alert(t.saveOk);
@@ -179,8 +227,16 @@ document.addEventListener("DOMContentLoaded", () => {
   $("addParticipant").addEventListener("click", () => addParticipantRow());
   $("language").addEventListener("change", (e) => applyLanguage(e.target.value));
   $("project_id").addEventListener("change", updateSavedMinutesLink);
+  $("lookup_btn").addEventListener("click", lookupProjectOrAlbaran);
+  $("lookup_query").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      lookupProjectOrAlbaran();
+    }
+  });
   $("btnSave").addEventListener("click", saveMinutes);
   $("meetingMinutesForm").addEventListener("submit", exportDocx);
   applyLanguage(currentLang());
   updateSavedMinutesLink();
+  lookupProjectOrAlbaran();
 });
