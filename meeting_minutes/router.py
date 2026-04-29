@@ -27,9 +27,10 @@ def _parse_date(value: str | None) -> date | None:
 
 
 @router.get("/meeting-minutes", response_class=HTMLResponse)
-def meeting_minutes_page(request: Request):
+def meeting_minutes_page(request: Request, minutes_id: int | None = None):
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
+            ensure_meeting_minutes_storage(cur)
             cur.execute(
                 """
                 SELECT id, project_code, project_name
@@ -42,7 +43,43 @@ def meeting_minutes_page(request: Request):
                 {"id": int(row[0]), "project_code": row[1], "project_name": row[2]}
                 for row in cur.fetchall()
             ]
-    return templates.TemplateResponse("meeting_minutes.html", {"request": request, "projects": projects})
+            existing_minutes = None
+            if minutes_id is not None:
+                cur.execute(
+                    """
+                    SELECT id, project_id, title, project_subject, albaran_number, language,
+                           meeting_date, start_time, end_time, location, phase, participants,
+                           topics, discussion, decisions_actions, planning_next_steps
+                    FROM meeting_minutes
+                    WHERE id = %s
+                    """,
+                    (minutes_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="Minutes not found")
+                existing_minutes = {
+                    "id": int(row[0]),
+                    "project_id": row[1],
+                    "title": row[2] or "",
+                    "project_subject": row[3] or "",
+                    "albaran_number": row[4] or "",
+                    "language": row[5] or "es",
+                    "meeting_date": row[6].isoformat() if row[6] else "",
+                    "start_time": row[7] or "",
+                    "end_time": row[8] or "",
+                    "location": row[9] or "",
+                    "phase": row[10] or "",
+                    "participants": row[11] or [],
+                    "topics": row[12] or "",
+                    "discussion": row[13] or "",
+                    "decisions_actions": row[14] or "",
+                    "planning_next_steps": row[15] or "",
+                }
+    return templates.TemplateResponse(
+        "meeting_minutes.html",
+        {"request": request, "projects": projects, "existing_minutes": existing_minutes},
+    )
 
 
 @router.get("/meeting-minutes/albaranes/search")
@@ -117,6 +154,11 @@ def list_meeting_minutes(
                 SELECT id, project_code, project_name
                 FROM projects
                 WHERE COALESCE(is_historical, FALSE) = FALSE
+                  AND EXISTS (
+                    SELECT 1
+                    FROM meeting_minutes m
+                    WHERE m.project_id = projects.id
+                  )
                 ORDER BY project_name ASC, project_code ASC
                 """
             )
@@ -203,6 +245,62 @@ def create_meeting_minutes(payload: MeetingMinutesPayload):
                 ),
             )
             row = cur.fetchone()
+        conn.commit()
+    return {"status": "ok", "id": int(row[0])}
+
+
+@router.put("/meeting-minutes/{minutes_id}")
+def update_meeting_minutes(minutes_id: int, payload: MeetingMinutesPayload):
+    title = (payload.title or "").strip() or (payload.project_subject or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title is required")
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_meeting_minutes_storage(cur)
+            cur.execute(
+                """
+                UPDATE meeting_minutes
+                SET project_id = %s,
+                    title = %s,
+                    project_subject = %s,
+                    meeting_date = %s,
+                    start_time = %s,
+                    end_time = %s,
+                    location = %s,
+                    phase = %s,
+                    language = %s,
+                    albaran_number = %s,
+                    participants = %s::jsonb,
+                    topics = %s,
+                    discussion = %s,
+                    decisions_actions = %s,
+                    planning_next_steps = %s,
+                    updated_at = now()
+                WHERE id = %s
+                RETURNING id
+                """,
+                (
+                    payload.project_id,
+                    title,
+                    payload.project_subject,
+                    _parse_date(payload.meeting_date),
+                    payload.start_time,
+                    payload.end_time,
+                    payload.location,
+                    payload.phase,
+                    payload.language,
+                    payload.albaran_number,
+                    Json([participant.model_dump() for participant in payload.participants]),
+                    payload.topics,
+                    payload.discussion,
+                    payload.decisions_actions,
+                    payload.planning_next_steps,
+                    minutes_id,
+                ),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Minutes not found")
         conn.commit()
     return {"status": "ok", "id": int(row[0])}
 

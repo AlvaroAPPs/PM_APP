@@ -8,6 +8,10 @@
 </head>
 <body class="bg-light">
   <div class="container py-4">
+    <div class="d-flex gap-2 mb-3">
+      <button class="btn btn-outline-secondary" type="button" onclick="history.back()">Volver</button>
+      <a class="btn btn-outline-secondary" href="/">Menú principal</a>
+    </div>
     <div class="d-flex justify-content-between align-items-center mb-3">
       <div>
         <h1 class="mb-0">Actas guardadas</h1>
@@ -60,6 +64,7 @@
               <th>Albarán</th>
               <th>Idioma</th>
               <th>Creada</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -78,10 +83,11 @@
               <td>{{ row.albaran_number or "-" }}</td>
               <td>{{ row.language|upper }}</td>
               <td>{{ row.created_at or "-" }}</td>
+              <td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="/meeting-minutes?minutes_id={{ row.id }}" title="Abrir para editar">✏️</a></td>
             </tr>
             {% else %}
             <tr>
-              <td colspan="7" class="text-muted">No hay actas con esos filtros.</td>
+              <td colspan="8" class="text-muted">No hay actas con esos filtros.</td>
             </tr>
             {% endfor %}
           </tbody>

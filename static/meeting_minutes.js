@@ -104,6 +104,29 @@ function collectPayload() {
   };
 }
 
+function fillFormForEdit(existing) {
+  if (!existing) return;
+  $("language").value = existing.language || "es";
+  $("project_id").value = existing.project_id ? String(existing.project_id) : "";
+  $("title").value = existing.title || "";
+  $("project_subject").value = existing.project_subject || "";
+  $("albaran_number").value = existing.albaran_number || "";
+  $("meeting_date").value = existing.meeting_date || "";
+  $("start_time").value = existing.start_time || "";
+  $("end_time").value = existing.end_time || "";
+  $("location").value = existing.location || "";
+  $("phase").value = existing.phase || "";
+  $("topics").value = existing.topics || "";
+  $("discussion").value = existing.discussion || "";
+  $("decisions_actions").value = existing.decisions_actions || "";
+  $("planning_next_steps").value = existing.planning_next_steps || "";
+
+  $("participantsContainer").innerHTML = "";
+  const participants = Array.isArray(existing.participants) ? existing.participants : [];
+  if (!participants.length) addParticipantRow();
+  participants.forEach((item) => addParticipantRow(item || {}));
+}
+
 function updateSavedMinutesLink() {
   const link = $("viewSavedBtn");
   if (!link) return;
@@ -183,8 +206,11 @@ function renderAlbaranResults(items) {
 async function saveMinutes() {
   const t = I18N[currentLang()] || I18N.es;
   const payload = collectPayload();
-  const res = await fetch("/meeting-minutes/", {
-    method: "POST",
+  const existing = window.__MEETING_MINUTES_EXISTING__;
+  const isEdit = Boolean(existing && existing.id);
+  const url = isEdit ? `/meeting-minutes/${encodeURIComponent(String(existing.id))}` : "/meeting-minutes/";
+  const res = await fetch(url, {
+    method: isEdit ? "PUT" : "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
@@ -222,6 +248,7 @@ async function exportDocx(event) {
 
 document.addEventListener("DOMContentLoaded", () => {
   addParticipantRow();
+  fillFormForEdit(window.__MEETING_MINUTES_EXISTING__);
   $("addParticipant").addEventListener("click", () => addParticipantRow());
   $("language").addEventListener("change", () => {
     applyLanguage(currentLang());
