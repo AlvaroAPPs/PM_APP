@@ -251,12 +251,43 @@ def create_meeting_minutes(payload: MeetingMinutesPayload):
 
 @router.put("/meeting-minutes/{minutes_id}")
 def update_meeting_minutes(minutes_id: int, payload: MeetingMinutesPayload):
-    title = (payload.title or "").strip() or (payload.project_subject or "").strip()
-    if not title:
-        raise HTTPException(status_code=400, detail="Title is required")
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             ensure_meeting_minutes_storage(cur)
+            cur.execute(
+                """
+                SELECT project_id, title, project_subject, meeting_date, start_time, end_time,
+                       location, phase, language, albaran_number, participants, topics,
+                       discussion, decisions_actions, planning_next_steps
+                FROM meeting_minutes
+                WHERE id = %s
+                """,
+                (minutes_id,),
+            )
+            current = cur.fetchone()
+            if not current:
+                raise HTTPException(status_code=404, detail="Minutes not found")
+
+            merged_title = (payload.title or "").strip() or (current[1] or "")
+            merged_project_subject = (payload.project_subject or "").strip() or (current[2] or "")
+            if not merged_title:
+                merged_title = merged_project_subject
+            if not merged_title:
+                raise HTTPException(status_code=400, detail="Title is required")
+
+            merged_meeting_date = _parse_date(payload.meeting_date) if payload.meeting_date else current[3]
+            merged_start_time = payload.start_time if payload.start_time else (current[4] or "")
+            merged_end_time = payload.end_time if payload.end_time else (current[5] or "")
+            merged_location = payload.location if payload.location else (current[6] or "")
+            merged_phase = payload.phase if payload.phase else (current[7] or "")
+            merged_language = payload.language if payload.language else (current[8] or "es")
+            merged_albaran = payload.albaran_number if payload.albaran_number else (current[9] or "")
+            incoming_participants = [participant.model_dump() for participant in payload.participants]
+            merged_participants = incoming_participants if incoming_participants else (current[10] or [])
+            merged_topics = payload.topics if payload.topics else (current[11] or "")
+            merged_discussion = payload.discussion if payload.discussion else (current[12] or "")
+            merged_decisions = payload.decisions_actions if payload.decisions_actions else (current[13] or "")
+            merged_planning = payload.planning_next_steps if payload.planning_next_steps else (current[14] or "")
             cur.execute(
                 """
                 UPDATE meeting_minutes
@@ -280,27 +311,25 @@ def update_meeting_minutes(minutes_id: int, payload: MeetingMinutesPayload):
                 RETURNING id
                 """,
                 (
-                    payload.project_id,
-                    title,
-                    payload.project_subject,
-                    _parse_date(payload.meeting_date),
-                    payload.start_time,
-                    payload.end_time,
-                    payload.location,
-                    payload.phase,
-                    payload.language,
-                    payload.albaran_number,
-                    Json([participant.model_dump() for participant in payload.participants]),
-                    payload.topics,
-                    payload.discussion,
-                    payload.decisions_actions,
-                    payload.planning_next_steps,
+                    payload.project_id if payload.project_id is not None else current[0],
+                    merged_title,
+                    merged_project_subject,
+                    merged_meeting_date,
+                    merged_start_time,
+                    merged_end_time,
+                    merged_location,
+                    merged_phase,
+                    merged_language,
+                    merged_albaran,
+                    Json(merged_participants),
+                    merged_topics,
+                    merged_discussion,
+                    merged_decisions,
+                    merged_planning,
                     minutes_id,
                 ),
             )
             row = cur.fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Minutes not found")
         conn.commit()
     return {"status": "ok", "id": int(row[0])}
 
