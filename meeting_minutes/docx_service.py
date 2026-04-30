@@ -122,19 +122,35 @@ def build_meeting_minutes_docx(payload: MeetingMinutesPayload) -> bytes:
         _p(t["participants"], bold=True),
         _participants_table(payload, t),
         _p(""),
-        _p(t["topics"], bold=True),
-        _p(payload.topics),
-        _p(""),
-        _p(t["discussion"], bold=True),
-        _p(payload.discussion),
-        _p(""),
-        _p(t["decisions"], bold=True),
-        _p(payload.decisions_actions),
-        _p(""),
-        _p(t["planning"], bold=True),
-        _p(payload.planning_next_steps),
-        "<w:sectPr/>",
     ]
+    if payload.topic_blocks:
+        for idx, block in enumerate(payload.topic_blocks, start=1):
+            body_parts.extend([
+                _p(f"{t['topics']} #{idx}", bold=True),
+                _p(block.topic),
+                _p(t["discussion"], bold=True),
+                _p(block.discussion),
+                _p(t["decisions"], bold=True),
+                _p(block.decisions_actions),
+                _p(t["planning"], bold=True),
+                _p(block.planning_next_steps),
+                _p(""),
+            ])
+    else:
+        body_parts.extend([
+            _p(t["topics"], bold=True),
+            _p(payload.topics),
+            _p(""),
+            _p(t["discussion"], bold=True),
+            _p(payload.discussion),
+            _p(""),
+            _p(t["decisions"], bold=True),
+            _p(payload.decisions_actions),
+            _p(""),
+            _p(t["planning"], bold=True),
+            _p(payload.planning_next_steps),
+        ])
+    body_parts.append("<w:sectPr/>")
 
     document_xml = (
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"

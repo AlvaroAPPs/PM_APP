@@ -8,6 +8,13 @@ class MeetingParticipant(BaseModel):
     notes: str = ""
 
 
+class MeetingTopicBlock(BaseModel):
+    topic: str = ""
+    discussion: str = ""
+    decisions_actions: str = ""
+    planning_next_steps: str = ""
+
+
 class MeetingMinutesPayload(BaseModel):
     language: str = Field(default="es", pattern="^(es|en)$")
     project_id: int | None = None
@@ -20,6 +27,7 @@ class MeetingMinutesPayload(BaseModel):
     location: str = ""
     phase: str = ""
     participants: list[MeetingParticipant] = Field(default_factory=list)
+    topic_blocks: list[MeetingTopicBlock] = Field(default_factory=list)
     topics: str = ""
     discussion: str = ""
     decisions_actions: str = ""

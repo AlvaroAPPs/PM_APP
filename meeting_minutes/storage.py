@@ -17,6 +17,7 @@ def ensure_meeting_minutes_storage(cur: psycopg.Cursor) -> None:
             language VARCHAR(2) NOT NULL DEFAULT 'es',
             albaran_number TEXT NULL,
             participants JSONB NOT NULL DEFAULT '[]'::jsonb,
+            topic_blocks JSONB NOT NULL DEFAULT '[]'::jsonb,
             topics TEXT NULL,
             discussion TEXT NULL,
             decisions_actions TEXT NULL,
@@ -24,5 +25,11 @@ def ensure_meeting_minutes_storage(cur: psycopg.Cursor) -> None:
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
+        """
+    )
+    cur.execute(
+        """
+        ALTER TABLE meeting_minutes
+        ADD COLUMN IF NOT EXISTS topic_blocks JSONB NOT NULL DEFAULT '[]'::jsonb
         """
     )

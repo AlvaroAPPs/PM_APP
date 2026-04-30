@@ -49,7 +49,7 @@ def meeting_minutes_page(request: Request, minutes_id: int | None = None):
                     """
                     SELECT id, project_id, title, project_subject, albaran_number, language,
                            meeting_date, start_time, end_time, location, phase, participants,
-                           topics, discussion, decisions_actions, planning_next_steps
+                           topic_blocks, topics, discussion, decisions_actions, planning_next_steps
                     FROM meeting_minutes
                     WHERE id = %s
                     """,
@@ -71,10 +71,11 @@ def meeting_minutes_page(request: Request, minutes_id: int | None = None):
                     "location": row[9] or "",
                     "phase": row[10] or "",
                     "participants": row[11] or [],
-                    "topics": row[12] or "",
-                    "discussion": row[13] or "",
-                    "decisions_actions": row[14] or "",
-                    "planning_next_steps": row[15] or "",
+                    "topic_blocks": row[12] or [],
+                    "topics": row[13] or "",
+                    "discussion": row[14] or "",
+                    "decisions_actions": row[15] or "",
+                    "planning_next_steps": row[16] or "",
                 }
     return templates.TemplateResponse(
         "meeting_minutes.html",
@@ -220,10 +221,10 @@ def create_meeting_minutes(payload: MeetingMinutesPayload):
                 """
                 INSERT INTO meeting_minutes (
                     project_id, title, project_subject, meeting_date, start_time, end_time,
-                    location, phase, language, albaran_number, participants, topics,
+                    location, phase, language, albaran_number, participants, topic_blocks, topics,
                     discussion, decisions_actions, planning_next_steps
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -238,6 +239,7 @@ def create_meeting_minutes(payload: MeetingMinutesPayload):
                     payload.language,
                     payload.albaran_number,
                     Json([participant.model_dump() for participant in payload.participants]),
+                    Json([block.model_dump() for block in payload.topic_blocks]),
                     payload.topics,
                     payload.discussion,
                     payload.decisions_actions,
@@ -257,7 +259,7 @@ def update_meeting_minutes(minutes_id: int, payload: MeetingMinutesPayload):
             cur.execute(
                 """
                 SELECT project_id, title, project_subject, meeting_date, start_time, end_time,
-                       location, phase, language, albaran_number, participants, topics,
+                       location, phase, language, albaran_number, participants, topic_blocks, topics,
                        discussion, decisions_actions, planning_next_steps
                 FROM meeting_minutes
                 WHERE id = %s
@@ -284,10 +286,12 @@ def update_meeting_minutes(minutes_id: int, payload: MeetingMinutesPayload):
             merged_albaran = payload.albaran_number if payload.albaran_number else (current[9] or "")
             incoming_participants = [participant.model_dump() for participant in payload.participants]
             merged_participants = incoming_participants if incoming_participants else (current[10] or [])
-            merged_topics = payload.topics if payload.topics else (current[11] or "")
-            merged_discussion = payload.discussion if payload.discussion else (current[12] or "")
-            merged_decisions = payload.decisions_actions if payload.decisions_actions else (current[13] or "")
-            merged_planning = payload.planning_next_steps if payload.planning_next_steps else (current[14] or "")
+            incoming_topic_blocks = [block.model_dump() for block in payload.topic_blocks]
+            merged_topic_blocks = incoming_topic_blocks if incoming_topic_blocks else (current[11] or [])
+            merged_topics = payload.topics if payload.topics else (current[12] or "")
+            merged_discussion = payload.discussion if payload.discussion else (current[13] or "")
+            merged_decisions = payload.decisions_actions if payload.decisions_actions else (current[14] or "")
+            merged_planning = payload.planning_next_steps if payload.planning_next_steps else (current[15] or "")
             cur.execute(
                 """
                 UPDATE meeting_minutes
@@ -302,6 +306,7 @@ def update_meeting_minutes(minutes_id: int, payload: MeetingMinutesPayload):
                     language = %s,
                     albaran_number = %s,
                     participants = %s::jsonb,
+                    topic_blocks = %s::jsonb,
                     topics = %s,
                     discussion = %s,
                     decisions_actions = %s,
@@ -322,6 +327,7 @@ def update_meeting_minutes(minutes_id: int, payload: MeetingMinutesPayload):
                     merged_language,
                     merged_albaran,
                     Json(merged_participants),
+                    Json(merged_topic_blocks),
                     merged_topics,
                     merged_discussion,
                     merged_decisions,

@@ -25,6 +25,8 @@ const I18N = {
     labelPlanning: "Planificación / Próximos pasos",
     btnExport: "Generar DOCX",
     btnSave: "Guardar acta",
+    topicsBlocksTitle: "Temas tratados (bloques)",
+    addTopicBlock: "Añadir tema",
     viewSavedBtn: "Ver actas guardadas",
     saveOk: "Acta guardada correctamente",
     saveError: "No se pudo guardar el acta",
@@ -56,6 +58,8 @@ const I18N = {
     labelPlanning: "Planning / Next steps",
     btnExport: "Export DOCX",
     btnSave: "Save minutes",
+    topicsBlocksTitle: "Topics discussed (blocks)",
+    addTopicBlock: "Add topic",
     viewSavedBtn: "View saved minutes",
     saveOk: "Minutes saved",
     saveError: "Could not save minutes",
@@ -97,11 +101,21 @@ function collectPayload() {
     location: $("location").value,
     phase: $("phase").value,
     participants: getParticipants(),
-    topics: $("topics").value,
-    discussion: $("discussion").value,
-    decisions_actions: $("decisions_actions").value,
-    planning_next_steps: $("planning_next_steps").value,
+    topic_blocks: getTopicBlocks(),
+    topics: "",
+    discussion: "",
+    decisions_actions: "",
+    planning_next_steps: "",
   };
+}
+
+function getTopicBlocks() {
+  return Array.from(document.querySelectorAll(".topic-block")).map((row) => ({
+    topic: row.querySelector(".topic-title").value,
+    discussion: row.querySelector(".topic-discussion").value,
+    decisions_actions: row.querySelector(".topic-decisions").value,
+    planning_next_steps: row.querySelector(".topic-planning").value,
+  }));
 }
 
 function fillFormForEdit(existing) {
@@ -116,10 +130,10 @@ function fillFormForEdit(existing) {
   $("end_time").value = existing.end_time || "";
   $("location").value = existing.location || "";
   $("phase").value = existing.phase || "";
-  $("topics").value = existing.topics || "";
-  $("discussion").value = existing.discussion || "";
-  $("decisions_actions").value = existing.decisions_actions || "";
-  $("planning_next_steps").value = existing.planning_next_steps || "";
+  $("topicBlocksContainer").innerHTML = "";
+  const topicBlocks = Array.isArray(existing.topic_blocks) ? existing.topic_blocks : [];
+  if (!topicBlocks.length) addTopicBlockRow();
+  topicBlocks.forEach((item) => addTopicBlockRow(item || {}));
 
   $("participantsContainer").innerHTML = "";
   const participants = Array.isArray(existing.participants) ? existing.participants : [];
@@ -159,6 +173,20 @@ function addParticipantRow(initialData = {}) {
   row.querySelector(".participant-remove").addEventListener("click", () => row.remove());
   $("participantsContainer").appendChild(row);
   renderParticipants();
+}
+
+function addTopicBlockRow(initialData = {}) {
+  const row = document.createElement("div");
+  row.className = "topic-block border rounded p-3 mb-2";
+  row.innerHTML = `
+    <div class="mb-2"><label class="form-label">Temas tratados</label><textarea class="form-control topic-title" rows="2">${initialData.topic || ""}</textarea></div>
+    <div class="mb-2"><label class="form-label">Detalle de la discusión</label><textarea class="form-control topic-discussion" rows="3">${initialData.discussion || ""}</textarea></div>
+    <div class="mb-2"><label class="form-label">Decisiones / Acciones</label><textarea class="form-control topic-decisions" rows="2">${initialData.decisions_actions || ""}</textarea></div>
+    <div class="mb-2"><label class="form-label">Planificación / Próximos pasos</label><textarea class="form-control topic-planning" rows="2">${initialData.planning_next_steps || ""}</textarea></div>
+    <div class="text-end"><button type="button" class="btn btn-sm btn-outline-danger topic-remove">Eliminar tema</button></div>
+  `;
+  row.querySelector(".topic-remove").addEventListener("click", () => row.remove());
+  $("topicBlocksContainer").appendChild(row);
 }
 
 async function searchProjects(query) {
@@ -248,8 +276,10 @@ async function exportDocx(event) {
 
 document.addEventListener("DOMContentLoaded", () => {
   addParticipantRow();
+  addTopicBlockRow();
   fillFormForEdit(window.__MEETING_MINUTES_EXISTING__);
   $("addParticipant").addEventListener("click", () => addParticipantRow());
+  $("addTopicBlock").addEventListener("click", () => addTopicBlockRow());
   $("language").addEventListener("change", () => {
     applyLanguage(currentLang());
     searchAlbaranes($("albaran_search").value || "").then(renderAlbaranResults);

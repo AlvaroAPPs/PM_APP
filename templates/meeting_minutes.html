@@ -88,20 +88,11 @@
             </div>
 
             <div class="col-12">
-              <label id="labelTopics" class="form-label" for="topics">Temas tratados</label>
-              <textarea id="topics" class="form-control" rows="3"></textarea>
-            </div>
-            <div class="col-12">
-              <label id="labelDiscussion" class="form-label" for="discussion">Detalle de la discusión</label>
-              <textarea id="discussion" class="form-control" rows="4"></textarea>
-            </div>
-            <div class="col-12">
-              <label id="labelDecisions" class="form-label" for="decisions_actions">Decisiones / Acciones</label>
-              <textarea id="decisions_actions" class="form-control" rows="3"></textarea>
-            </div>
-            <div class="col-12">
-              <label id="labelPlanning" class="form-label" for="planning_next_steps">Planificación / Próximos pasos</label>
-              <textarea id="planning_next_steps" class="form-control" rows="3"></textarea>
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h4 id="topicsBlocksTitle" class="mb-0">Temas tratados (bloques)</h4>
+                <button id="addTopicBlock" type="button" class="btn btn-sm btn-outline-primary">Añadir tema</button>
+              </div>
+              <div id="topicBlocksContainer"></div>
             </div>
 
             <div class="col-12 d-flex gap-2">
