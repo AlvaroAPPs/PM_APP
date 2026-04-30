@@ -25,7 +25,7 @@ const I18N = {
     labelPlanning: "Planificación / Próximos pasos",
     btnExport: "Generar DOCX",
     btnSave: "Guardar acta",
-    topicsBlocksTitle: "Temas tratados (bloques)",
+    topicsBlocksTitle: "Temas tratados",
     addTopicBlock: "Añadir tema",
     viewSavedBtn: "Ver actas guardadas",
     saveOk: "Acta guardada correctamente",
@@ -58,7 +58,7 @@ const I18N = {
     labelPlanning: "Planning / Next steps",
     btnExport: "Export DOCX",
     btnSave: "Save minutes",
-    topicsBlocksTitle: "Topics discussed (blocks)",
+    topicsBlocksTitle: "Topics discussed",
     addTopicBlock: "Add topic",
     viewSavedBtn: "View saved minutes",
     saveOk: "Minutes saved",
@@ -188,6 +188,7 @@ function addTopicBlockRow(initialData = {}) {
   row.querySelector(".topic-remove").addEventListener("click", () => row.remove());
   $("topicBlocksContainer").appendChild(row);
 }
+window.addTopicBlockRow = addTopicBlockRow;
 
 async function searchProjects(query) {
   if (!query || query.trim().length < 1) return [];
@@ -279,7 +280,10 @@ document.addEventListener("DOMContentLoaded", () => {
   addTopicBlockRow();
   fillFormForEdit(window.__MEETING_MINUTES_EXISTING__);
   $("addParticipant").addEventListener("click", () => addParticipantRow());
-  $("addTopicBlock").addEventListener("click", () => addTopicBlockRow());
+  $("addTopicBlock").addEventListener("click", (event) => {
+    event.preventDefault();
+    addTopicBlockRow();
+  });
   $("language").addEventListener("change", () => {
     applyLanguage(currentLang());
     searchAlbaranes($("albaran_search").value || "").then(renderAlbaranResults);
