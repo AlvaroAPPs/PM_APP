@@ -133,7 +133,12 @@ def _bullet_p(text: str) -> str:
 
 
 def _numbered_topic_p(index: int, text: str) -> str:
-    return f"<w:p>{_text_run(f'{index}) ', bold=True)}{_text_run(str(text or '').strip())}</w:p>"
+    return (
+        '<w:p><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr>'
+        f"{_text_run(f'{index}) ')}"
+        f"{_text_run(str(text or '').strip())}"
+        "</w:p>"
+    )
 
 
 def _horizontal_rule_p() -> str:
@@ -352,7 +357,6 @@ def _append_topics_overview(body_parts: list[str], payload: MeetingMinutesPayloa
     body_parts.append(_p(title, bold=True, underline=True))
     for index, topic in enumerate(topics, start=1):
         body_parts.append(_numbered_topic_p(index, topic))
-        body_parts.append(_empty_p())
 
 
 def _append_approval_notice(body_parts: list[str], text: str) -> None:
