@@ -66,10 +66,19 @@ class MeetingMinutesDocxTests(unittest.TestCase):
         self.assertNotIn('<w:t xml:space="preserve">Tema A</w:t></w:r></w:p><w:p/><w:p><w:pPr><w:ind w:left="720"', document_xml)
         self.assertNotIn("Detalle de la discusión", document_xml)
         self.assertIn('<w:rPr><w:b/><w:u w:val="single"/></w:rPr><w:t xml:space="preserve">Tema A</w:t>', document_xml)
+        self.assertIn(
+            '<w:t xml:space="preserve">Tema A</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">Resumen A</w:t>',
+            document_xml,
+        )
+        self.assertNotIn(
+            '<w:t xml:space="preserve">Tema A</w:t></w:r></w:p><w:p/><w:p><w:r><w:t xml:space="preserve">Resumen A</w:t>',
+            document_xml,
+        )
         self.assertIn('<w:rPr><w:b/><w:i/></w:rPr><w:t xml:space="preserve">Decisiones / Acciones</w:t>', document_xml)
         self.assertIn('<w:rPr><w:b/><w:i/></w:rPr><w:t xml:space="preserve">Planificación / Próximos pasos</w:t>', document_xml)
+        self.assertIn('w:color="808080"/></w:pBdr></w:pPr></w:p><w:p><w:r><w:rPr><w:b/><w:u w:val="single"/></w:rPr><w:t xml:space="preserve">Tema B</w:t>', document_xml)
         self.assertIn("Si no hay ningún comentario o anotación", document_xml)
-        self.assertGreaterEqual(document_xml.count('<w:bottom w:val="single" w:sz="8"'), 2)
+        self.assertGreaterEqual(document_xml.count('<w:bottom w:val="single" w:sz="8"'), 3)
 
 
 if __name__ == "__main__":

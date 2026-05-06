@@ -384,12 +384,15 @@ def build_meeting_minutes_docx(payload: MeetingMinutesPayload) -> bytes:
     _append_topics_overview(body_parts, payload, t["topics"])
 
     if payload.topic_blocks:
+        has_previous_topic_block = False
         for block in payload.topic_blocks:
             if not _topic_block_has_content(block):
                 continue
+            if has_previous_topic_block:
+                body_parts.append(_horizontal_rule_p())
+            has_previous_topic_block = True
             if _has_text(block.topic):
                 body_parts.append(_p(block.topic, bold=True, underline=True))
-                body_parts.append(_empty_p())
             body_parts.extend(_content_paragraphs(block.discussion))
             if _has_text(block.discussion):
                 body_parts.append(_empty_p())
