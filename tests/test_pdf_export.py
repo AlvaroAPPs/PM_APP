@@ -21,6 +21,16 @@ class FakeCursor:
         if "SELECT id, project_code, project_name, client, team, project_manager, consultant FROM projects" in q:
             self._result = [(1, "P-001", "Proyecto Demo", "Cliente Demo", "Equipo A", "PM Demo", "NaN")]
             self.description = [("id",), ("project_code",), ("project_name",), ("client",), ("team",), ("project_manager",), ("consultant",)]
+        elif "SELECT hours_pm, hours_consultant, hours_technician, consumed_hours_pm, consumed_hours_consultant, consumed_hours_technician FROM projects" in q:
+            self._result = [(8.0, 12.0, 20.0, 4.0, 6.0, 10.0)]
+            self.description = [
+                ("hours_pm",),
+                ("hours_consultant",),
+                ("hours_technician",),
+                ("consumed_hours_pm",),
+                ("consumed_hours_consultant",),
+                ("consumed_hours_technician",),
+            ]
         elif "SELECT * FROM project_snapshot" in q and "LIMIT 1" in q:
             self._result = [(
                 1,
