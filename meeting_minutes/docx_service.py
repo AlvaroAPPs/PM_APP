@@ -64,6 +64,7 @@ CONTENT_TYPES_XML = """<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes
   <Default Extension=\"xml\" ContentType=\"application/xml\"/>
   <Default Extension=\"jpg\" ContentType=\"image/jpeg\"/>
   <Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>
+  <Override PartName=\"/word/header1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml\"/>
 </Types>
 """
 
@@ -74,6 +75,12 @@ RELS_XML = """<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>
 """
 
 DOCUMENT_RELS_XML = """<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>
+<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">
+  <Relationship Id=\"rIdHeader\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/header\" Target=\"header1.xml\"/>
+</Relationships>
+"""
+
+HEADER_RELS_XML = """<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>
 <Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">
   <Relationship Id=\"rIdLogo\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/mecalux_logo.jpg\"/>
 </Relationships>
@@ -152,12 +159,14 @@ def _tc_xml(
     width: int,
     grid_span: int | None = None,
     v_merge: str | None = None,
+    v_align: str | None = None,
 ) -> str:
     span_xml = f"<w:gridSpan w:val=\"{grid_span}\"/>" if grid_span else ""
     merge_xml = f"<w:vMerge w:val=\"{v_merge}\"/>" if v_merge else ""
+    align_xml = f"<w:vAlign w:val=\"{v_align}\"/>" if v_align else ""
     return (
         "<w:tc>"
-        f"<w:tcPr><w:tcW w:w=\"{width}\" w:type=\"dxa\"/>{span_xml}{merge_xml}</w:tcPr>"
+        f"<w:tcPr><w:tcW w:w=\"{width}\" w:type=\"dxa\"/>{span_xml}{merge_xml}{align_xml}</w:tcPr>"
         f"{content_xml}"
         "</w:tc>"
     )
@@ -167,11 +176,11 @@ def _header_table(t: dict[str, str]) -> str:
     modified_at = datetime.now().strftime("%d/%m/%Y %H:%M")
     rows = [
         "<w:tr>"
-        + _tc_xml(_logo_p(), width=2820, v_merge="restart")
+        + _tc_xml(_logo_p(), width=2820, v_merge="restart", v_align="center")
         + _tc_xml(_empty_p(), width=6540, grid_span=2)
         + "</w:tr>",
         "<w:tr>"
-        + _tc_xml(_empty_p(), width=2820, v_merge="continue")
+        + _tc_xml(_empty_p(), width=2820, v_merge="continue", v_align="center")
         + _tc_xml(_p(f"{t['version']}:") + _p("1.0"), width=1560)
         + _tc(f"{t['modified']}: {modified_at}", width=4980)
         + "</w:tr>",
@@ -208,6 +217,20 @@ def _table(rows: list[str], width: int = 9360) -> str:
         "</w:tblPr>"
         f"{''.join(rows)}"
         "</w:tbl>"
+    )
+
+
+
+def _header_xml(t: dict[str, str]) -> str:
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        f'{_header_table(t)}'
+        '</w:hdr>'
     )
 
 
@@ -290,7 +313,8 @@ def _topic_block_has_content(block) -> bool:
 
 def build_meeting_minutes_docx(payload: MeetingMinutesPayload) -> bytes:
     t = TRANSLATIONS[payload.language]
-    body_parts = [_header_table(t), _empty_p(), _metadata_table(payload, t), _empty_p()]
+    header_xml = _header_xml(t)
+    body_parts = [_metadata_table(payload, t), _empty_p()]
 
     participants_table = _participants_table(payload, t)
     if participants_table:
@@ -311,7 +335,7 @@ def build_meeting_minutes_docx(payload: MeetingMinutesPayload) -> bytes:
         _append_section(body_parts, t["discussion"], payload.discussion)
         _append_section(body_parts, t["decisions"], payload.decisions_actions)
         _append_section(body_parts, t["planning"], payload.planning_next_steps)
-    body_parts.append("<w:sectPr/>")
+    body_parts.append('<w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr>')
 
     document_xml = (
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
@@ -328,6 +352,8 @@ def build_meeting_minutes_docx(payload: MeetingMinutesPayload) -> bytes:
         zf.writestr("[Content_Types].xml", CONTENT_TYPES_XML)
         zf.writestr("_rels/.rels", RELS_XML)
         zf.writestr("word/_rels/document.xml.rels", DOCUMENT_RELS_XML)
+        zf.writestr("word/_rels/header1.xml.rels", HEADER_RELS_XML)
         zf.write(LOGO_IMAGE_PATH, LOGO_IMAGE_DOCX_PATH)
+        zf.writestr("word/header1.xml", header_xml)
         zf.writestr("word/document.xml", document_xml)
     return buffer.getvalue()
