@@ -4,7 +4,7 @@ from io import BytesIO
 from pathlib import Path
 
 from meeting_minutes.docx_service import build_meeting_minutes_docx
-from meeting_minutes.models import MeetingMinutesPayload
+from meeting_minutes.models import MeetingMinutesPayload, MeetingParticipant, MeetingTopicBlock
 
 
 class MeetingMinutesDocxTests(unittest.TestCase):
@@ -35,6 +35,38 @@ class MeetingMinutesDocxTests(unittest.TestCase):
         self.assertNotIn('name="mecalux_logo.jpg"', document_xml)
         self.assertIn('name="mecalux_logo.jpg"', header_xml)
         self.assertIn('<w:vAlign w:val="center"/>', header_xml)
+
+    def test_document_body_formats_topics_and_approval_notice(self):
+        payload = MeetingMinutesPayload(
+            title="Acta demo",
+            participants=[MeetingParticipant(name="Ana")],
+            topic_blocks=[
+                MeetingTopicBlock(
+                    topic="Tema A",
+                    discussion="Resumen A",
+                    decisions_actions="Acción A",
+                    planning_next_steps="Plan A",
+                ),
+                MeetingTopicBlock(topic="Tema B", discussion="Resumen B"),
+            ],
+        )
+        docx_bytes = build_meeting_minutes_docx(payload)
+
+        with zipfile.ZipFile(BytesIO(docx_bytes)) as docx:
+            document_xml = docx.read("word/document.xml").decode("utf-8")
+
+        self.assertIn("<w:body><w:p/><w:tbl", document_xml)
+        self.assertIn("Objetivos de la reunión y temas tratados", document_xml)
+        self.assertIn("1) ", document_xml)
+        self.assertIn("Tema A", document_xml)
+        self.assertIn("2) ", document_xml)
+        self.assertIn("Tema B", document_xml)
+        self.assertNotIn("Detalle de la discusión", document_xml)
+        self.assertIn('<w:rPr><w:b/><w:u w:val="single"/></w:rPr><w:t xml:space="preserve">Tema A</w:t>', document_xml)
+        self.assertIn('<w:rPr><w:b/><w:i/></w:rPr><w:t xml:space="preserve">Decisiones / Acciones</w:t>', document_xml)
+        self.assertIn('<w:rPr><w:b/><w:i/></w:rPr><w:t xml:space="preserve">Planificación / Próximos pasos</w:t>', document_xml)
+        self.assertIn("Si no hay ningún comentario o anotación", document_xml)
+        self.assertGreaterEqual(document_xml.count('<w:bottom w:val="single" w:sz="8"'), 2)
 
 
 if __name__ == "__main__":

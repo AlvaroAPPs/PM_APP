@@ -24,10 +24,11 @@ TRANSLATIONS = {
         "department": "Departamento",
         "absent": "Ausente",
         "notes": "Notas",
-        "topics": "Proyectos tratados",
-        "discussion": "Detalle de la discusión",
+        "topics": "Objetivos de la reunión y temas tratados",
+        "discussion": "Resumen de lo tratado",
         "decisions": "Decisiones / Acciones",
         "planning": "Planificación / Próximos pasos",
+        "approval_notice": "Si no hay ningún comentario o anotación, el acta se dará por aprobada a los 2 días laborables de su envío.",
         "yes": "Sí",
         "no": "No",
         "version": "Versión",
@@ -47,10 +48,11 @@ TRANSLATIONS = {
         "department": "Department",
         "absent": "Absent",
         "notes": "Notes",
-        "topics": "Topics discussed",
-        "discussion": "Detailed content",
+        "topics": "Meeting objectives and topics discussed",
+        "discussion": "Discussion summary",
         "decisions": "Decisions / Actions",
         "planning": "Planning / Next steps",
+        "approval_notice": "If there are no comments or annotations, the minutes will be considered approved 2 business days after being sent.",
         "yes": "Yes",
         "no": "No",
         "version": "Version",
@@ -96,16 +98,25 @@ def _has_text(text: str | None) -> bool:
     return bool(str(text or "").strip())
 
 
-def _text_run(text: str, bold: bool = False) -> str:
+def _text_run(text: str, bold: bool = False, italic: bool = False, underline: bool = False) -> str:
     content = escape(str(text or ""))
-    bold_xml = "<w:rPr><w:b/></w:rPr>" if bold else ""
-    return f"<w:r>{bold_xml}<w:t xml:space=\"preserve\">{content}</w:t></w:r>"
+    style_xml = ""
+    if bold or italic or underline:
+        style_parts = []
+        if bold:
+            style_parts.append("<w:b/>")
+        if italic:
+            style_parts.append("<w:i/>")
+        if underline:
+            style_parts.append('<w:u w:val="single"/>')
+        style_xml = f"<w:rPr>{''.join(style_parts)}</w:rPr>"
+    return f'<w:r>{style_xml}<w:t xml:space="preserve">{content}</w:t></w:r>'
 
 
-def _p(text: str, bold: bool = False) -> str:
+def _p(text: str, bold: bool = False, italic: bool = False, underline: bool = False) -> str:
     if text is None:
         text = ""
-    return f"<w:p>{_text_run(str(text), bold)}</w:p>"
+    return f"<w:p>{_text_run(str(text), bold, italic, underline)}</w:p>"
 
 
 def _empty_p() -> str:
@@ -114,11 +125,27 @@ def _empty_p() -> str:
 
 def _bullet_p(text: str) -> str:
     return (
-        "<w:p><w:pPr><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr>"
+        '<w:p><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr>'
         f"{_text_run('•')}"
         f"{_text_run('  ' + str(text or '').strip())}"
         "</w:p>"
     )
+
+
+def _numbered_topic_p(index: int, text: str) -> str:
+    return f"<w:p>{_text_run(f'{index}) ', bold=True)}{_text_run(str(text or '').strip())}</w:p>"
+
+
+def _horizontal_rule_p() -> str:
+    return (
+        '<w:p><w:pPr><w:pBdr>'
+        '<w:bottom w:val="single" w:sz="8" w:space="1" w:color="808080"/>'
+        '</w:pBdr></w:pPr></w:p>'
+    )
+
+
+def _approval_notice_p(text: str) -> str:
+    return f"<w:p>{_text_run(text, bold=True)}</w:p>"
 
 
 def _content_paragraphs(text: str | None) -> list[str]:
@@ -296,12 +323,42 @@ def _participants_table(payload: MeetingMinutesPayload, t: dict[str, str]) -> st
     return _table(rows)
 
 
-def _append_section(body_parts: list[str], title: str, content: str | None) -> None:
+def _append_section(
+    body_parts: list[str],
+    title: str,
+    content: str | None,
+    *,
+    title_bold: bool = True,
+    title_italic: bool = False,
+    title_underline: bool = False,
+) -> None:
     if not _has_text(content):
         return
-    body_parts.append(_p(title, bold=True))
+    body_parts.append(_p(title, bold=title_bold, italic=title_italic, underline=title_underline))
     body_parts.extend(_content_paragraphs(content))
     body_parts.append(_empty_p())
+
+
+def _topic_titles(payload: MeetingMinutesPayload) -> list[str]:
+    if payload.topic_blocks:
+        return [str(block.topic).strip() for block in payload.topic_blocks if _has_text(block.topic)]
+    return [line.strip().lstrip('*').strip() for line in str(payload.topics or '').splitlines() if _has_text(line)]
+
+
+def _append_topics_overview(body_parts: list[str], payload: MeetingMinutesPayload, title: str) -> None:
+    topics = _topic_titles(payload)
+    if not topics:
+        return
+    body_parts.append(_p(title, bold=True, underline=True))
+    for index, topic in enumerate(topics, start=1):
+        body_parts.append(_numbered_topic_p(index, topic))
+        body_parts.append(_empty_p())
+
+
+def _append_approval_notice(body_parts: list[str], text: str) -> None:
+    body_parts.append(_horizontal_rule_p())
+    body_parts.append(_approval_notice_p(text))
+    body_parts.append(_horizontal_rule_p())
 
 
 def _topic_block_has_content(block) -> bool:
@@ -314,27 +371,34 @@ def _topic_block_has_content(block) -> bool:
 def build_meeting_minutes_docx(payload: MeetingMinutesPayload) -> bytes:
     t = TRANSLATIONS[payload.language]
     header_xml = _header_xml(t)
-    body_parts = [_metadata_table(payload, t), _empty_p()]
+    body_parts = [_empty_p(), _metadata_table(payload, t), _empty_p()]
 
     participants_table = _participants_table(payload, t)
     if participants_table:
-        body_parts.extend([_p(t["participants"], bold=True), participants_table, _empty_p()])
+        body_parts.extend([_p(t["participants"], bold=True, underline=True), participants_table, _empty_p()])
+
+    _append_topics_overview(body_parts, payload, t["topics"])
 
     if payload.topic_blocks:
         for block in payload.topic_blocks:
             if not _topic_block_has_content(block):
                 continue
             if _has_text(block.topic):
-                body_parts.extend(_content_paragraphs(block.topic))
+                body_parts.append(_p(block.topic, bold=True, underline=True))
                 body_parts.append(_empty_p())
-            _append_section(body_parts, t["discussion"], block.discussion)
-            _append_section(body_parts, t["decisions"], block.decisions_actions)
-            _append_section(body_parts, t["planning"], block.planning_next_steps)
+            body_parts.extend(_content_paragraphs(block.discussion))
+            if _has_text(block.discussion):
+                body_parts.append(_empty_p())
+            _append_section(body_parts, t["decisions"], block.decisions_actions, title_italic=True)
+            _append_section(body_parts, t["planning"], block.planning_next_steps, title_italic=True)
     else:
-        _append_section(body_parts, t["topics"], payload.topics)
-        _append_section(body_parts, t["discussion"], payload.discussion)
-        _append_section(body_parts, t["decisions"], payload.decisions_actions)
-        _append_section(body_parts, t["planning"], payload.planning_next_steps)
+        fallback_topics = _topic_titles(payload)
+        discussion_title = fallback_topics[0] if fallback_topics else t["discussion"]
+        _append_section(body_parts, discussion_title, payload.discussion, title_underline=True)
+        _append_section(body_parts, t["decisions"], payload.decisions_actions, title_italic=True)
+        _append_section(body_parts, t["planning"], payload.planning_next_steps, title_italic=True)
+
+    _append_approval_notice(body_parts, t["approval_notice"])
     body_parts.append('<w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr>')
 
     document_xml = (
