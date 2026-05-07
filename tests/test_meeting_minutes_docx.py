@@ -40,7 +40,7 @@ class MeetingMinutesDocxTests(unittest.TestCase):
     def test_document_body_formats_topics_and_approval_notice(self):
         payload = MeetingMinutesPayload(
             title="Acta demo",
-            albaran_number="FR-SW-0406",
+            albaran_number="OTRO-ALBARAN",
             meeting_date="2026-03-31",
             start_time="11:30",
             end_time="12:30",
@@ -93,10 +93,10 @@ class MeetingMinutesDocxTests(unittest.TestCase):
         self.assertIn("Si no hay ningún comentario o anotación", document_xml)
         self.assertGreaterEqual(document_xml.count('<w:bottom w:val="single" w:sz="8"'), 3)
 
-    def test_filename_uses_albaran_date_project_and_language(self):
+    def test_filename_uses_fixed_prefix_date_project_and_language(self):
         payload = MeetingMinutesPayload(
             language="es",
-            albaran_number="FR-SW-0406",
+            albaran_number="OTRO-ALBARAN",
             meeting_date="2026-03-31",
             project_subject="JIM",
         )
@@ -105,7 +105,7 @@ class MeetingMinutesDocxTests(unittest.TestCase):
 
         self.assertEqual(filename, "FR-SW-0406_20260331_JIM_Meeting_Minutes_ES.docx")
 
-    def test_filename_prefers_database_project_code_and_name(self):
+    def test_filename_uses_fixed_prefix_and_database_project_name(self):
         payload = MeetingMinutesPayload(
             language="es",
             project_id=7,
@@ -126,7 +126,7 @@ class MeetingMinutesDocxTests(unittest.TestCase):
                 self.params = params
 
             def fetchone(self):
-                return ("FR-SW-0406", "Proyecto BBDD")
+                return ("Proyecto BBDD",)
 
         class FakeConn:
             def __enter__(self):
@@ -141,13 +141,12 @@ class MeetingMinutesDocxTests(unittest.TestCase):
         original_connect = meeting_minutes_router.psycopg.connect
         meeting_minutes_router.psycopg.connect = lambda *args, **kwargs: FakeConn()
         try:
-            project_code, project_name = meeting_minutes_router._project_filename_parts(payload)
+            project_name = meeting_minutes_router._project_name_for_filename(payload)
         finally:
             meeting_minutes_router.psycopg.connect = original_connect
 
-        filename = build_meeting_minutes_filename(payload, project_name, project_code)
+        filename = build_meeting_minutes_filename(payload, project_name)
 
-        self.assertEqual(project_code, "FR-SW-0406")
         self.assertEqual(project_name, "Proyecto BBDD")
         self.assertEqual(filename, "FR-SW-0406_20260331_Proyecto_BBDD_Meeting_Minutes_ES.docx")
 

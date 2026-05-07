@@ -110,12 +110,8 @@ def _filename_date(value: str | None) -> str:
         return datetime.now().strftime("%Y%m%d")
 
 
-def build_meeting_minutes_filename(
-    payload: MeetingMinutesPayload,
-    project_name: str | None = None,
-    project_code: str | None = None,
-) -> str:
-    prefix = _filename_part(project_code or payload.albaran_number, "Meeting_Minutes")
+def build_meeting_minutes_filename(payload: MeetingMinutesPayload, project_name: str | None = None) -> str:
+    prefix = "FR-SW-0406"
     date_value = _filename_date(payload.meeting_date)
     project_name_part = _filename_part(project_name or payload.project_subject or payload.title, "Project")
     language = _filename_part(payload.language.upper(), "ES")

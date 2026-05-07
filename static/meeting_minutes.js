@@ -28,9 +28,9 @@ const I18N = {
     topicUntitled: "Tema sin título",
     btnExport: "Generar DOCX",
     btnSave: "Guardar acta",
+    btnCancel: "Cancelar",
     topicsBlocksTitle: "Temas tratados",
     addTopicBlock: "Añadir tema",
-    viewSavedBtn: "Ver actas guardadas",
     saveOk: "Acta guardada correctamente",
     saveError: "No se pudo guardar el acta",
     lookupAlbaran: "Albarán:",
@@ -64,9 +64,9 @@ const I18N = {
     topicUntitled: "Untitled topic",
     btnExport: "Export DOCX",
     btnSave: "Save minutes",
+    btnCancel: "Cancel",
     topicsBlocksTitle: "Topics discussed",
     addTopicBlock: "Add topic",
-    viewSavedBtn: "View saved minutes",
     saveOk: "Minutes saved",
     saveError: "Could not save minutes",
     lookupAlbaran: "Delivery note:",
@@ -154,13 +154,6 @@ function fillFormForEdit(existing) {
   const participants = Array.isArray(existing.participants) ? existing.participants : [];
   if (!participants.length) addParticipantRow();
   participants.forEach((item) => addParticipantRow(item || {}));
-}
-
-function updateSavedMinutesLink() {
-  const link = $("viewSavedBtn");
-  if (!link) return;
-  const projectId = $("project_id")?.value;
-  link.href = projectId ? `/meeting-minutes/list?project_id=${encodeURIComponent(projectId)}` : "/meeting-minutes/list";
 }
 
 function renderParticipants() {
@@ -268,7 +261,6 @@ function renderProjectOptions(options) {
   if (current && Array.from(select.options).some((opt) => opt.value === current)) {
     select.value = current;
   }
-  updateSavedMinutesLink();
 }
 
 async function searchAlbaranes(query) {
@@ -310,7 +302,7 @@ async function saveMinutes() {
     alert(`${t.saveError}${detail}`);
     return;
   }
-  alert(t.saveOk);
+  window.location.href = "/meeting-minutes/list";
 }
 
 function filenameFromContentDisposition(value) {
@@ -352,7 +344,6 @@ document.addEventListener("DOMContentLoaded", () => {
     applyLanguage(currentLang());
     searchAlbaranes($("albaran_search").value || "").then(renderAlbaranResults);
   });
-  $("project_id").addEventListener("change", updateSavedMinutesLink);
   $("project_search").addEventListener("input", async (event) => {
     const options = await searchProjects(event.target.value || "");
     renderProjectOptions(options);
@@ -367,6 +358,5 @@ document.addEventListener("DOMContentLoaded", () => {
   $("btnSave").addEventListener("click", saveMinutes);
   $("meetingMinutesForm").addEventListener("submit", exportDocx);
   applyLanguage(currentLang());
-  updateSavedMinutesLink();
   searchAlbaranes("").then(renderAlbaranResults);
 });
