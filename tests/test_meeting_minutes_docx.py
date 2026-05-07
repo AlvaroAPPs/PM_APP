@@ -33,6 +33,8 @@ class MeetingMinutesDocxTests(unittest.TestCase):
         self.assertIn('Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header"', document_rels)
         self.assertIn('Target="media/mecalux_logo.jpg"', header_rels)
         self.assertIn('<w:headerReference w:type="default" r:id="rIdHeader"/>', document_xml)
+        self.assertIn('<w:pgMar w:top="1800"', document_xml)
+        self.assertIn('w:header="720"', document_xml)
         self.assertNotIn('name="mecalux_logo.jpg"', document_xml)
         self.assertIn('name="mecalux_logo.jpg"', header_xml)
         self.assertIn('<w:vAlign w:val="center"/>', header_xml)

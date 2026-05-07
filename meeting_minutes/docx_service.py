@@ -405,6 +405,16 @@ def _append_approval_notice(body_parts: list[str], text: str) -> None:
     body_parts.append(_horizontal_rule_p())
 
 
+def _section_properties_xml() -> str:
+    return (
+        '<w:sectPr>'
+        '<w:headerReference w:type="default" r:id="rIdHeader"/>'
+        '<w:pgMar w:top="1800" w:right="1440" w:bottom="1440" w:left="1440" '
+        'w:header="720" w:footer="720" w:gutter="0"/>'
+        '</w:sectPr>'
+    )
+
+
 def _topic_block_has_content(block) -> bool:
     return any(
         _has_text(value)
@@ -446,7 +456,7 @@ def build_meeting_minutes_docx(payload: MeetingMinutesPayload, project_header_la
         _append_section(body_parts, t["planning"], payload.planning_next_steps, title_italic=True)
 
     _append_approval_notice(body_parts, t["approval_notice"])
-    body_parts.append('<w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr>')
+    body_parts.append(_section_properties_xml())
 
     document_xml = (
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
