@@ -5,6 +5,7 @@ from pathlib import Path
 
 from meeting_minutes.docx_service import build_meeting_minutes_docx, build_meeting_minutes_filename
 from meeting_minutes.models import MeetingMinutesPayload, MeetingParticipant, MeetingTopicBlock
+from meeting_minutes import router as meeting_minutes_router
 
 
 class MeetingMinutesDocxTests(unittest.TestCase):
@@ -103,6 +104,52 @@ class MeetingMinutesDocxTests(unittest.TestCase):
         filename = build_meeting_minutes_filename(payload)
 
         self.assertEqual(filename, "FR-SW-0406_20260331_JIM_Meeting_Minutes_ES.docx")
+
+    def test_filename_prefers_database_project_code_and_name(self):
+        payload = MeetingMinutesPayload(
+            language="es",
+            project_id=7,
+            albaran_number="FR-SW-0406",
+            meeting_date="2026-03-31",
+            project_subject="Formulario Local",
+        )
+
+        class FakeCursor:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def execute(self, query, params=None):
+                self.query = " ".join(query.split())
+                self.params = params
+
+            def fetchone(self):
+                return ("FR-SW-0406", "Proyecto BBDD")
+
+        class FakeConn:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def cursor(self):
+                return FakeCursor()
+
+        original_connect = meeting_minutes_router.psycopg.connect
+        meeting_minutes_router.psycopg.connect = lambda *args, **kwargs: FakeConn()
+        try:
+            project_code, project_name = meeting_minutes_router._project_filename_parts(payload)
+        finally:
+            meeting_minutes_router.psycopg.connect = original_connect
+
+        filename = build_meeting_minutes_filename(payload, project_name, project_code)
+
+        self.assertEqual(project_code, "FR-SW-0406")
+        self.assertEqual(project_name, "Proyecto BBDD")
+        self.assertEqual(filename, "FR-SW-0406_20260331_Proyecto_BBDD_Meeting_Minutes_ES.docx")
 
 
 if __name__ == "__main__":

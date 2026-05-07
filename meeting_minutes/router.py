@@ -17,6 +17,27 @@ templates = Jinja2Templates(directory="templates")
 DB_DSN = os.environ.get("DB_DSN", "postgresql://postgres:TU_PASSWORD@localhost:5432/mecalux")
 
 
+def _project_filename_parts(payload: MeetingMinutesPayload) -> tuple[str | None, str | None]:
+    if payload.project_id is None:
+        return None, None
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT project_code, project_name
+                FROM projects
+                WHERE id = %s
+                """,
+                (payload.project_id,),
+            )
+            row = cur.fetchone()
+    if not row:
+        return None, None
+    project_code = str(row[0]).strip() if row[0] else None
+    project_name = str(row[1]).strip() if row[1] else None
+    return project_code, project_name
+
+
 def _parse_date(value: str | None) -> date | None:
     if not value:
         return None
@@ -344,7 +365,8 @@ def update_meeting_minutes(minutes_id: int, payload: MeetingMinutesPayload):
 @router.post("/meeting-minutes/export.docx/")
 def export_meeting_minutes(payload: MeetingMinutesPayload):
     docx_bytes = build_meeting_minutes_docx(payload)
-    filename = build_meeting_minutes_filename(payload)
+    project_code, project_name = _project_filename_parts(payload)
+    filename = build_meeting_minutes_filename(payload, project_name, project_code)
     return StreamingResponse(
         io.BytesIO(docx_bytes),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
