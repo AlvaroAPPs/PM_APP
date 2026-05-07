@@ -10,7 +10,7 @@ from meeting_minutes import router as meeting_minutes_router
 
 class MeetingMinutesDocxTests(unittest.TestCase):
     def test_header_uses_jpg_logo_asset(self):
-        docx_bytes = build_meeting_minutes_docx(MeetingMinutesPayload(title="Demo"))
+        docx_bytes = build_meeting_minutes_docx(MeetingMinutesPayload(title="Demo"), "FR-SW-0406 Proyecto BBDD")
         logo_asset = Path("meeting_minutes/assets/mecalux_logo.jpg").read_bytes()
 
         with zipfile.ZipFile(BytesIO(docx_bytes)) as docx:
@@ -36,6 +36,10 @@ class MeetingMinutesDocxTests(unittest.TestCase):
         self.assertNotIn('name="mecalux_logo.jpg"', document_xml)
         self.assertIn('name="mecalux_logo.jpg"', header_xml)
         self.assertIn('<w:vAlign w:val="center"/>', header_xml)
+        self.assertIn("FR-SW-0406 Proyecto BBDD", header_xml)
+        self.assertIn("Fecha modificación", header_xml)
+        self.assertNotIn("Versión", header_xml)
+        self.assertNotIn(">1.0<", header_xml)
 
     def test_document_body_formats_topics_and_approval_notice(self):
         payload = MeetingMinutesPayload(
@@ -105,7 +109,7 @@ class MeetingMinutesDocxTests(unittest.TestCase):
 
         self.assertEqual(filename, "FR-SW-0406_20260331_JIM_Meeting_Minutes_ES.docx")
 
-    def test_filename_uses_fixed_prefix_and_database_project_name(self):
+    def test_export_details_feed_header_and_filename_project_name(self):
         payload = MeetingMinutesPayload(
             language="es",
             project_id=7,
@@ -126,7 +130,7 @@ class MeetingMinutesDocxTests(unittest.TestCase):
                 self.params = params
 
             def fetchone(self):
-                return ("Proyecto BBDD",)
+                return ("FR-SW-0406", "Proyecto BBDD")
 
         class FakeConn:
             def __enter__(self):
@@ -141,13 +145,16 @@ class MeetingMinutesDocxTests(unittest.TestCase):
         original_connect = meeting_minutes_router.psycopg.connect
         meeting_minutes_router.psycopg.connect = lambda *args, **kwargs: FakeConn()
         try:
-            project_name = meeting_minutes_router._project_name_for_filename(payload)
+            project_code, project_name = meeting_minutes_router._project_export_details(payload)
         finally:
             meeting_minutes_router.psycopg.connect = original_connect
 
         filename = build_meeting_minutes_filename(payload, project_name)
+        header_label = meeting_minutes_router._project_header_label(project_code, project_name)
 
+        self.assertEqual(project_code, "FR-SW-0406")
         self.assertEqual(project_name, "Proyecto BBDD")
+        self.assertEqual(header_label, "FR-SW-0406 Proyecto BBDD")
         self.assertEqual(filename, "FR-SW-0406_20260331_Proyecto_BBDD_Meeting_Minutes_ES.docx")
 
 

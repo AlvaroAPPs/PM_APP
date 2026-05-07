@@ -240,17 +240,16 @@ def _tc_xml(
     )
 
 
-def _header_table(t: dict[str, str]) -> str:
+def _header_table(t: dict[str, str], project_label: str | None = None) -> str:
     modified_at = datetime.now().strftime("%d/%m/%Y %H:%M")
     rows = [
         "<w:tr>"
         + _tc_xml(_logo_p(), width=2820, v_merge="restart", v_align="center")
-        + _tc_xml(_empty_p(), width=6540, grid_span=2)
+        + _tc_xml(_p(project_label or ""), width=6540)
         + "</w:tr>",
         "<w:tr>"
         + _tc_xml(_empty_p(), width=2820, v_merge="continue", v_align="center")
-        + _tc_xml(_p(f"{t['version']}:") + _p("1.0"), width=1560)
-        + _tc(f"{t['modified']}: {modified_at}", width=4980)
+        + _tc(f"{t['modified']}: {modified_at}", width=6540)
         + "</w:tr>",
     ]
     return _table(rows)
@@ -288,7 +287,7 @@ def _table(rows: list[str], width: int = 9360) -> str:
 
 
 
-def _header_xml(t: dict[str, str]) -> str:
+def _header_xml(t: dict[str, str], project_label: str | None = None) -> str:
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
@@ -296,7 +295,7 @@ def _header_xml(t: dict[str, str]) -> str:
         'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
         'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
         'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
-        f'{_header_table(t)}'
+        f'{_header_table(t, project_label)}'
         '</w:hdr>'
     )
 
@@ -413,9 +412,9 @@ def _topic_block_has_content(block) -> bool:
     )
 
 
-def build_meeting_minutes_docx(payload: MeetingMinutesPayload) -> bytes:
+def build_meeting_minutes_docx(payload: MeetingMinutesPayload, project_header_label: str | None = None) -> bytes:
     t = TRANSLATIONS[payload.language]
-    header_xml = _header_xml(t)
+    header_xml = _header_xml(t, project_header_label)
     body_parts = [_empty_p(), _metadata_table(payload, t), _empty_p()]
 
     participants_table = _participants_table(payload, t)
