@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import re
+import unicodedata
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -94,6 +96,28 @@ LOGO_IMAGE_WIDTH_EMU = 2133600
 LOGO_IMAGE_HEIGHT_EMU = 391160
 
 
+def _filename_part(value: str | None, fallback: str) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or fallback))
+    ascii_value = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    safe_value = re.sub(r"[^A-Za-z0-9_-]+", "_", ascii_value).strip("_")
+    return safe_value or fallback
+
+
+def _filename_date(value: str | None) -> str:
+    try:
+        return datetime.strptime(str(value or ""), "%Y-%m-%d").strftime("%Y%m%d")
+    except ValueError:
+        return datetime.now().strftime("%Y%m%d")
+
+
+def build_meeting_minutes_filename(payload: MeetingMinutesPayload) -> str:
+    prefix = _filename_part(payload.albaran_number, "Meeting_Minutes")
+    date_value = _filename_date(payload.meeting_date)
+    project_name = _filename_part(payload.project_subject or payload.title, "Project")
+    language = _filename_part(payload.language.upper(), "ES")
+    return f"{prefix}_{date_value}_{project_name}_Meeting_Minutes_{language}.docx"
+
+
 def _has_text(text: str | None) -> bool:
     return bool(str(text or "").strip())
 
@@ -185,6 +209,19 @@ def _logo_p() -> str:
     )
 
 
+def _tc_pr_xml(*, width: int, grid_span: int | None = None) -> str:
+    span_xml = f"<w:gridSpan w:val=\"{grid_span}\"/>" if grid_span else ""
+    return (
+        f"<w:tcW w:w=\"{width}\" w:type=\"dxa\"/>{span_xml}"
+        "<w:tcMar>"
+        '<w:top w:w="80" w:type="dxa"/>'
+        '<w:left w:w="100" w:type="dxa"/>'
+        '<w:bottom w:w="80" w:type="dxa"/>'
+        '<w:right w:w="100" w:type="dxa"/>'
+        "</w:tcMar>"
+    )
+
+
 def _tc_xml(
     content_xml: str,
     *,
@@ -193,12 +230,11 @@ def _tc_xml(
     v_merge: str | None = None,
     v_align: str | None = None,
 ) -> str:
-    span_xml = f"<w:gridSpan w:val=\"{grid_span}\"/>" if grid_span else ""
     merge_xml = f"<w:vMerge w:val=\"{v_merge}\"/>" if v_merge else ""
     align_xml = f"<w:vAlign w:val=\"{v_align}\"/>" if v_align else ""
     return (
         "<w:tc>"
-        f"<w:tcPr><w:tcW w:w=\"{width}\" w:type=\"dxa\"/>{span_xml}{merge_xml}{align_xml}</w:tcPr>"
+        f"<w:tcPr>{_tc_pr_xml(width=width, grid_span=grid_span)}{merge_xml}{align_xml}</w:tcPr>"
         f"{content_xml}"
         "</w:tc>"
     )
@@ -221,11 +257,10 @@ def _header_table(t: dict[str, str]) -> str:
 
 
 def _tc(content: str, *, width: int, bold: bool = False, shaded: bool = False, grid_span: int | None = None) -> str:
-    span_xml = f"<w:gridSpan w:val=\"{grid_span}\"/>" if grid_span else ""
     shade_xml = '<w:shd w:fill="D9D9D9"/>' if shaded else ""
     return (
         "<w:tc>"
-        f"<w:tcPr><w:tcW w:w=\"{width}\" w:type=\"dxa\"/>{span_xml}{shade_xml}</w:tcPr>"
+        f"<w:tcPr>{_tc_pr_xml(width=width, grid_span=grid_span)}{shade_xml}</w:tcPr>"
         f"{_p(content, bold=bold)}"
         "</w:tc>"
     )
@@ -268,33 +303,39 @@ def _header_xml(t: dict[str, str]) -> str:
 
 def _metadata_table(payload: MeetingMinutesPayload, t: dict[str, str]) -> str:
     time_value = " - ".join(value for value in (payload.start_time, payload.end_time) if _has_text(value))
-    fields = [
-        (t["minutes_title_label"], payload.title),
-        (t["project"], payload.project_subject),
-        (t["albaran"], payload.albaran_number),
-        (t["date"], payload.meeting_date),
-        (t["time"], time_value),
-        (t["location"], payload.location),
-        (t["phase"], payload.phase),
+    rows = [
+        "<w:tr>"
+        + _tc(t["project"], width=1860, bold=True, shaded=True)
+        + _tc(payload.project_subject, width=7500, grid_span=3)
+        + "</w:tr>",
+        "<w:tr>"
+        + _tc(t["date"], width=1860, bold=True, shaded=True)
+        + _tc(payload.meeting_date, width=2820)
+        + _tc(t["time"], width=1860, bold=True, shaded=True)
+        + _tc(time_value, width=2820)
+        + "</w:tr>",
+        "<w:tr>"
+        + _tc(t["phase"], width=1860, bold=True, shaded=True)
+        + _tc(payload.phase, width=7500, grid_span=3)
+        + "</w:tr>",
     ]
-    fields = [(label, str(value).strip()) for label, value in fields if _has_text(value)]
-    rows: list[str] = []
-    for idx in range(0, len(fields), 2):
-        first = fields[idx]
-        second = fields[idx + 1] if idx + 1 < len(fields) else None
-        cells = [
-            _tc(first[0], width=1860, bold=True, shaded=True),
-            _tc(first[1], width=2820),
-        ]
-        if second:
-            cells.extend([
-                _tc(second[0], width=1860, bold=True, shaded=True),
-                _tc(second[1], width=2820),
-            ])
-        else:
-            cells.append(_tc("", width=4680, grid_span=2))
-        rows.append(f"<w:tr>{''.join(cells)}</w:tr>")
-    return _table(rows)
+
+    optional_rows: list[str] = []
+    if _has_text(payload.albaran_number):
+        optional_rows.append(
+            "<w:tr>"
+            + _tc(t["albaran"], width=1860, bold=True, shaded=True)
+            + _tc(payload.albaran_number, width=7500, grid_span=3)
+            + "</w:tr>"
+        )
+    if _has_text(payload.location):
+        optional_rows.append(
+            "<w:tr>"
+            + _tc(t["location"], width=1860, bold=True, shaded=True)
+            + _tc(payload.location, width=7500, grid_span=3)
+            + "</w:tr>"
+        )
+    return _table(rows + optional_rows)
 
 
 def _participant_has_content(participant) -> bool:

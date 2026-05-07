@@ -23,6 +23,9 @@ const I18N = {
     labelDiscussion: "Detalle de la discusión",
     labelDecisions: "Decisiones / Acciones",
     labelPlanning: "Planificación / Próximos pasos",
+    collapseTopic: "Minimizar",
+    expandTopic: "Expandir",
+    topicUntitled: "Tema sin título",
     btnExport: "Generar DOCX",
     btnSave: "Guardar acta",
     topicsBlocksTitle: "Temas tratados",
@@ -56,6 +59,9 @@ const I18N = {
     labelDiscussion: "Detailed content",
     labelDecisions: "Decisions / Actions",
     labelPlanning: "Planning / Next steps",
+    collapseTopic: "Collapse",
+    expandTopic: "Expand",
+    topicUntitled: "Untitled topic",
     btnExport: "Export DOCX",
     btnSave: "Save minutes",
     topicsBlocksTitle: "Topics discussed",
@@ -70,6 +76,14 @@ const I18N = {
 function $(id) { return document.getElementById(id); }
 function currentLang() { return $("language")?.value || "es"; }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function applyLanguage(lang) {
   const t = I18N[lang] || I18N.es;
   Object.keys(t).forEach((key) => {
@@ -77,6 +91,7 @@ function applyLanguage(lang) {
     if (el) el.textContent = t[key];
   });
   renderParticipants();
+  renderTopicBlocks();
 }
 
 function getParticipants() {
@@ -175,19 +190,62 @@ function addParticipantRow(initialData = {}) {
   renderParticipants();
 }
 
+function updateTopicSummary(row) {
+  const t = I18N[currentLang()] || I18N.es;
+  const title = row.querySelector(".topic-title")?.value.trim();
+  const summary = row.querySelector(".topic-summary");
+  if (summary) summary.textContent = title || t.topicUntitled;
+}
+
+function renderTopicBlocks() {
+  const t = I18N[currentLang()] || I18N.es;
+  Array.from(document.querySelectorAll(".topic-block")).forEach((row) => {
+    row.querySelector(".topic-title-label").textContent = t.labelTopics;
+    row.querySelector(".topic-discussion-label").textContent = t.labelDiscussion;
+    row.querySelector(".topic-decisions-label").textContent = t.labelDecisions;
+    row.querySelector(".topic-planning-label").textContent = t.labelPlanning;
+    row.querySelector(".topic-remove").textContent = t.remove;
+    const toggle = row.querySelector(".topic-toggle");
+    const body = row.querySelector(".topic-body");
+    if (toggle && body) {
+      toggle.textContent = body.classList.contains("d-none") ? t.expandTopic : t.collapseTopic;
+    }
+    updateTopicSummary(row);
+  });
+}
+
 function addTopicBlockRow(initialData = {}) {
+  const t = I18N[currentLang()] || I18N.es;
   const row = document.createElement("div");
   row.className = "topic-block border rounded p-3 mb-2";
   row.innerHTML = `
-    <div class="mb-2"><label class="form-label">Temas tratados</label><textarea class="form-control topic-title" rows="2">${initialData.topic || ""}</textarea></div>
-    <div class="mb-2"><label class="form-label">Detalle de la discusión</label><textarea class="form-control topic-discussion" rows="3">${initialData.discussion || ""}</textarea></div>
-    <div class="mb-2"><label class="form-label">Decisiones / Acciones</label><textarea class="form-control topic-decisions" rows="2">${initialData.decisions_actions || ""}</textarea></div>
-    <div class="mb-2"><label class="form-label">Planificación / Próximos pasos</label><textarea class="form-control topic-planning" rows="2">${initialData.planning_next_steps || ""}</textarea></div>
-    <div class="text-end"><button type="button" class="btn btn-sm btn-outline-danger topic-remove">Eliminar tema</button></div>
+    <div class="d-flex justify-content-between align-items-center gap-2 mb-2 topic-block-header">
+      <strong class="topic-summary flex-grow-1">${escapeHtml(initialData.topic || t.topicUntitled)}</strong>
+      <button type="button" class="btn btn-sm btn-outline-secondary topic-toggle" aria-expanded="true">${t.collapseTopic}</button>
+    </div>
+    <div class="topic-body">
+      <div class="mb-2"><label class="form-label topic-title-label">${t.labelTopics}</label><textarea class="form-control topic-title" rows="2">${escapeHtml(initialData.topic || "")}</textarea></div>
+      <div class="mb-2"><label class="form-label topic-discussion-label">${t.labelDiscussion}</label><textarea class="form-control topic-discussion" rows="3">${escapeHtml(initialData.discussion || "")}</textarea></div>
+      <div class="mb-2"><label class="form-label topic-decisions-label">${t.labelDecisions}</label><textarea class="form-control topic-decisions" rows="2">${escapeHtml(initialData.decisions_actions || "")}</textarea></div>
+      <div class="mb-2"><label class="form-label topic-planning-label">${t.labelPlanning}</label><textarea class="form-control topic-planning" rows="2">${escapeHtml(initialData.planning_next_steps || "")}</textarea></div>
+      <div class="text-end"><button type="button" class="btn btn-sm btn-outline-danger topic-remove">${t.remove}</button></div>
+    </div>
   `;
   row.querySelector(".topic-remove").addEventListener("click", () => row.remove());
+  row.querySelector(".topic-toggle").addEventListener("click", () => {
+    const body = row.querySelector(".topic-body");
+    const toggle = row.querySelector(".topic-toggle");
+    body.classList.toggle("d-none");
+    const isExpanded = !body.classList.contains("d-none");
+    const currentText = I18N[currentLang()] || I18N.es;
+    toggle.setAttribute("aria-expanded", String(isExpanded));
+    toggle.textContent = isExpanded ? currentText.collapseTopic : currentText.expandTopic;
+  });
+  row.querySelector(".topic-title").addEventListener("input", () => updateTopicSummary(row));
   $("topicBlocksContainer").appendChild(row);
+  updateTopicSummary(row);
 }
+
 window.addTopicBlockRow = addTopicBlockRow;
 
 async function searchProjects(query) {
@@ -255,6 +313,12 @@ async function saveMinutes() {
   alert(t.saveOk);
 }
 
+function filenameFromContentDisposition(value) {
+  if (!value) return "";
+  const match = value.match(/filename="?([^";]+)"?/i);
+  return match ? match[1] : "";
+}
+
 async function exportDocx(event) {
   event.preventDefault();
   const payload = collectPayload();
@@ -270,7 +334,7 @@ async function exportDocx(event) {
   const blob = await res.blob();
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = "meeting_minutes.docx";
+  link.download = filenameFromContentDisposition(res.headers.get("content-disposition")) || "meeting_minutes.docx";
   link.click();
   URL.revokeObjectURL(link.href);
 }

@@ -3,7 +3,7 @@ import zipfile
 from io import BytesIO
 from pathlib import Path
 
-from meeting_minutes.docx_service import build_meeting_minutes_docx
+from meeting_minutes.docx_service import build_meeting_minutes_docx, build_meeting_minutes_filename
 from meeting_minutes.models import MeetingMinutesPayload, MeetingParticipant, MeetingTopicBlock
 
 
@@ -39,6 +39,12 @@ class MeetingMinutesDocxTests(unittest.TestCase):
     def test_document_body_formats_topics_and_approval_notice(self):
         payload = MeetingMinutesPayload(
             title="Acta demo",
+            albaran_number="FR-SW-0406",
+            meeting_date="2026-03-31",
+            start_time="11:30",
+            end_time="12:30",
+            project_subject="JIM",
+            phase="Desarrollo",
             participants=[MeetingParticipant(name="Ana")],
             topic_blocks=[
                 MeetingTopicBlock(
@@ -56,6 +62,12 @@ class MeetingMinutesDocxTests(unittest.TestCase):
             document_xml = docx.read("word/document.xml").decode("utf-8")
 
         self.assertIn("<w:body><w:p/><w:tbl", document_xml)
+        self.assertNotIn("Título del acta", document_xml)
+        self.assertIn("Asunto/Proyecto", document_xml)
+        self.assertIn("JIM", document_xml)
+        self.assertIn("2026-03-31", document_xml)
+        self.assertIn("11:30 - 12:30", document_xml)
+        self.assertIn('<w:tcMar><w:top w:w="80" w:type="dxa"/><w:left w:w="100" w:type="dxa"/>', document_xml)
         self.assertIn("Objetivos de la reunión y temas tratados", document_xml)
         self.assertIn('<w:ind w:left="720" w:hanging="360"/>', document_xml)
         self.assertIn('<w:t xml:space="preserve">1) </w:t>', document_xml)
@@ -79,6 +91,18 @@ class MeetingMinutesDocxTests(unittest.TestCase):
         self.assertIn('w:color="808080"/></w:pBdr></w:pPr></w:p><w:p><w:r><w:rPr><w:b/><w:u w:val="single"/></w:rPr><w:t xml:space="preserve">Tema B</w:t>', document_xml)
         self.assertIn("Si no hay ningún comentario o anotación", document_xml)
         self.assertGreaterEqual(document_xml.count('<w:bottom w:val="single" w:sz="8"'), 3)
+
+    def test_filename_uses_albaran_date_project_and_language(self):
+        payload = MeetingMinutesPayload(
+            language="es",
+            albaran_number="FR-SW-0406",
+            meeting_date="2026-03-31",
+            project_subject="JIM",
+        )
+
+        filename = build_meeting_minutes_filename(payload)
+
+        self.assertEqual(filename, "FR-SW-0406_20260331_JIM_Meeting_Minutes_ES.docx")
 
 
 if __name__ == "__main__":

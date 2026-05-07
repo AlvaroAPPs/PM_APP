@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from psycopg.types.json import Json
 
-from .docx_service import build_meeting_minutes_docx
+from .docx_service import build_meeting_minutes_docx, build_meeting_minutes_filename
 from .models import MeetingMinutesPayload
 from .storage import ensure_meeting_minutes_storage
 
@@ -344,8 +344,9 @@ def update_meeting_minutes(minutes_id: int, payload: MeetingMinutesPayload):
 @router.post("/meeting-minutes/export.docx/")
 def export_meeting_minutes(payload: MeetingMinutesPayload):
     docx_bytes = build_meeting_minutes_docx(payload)
+    filename = build_meeting_minutes_filename(payload)
     return StreamingResponse(
         io.BytesIO(docx_bytes),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": 'attachment; filename="meeting_minutes.docx"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
