@@ -173,6 +173,11 @@ RENAME_MAP = {
     "progress_pcte": "progress_e",
     "progress_e": "progress_e",
 
+    # role distribution
+    "distribution_c": "dist_c",
+    "distribution_pm": "dist_pm",
+    "distribution_e": "dist_e",
+
     # deviations (excel direct)
     "desviacion_h": "excel_desviacion_h",
     "desviacion_pct": "excel_desviacion_pct",
@@ -392,6 +397,7 @@ def upsert_snapshot(
       project_id, import_file_id, snapshot_year, snapshot_week, snapshot_at,
 
       progress_w, progress_c, progress_pm, progress_e, progress_ed,
+      dist_c, dist_pm, dist_e,
       deviation_td, deviation_cd, deviation_pmd, deviation_ed,
 
       payment_inv, payment_total, payment_pending, payment_q,
@@ -416,6 +422,7 @@ def upsert_snapshot(
       %(project_id)s, %(import_file_id)s, %(snapshot_year)s, %(snapshot_week)s, now(),
 
       %(progress_w)s, %(progress_c)s, %(progress_pm)s, %(progress_e)s, %(progress_ed)s,
+      %(dist_c)s, %(dist_pm)s, %(dist_e)s,
       %(deviation_td)s, %(deviation_cd)s, %(deviation_pmd)s, %(deviation_ed)s,
 
       %(payment_inv)s, %(payment_total)s, %(payment_pending)s, %(payment_q)s,
@@ -447,6 +454,9 @@ def upsert_snapshot(
       progress_pm = COALESCE(EXCLUDED.progress_pm, project_snapshot.progress_pm),
       progress_e = COALESCE(EXCLUDED.progress_e, project_snapshot.progress_e),
       progress_ed = COALESCE(EXCLUDED.progress_ed, project_snapshot.progress_ed),
+      dist_c = COALESCE(EXCLUDED.dist_c, project_snapshot.dist_c),
+      dist_pm = COALESCE(EXCLUDED.dist_pm, project_snapshot.dist_pm),
+      dist_e = COALESCE(EXCLUDED.dist_e, project_snapshot.dist_e),
 
       deviation_td = COALESCE(EXCLUDED.deviation_td, project_snapshot.deviation_td),
       deviation_cd = COALESCE(EXCLUDED.deviation_cd, project_snapshot.deviation_cd),
@@ -557,6 +567,9 @@ def map_row(row: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "progress_pm": _to_float(row.get("progress_pm")),
         "progress_e": _to_float(row.get("progress_e")),
         "progress_ed": _to_float(row.get("progress_ed")),
+        "dist_c": _to_float(row.get("dist_c")),
+        "dist_pm": _to_float(row.get("dist_pm")),
+        "dist_e": _to_float(row.get("dist_e")),
 
         "deviation_td": _to_float(row.get("deviation_td")),
         "deviation_cd": _to_float(row.get("deviation_cd")),
