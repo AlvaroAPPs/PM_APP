@@ -60,6 +60,47 @@ class ImporterDistributionFieldTests(unittest.TestCase):
         self.assertEqual(snap["dist_pm"], 20.0)
         self.assertEqual(snap["dist_e"], 30.0)
 
+
+    def test_role_distribution_values_drive_deviation_calculation(self):
+        _, snap = importer.map_row(
+            {
+                "project_code": "1001",
+                "ordered_n": 100,
+                "ordered_e": 100,
+                "progress_w": 10,
+                "progress_c": 50,
+                "progress_pm": 100,
+                "progress_e": 0,
+                "dist_c": 50,
+                "dist_pm": 25,
+                "dist_e": 25,
+                "real_hours": 130,
+            }
+        )
+
+        self.assertEqual(snap["ordered_total"], 200.0)
+        self.assertEqual(snap["horas_teoricas"], 100.0)
+        self.assertEqual(snap["desviacion_h"], 30.0)
+        self.assertEqual(snap["desviacion_pct"], 30.0)
+
+    def test_missing_role_distribution_fields_fall_back_to_progress_w_calculation(self):
+        _, snap = importer.map_row(
+            {
+                "project_code": "1001",
+                "ordered_n": 100,
+                "ordered_e": 100,
+                "progress_w": 10,
+                "progress_c": 50,
+                "progress_pm": 100,
+                "progress_e": 0,
+                "real_hours": 130,
+            }
+        )
+
+        self.assertEqual(snap["horas_teoricas"], 20.0)
+        self.assertEqual(snap["desviacion_h"], 110.0)
+        self.assertEqual(snap["desviacion_pct"], 550.0)
+
     def test_upsert_snapshot_persists_distribution_fields(self):
         _, fields = importer.map_row(
             {

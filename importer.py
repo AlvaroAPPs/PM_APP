@@ -546,10 +546,23 @@ def map_row(row: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         ordered_total = (ordered_n or 0.0) + (ordered_e or 0.0)
 
     progress_w = _to_float(row.get("progress_w"))
+    progress_c = _to_float(row.get("progress_c"))
+    progress_pm = _to_float(row.get("progress_pm"))
+    progress_e = _to_float(row.get("progress_e"))
+    dist_c = _to_float(row.get("dist_c"))
+    dist_pm = _to_float(row.get("dist_pm"))
+    dist_e = _to_float(row.get("dist_e"))
     real_hours = _to_float(row.get("real_hours"))
 
+    role_values = (progress_c, progress_pm, progress_e, dist_c, dist_pm, dist_e)
     horas_teoricas = None
-    if ordered_total is not None and progress_w is not None:
+    if ordered_total is not None and all(v is not None for v in role_values):
+        horas_teoricas = ordered_total * (
+            (dist_c / 100.0) * (progress_c / 100.0)
+            + (dist_pm / 100.0) * (progress_pm / 100.0)
+            + (dist_e / 100.0) * (progress_e / 100.0)
+        )
+    elif ordered_total is not None and progress_w is not None:
         horas_teoricas = ordered_total * (progress_w / 100.0)
 
     desviacion_h = None
@@ -563,13 +576,13 @@ def map_row(row: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     snap = {
         "progress_w": progress_w,
-        "progress_c": _to_float(row.get("progress_c")),
-        "progress_pm": _to_float(row.get("progress_pm")),
-        "progress_e": _to_float(row.get("progress_e")),
+        "progress_c": progress_c,
+        "progress_pm": progress_pm,
+        "progress_e": progress_e,
         "progress_ed": _to_float(row.get("progress_ed")),
-        "dist_c": _to_float(row.get("dist_c")),
-        "dist_pm": _to_float(row.get("dist_pm")),
-        "dist_e": _to_float(row.get("dist_e")),
+        "dist_c": dist_c,
+        "dist_pm": dist_pm,
+        "dist_e": dist_e,
 
         "deviation_td": _to_float(row.get("deviation_td")),
         "deviation_cd": _to_float(row.get("deviation_cd")),
