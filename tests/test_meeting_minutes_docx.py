@@ -159,6 +159,19 @@ class MeetingMinutesDocxTests(unittest.TestCase):
         self.assertEqual(header_label, "FR-SW-0406 Proyecto BBDD")
         self.assertEqual(filename, "FR-SW-0406_20260331_Proyecto_BBDD_Meeting_Minutes_ES.docx")
 
+    def test_empty_project_filter_is_treated_as_all_projects(self):
+        self.assertIsNone(meeting_minutes_router._parse_optional_int(""))
+        self.assertIsNone(meeting_minutes_router._parse_optional_int(None))
+        self.assertEqual(meeting_minutes_router._parse_optional_int("7"), 7)
+
+    def test_list_template_has_copy_delete_actions(self):
+        template = Path("templates/meeting_minutes_list.html").read_text()
+
+        self.assertIn('/meeting-minutes/{{ row.id }}/copy', template)
+        self.assertIn('/meeting-minutes/{{ row.id }}/delete', template)
+        self.assertIn("Copiar", template)
+        self.assertIn("Eliminar", template)
+
 
 if __name__ == "__main__":
     unittest.main()

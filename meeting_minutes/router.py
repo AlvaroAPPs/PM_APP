@@ -4,7 +4,7 @@ from datetime import date
 
 import psycopg
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from psycopg.types.json import Json
 
@@ -15,6 +15,41 @@ from .storage import ensure_meeting_minutes_storage
 router = APIRouter(tags=["meeting-minutes"])
 templates = Jinja2Templates(directory="templates")
 DB_DSN = os.environ.get("DB_DSN", "postgresql://postgres:TU_PASSWORD@localhost:5432/mecalux")
+
+INTERNAL_PROJECT_CODE = "AMPLIACIONES_VARIOS"
+INTERNAL_PROJECT_NAME = "Ampliaciones"
+
+
+def _ensure_internal_project(cur) -> None:
+    cur.execute(
+        """
+        INSERT INTO projects (project_code, project_name, team, project_manager, consultant, status, is_historical)
+        VALUES (%s, %s, %s, %s, %s, %s, FALSE)
+        ON CONFLICT (project_code)
+        DO UPDATE SET
+            project_name = EXCLUDED.project_name,
+            team = EXCLUDED.team,
+            status = EXCLUDED.status,
+            is_historical = FALSE
+        """,
+        (
+            INTERNAL_PROJECT_CODE,
+            INTERNAL_PROJECT_NAME,
+            "AMPLIACIONES",
+            "INTERNO",
+            "INTERNO",
+            "ACTIVE",
+        ),
+    )
+
+
+def _parse_optional_int(value: str | None) -> int | None:
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return int(str(value))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid project") from exc
 
 
 def _project_export_details(payload: MeetingMinutesPayload) -> tuple[str | None, str | None]:
@@ -56,6 +91,8 @@ def meeting_minutes_page(request: Request, minutes_id: int | None = None):
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             ensure_meeting_minutes_storage(cur)
+            _ensure_internal_project(cur)
+            conn.commit()
             cur.execute(
                 """
                 SELECT id, project_code, project_name
@@ -134,11 +171,12 @@ def meeting_minutes_albaranes_search(q: str = ""):
 @router.get("/meeting-minutes/list", response_class=HTMLResponse)
 def list_meeting_minutes(
     request: Request,
-    project_id: int | None = None,
+    project_id: str | None = Query(default=None),
     title: str | None = None,
     start_date: str | None = Query(default=None),
     end_date: str | None = Query(default=None),
 ):
+    parsed_project_id = _parse_optional_int(project_id)
     parsed_start = _parse_date(start_date)
     parsed_end = _parse_date(end_date)
     if parsed_start and parsed_end and parsed_end < parsed_start:
@@ -146,9 +184,9 @@ def list_meeting_minutes(
 
     where = ["1=1"]
     params: list[object] = []
-    if project_id is not None:
+    if parsed_project_id is not None:
         where.append("m.project_id = %s")
-        params.append(project_id)
+        params.append(parsed_project_id)
     if title:
         where.append("LOWER(m.title) LIKE %s")
         params.append(f"%{title.strip().lower()}%")
@@ -162,6 +200,8 @@ def list_meeting_minutes(
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             ensure_meeting_minutes_storage(cur)
+            _ensure_internal_project(cur)
+            conn.commit()
             cur.execute(
                 f"""
                 SELECT m.id, m.title, m.project_subject, m.albaran_number, m.language,
@@ -180,11 +220,6 @@ def list_meeting_minutes(
                 SELECT id, project_code, project_name
                 FROM projects
                 WHERE COALESCE(is_historical, FALSE) = FALSE
-                  AND EXISTS (
-                    SELECT 1
-                    FROM meeting_minutes m
-                    WHERE m.project_id = projects.id
-                  )
                 ORDER BY project_name ASC, project_code ASC
                 """
             )
@@ -209,7 +244,7 @@ def list_meeting_minutes(
         for row in rows
     ]
     filters = {
-        "project_id": project_id,
+        "project_id": parsed_project_id,
         "title": title or "",
         "start_date": start_date or "",
         "end_date": end_date or "",
@@ -230,6 +265,7 @@ def create_meeting_minutes(payload: MeetingMinutesPayload):
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             ensure_meeting_minutes_storage(cur)
+            _ensure_internal_project(cur)
             if payload.project_id is not None:
                 cur.execute(
                     """
@@ -281,6 +317,7 @@ def update_meeting_minutes(minutes_id: int, payload: MeetingMinutesPayload):
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             ensure_meeting_minutes_storage(cur)
+            _ensure_internal_project(cur)
             cur.execute(
                 """
                 SELECT project_id, title, project_subject, meeting_date, start_time, end_time,
@@ -363,6 +400,44 @@ def update_meeting_minutes(minutes_id: int, payload: MeetingMinutesPayload):
             row = cur.fetchone()
         conn.commit()
     return {"status": "ok", "id": int(row[0])}
+
+
+@router.post("/meeting-minutes/{minutes_id}/delete")
+def delete_meeting_minutes(minutes_id: int):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_meeting_minutes_storage(cur)
+            cur.execute("DELETE FROM meeting_minutes WHERE id = %s", (minutes_id,))
+        conn.commit()
+    return RedirectResponse("/meeting-minutes/list", status_code=303)
+
+
+@router.post("/meeting-minutes/{minutes_id}/copy")
+def copy_meeting_minutes(minutes_id: int):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_meeting_minutes_storage(cur)
+            cur.execute(
+                """
+                INSERT INTO meeting_minutes (
+                    project_id, title, project_subject, meeting_date, start_time, end_time,
+                    location, phase, language, albaran_number, participants, topic_blocks, topics,
+                    discussion, decisions_actions, planning_next_steps
+                )
+                SELECT project_id, title, project_subject, meeting_date, start_time, end_time,
+                       location, phase, language, albaran_number, participants, topic_blocks, topics,
+                       discussion, decisions_actions, planning_next_steps
+                FROM meeting_minutes
+                WHERE id = %s
+                RETURNING id
+                """,
+                (minutes_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Minutes not found")
+        conn.commit()
+    return RedirectResponse(f"/meeting-minutes?minutes_id={int(row[0])}", status_code=303)
 
 
 @router.post("/meeting-minutes/export.docx")
