@@ -83,6 +83,27 @@ class ImporterDistributionFieldTests(unittest.TestCase):
         self.assertEqual(snap["desviacion_h"], 30.0)
         self.assertEqual(snap["desviacion_pct"], 30.0)
 
+
+    def test_extreme_deviation_pct_is_not_persisted_when_db_numeric_would_overflow(self):
+        _, snap = importer.map_row(
+            {
+                "project_code": "1001",
+                "ordered_n": 1,
+                "ordered_e": 0,
+                "progress_c": 1,
+                "progress_pm": 0,
+                "progress_e": 0,
+                "dist_c": 1,
+                "dist_pm": 0,
+                "dist_e": 0,
+                "real_hours": 200,
+            }
+        )
+
+        self.assertEqual(snap["horas_teoricas"], 0.0001)
+        self.assertEqual(snap["desviacion_h"], 199.9999)
+        self.assertIsNone(snap["desviacion_pct"])
+
     def test_missing_role_distribution_fields_fall_back_to_progress_w_calculation(self):
         _, snap = importer.map_row(
             {

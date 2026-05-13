@@ -157,6 +157,18 @@ def _delta(curr, prev) -> Optional[float]:
         return None
 
 
+def _safe_pct(numerator, denominator) -> Optional[float]:
+    if numerator is None or denominator in (None, 0) or abs(denominator) <= 1e-6:
+        return None
+    try:
+        pct = (float(numerator) / float(denominator)) * 100.0
+    except Exception:
+        return None
+    if abs(pct) >= 1_000_000:
+        return None
+    return pct
+
+
 
 # ------------------------------------
 # Excel -> normalized dataframe
@@ -569,9 +581,7 @@ def map_row(row: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     if real_hours is not None and horas_teoricas is not None:
         desviacion_h = real_hours - horas_teoricas
 
-    desviacion_pct = None
-    if desviacion_h is not None and horas_teoricas not in (None, 0) and abs(horas_teoricas) > 1e-6:
-        desviacion_pct = (desviacion_h / horas_teoricas) * 100.0
+    desviacion_pct = _safe_pct(desviacion_h, horas_teoricas)
 
 
     snap = {
