@@ -169,6 +169,18 @@ def _safe_pct(numerator, denominator) -> Optional[float]:
     return pct
 
 
+def _distribution_factor(v) -> Optional[float]:
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except Exception:
+        return None
+    if abs(f) <= 1.0:
+        return f
+    return f / 100.0
+
+
 
 # ------------------------------------
 # Excel -> normalized dataframe
@@ -566,13 +578,16 @@ def map_row(row: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     dist_e = _to_float(row.get("dist_e"))
     real_hours = _to_float(row.get("real_hours"))
 
-    role_values = (progress_c, progress_pm, progress_e, dist_c, dist_pm, dist_e)
+    dist_c_factor = _distribution_factor(dist_c)
+    dist_pm_factor = _distribution_factor(dist_pm)
+    dist_e_factor = _distribution_factor(dist_e)
+    role_values = (progress_c, progress_pm, progress_e, dist_c_factor, dist_pm_factor, dist_e_factor)
     horas_teoricas = None
     if ordered_total is not None and all(v is not None for v in role_values):
         horas_teoricas = ordered_total * (
-            (dist_c / 100.0) * (progress_c / 100.0)
-            + (dist_pm / 100.0) * (progress_pm / 100.0)
-            + (dist_e / 100.0) * (progress_e / 100.0)
+            dist_c_factor * (progress_c / 100.0)
+            + dist_pm_factor * (progress_pm / 100.0)
+            + dist_e_factor * (progress_e / 100.0)
         )
     elif ordered_total is not None and progress_w is not None:
         horas_teoricas = ordered_total * (progress_w / 100.0)

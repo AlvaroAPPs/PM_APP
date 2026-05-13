@@ -83,6 +83,28 @@ class ImporterDistributionFieldTests(unittest.TestCase):
         self.assertEqual(snap["desviacion_h"], 30.0)
         self.assertEqual(snap["desviacion_pct"], 30.0)
 
+    def test_role_distribution_ratio_values_drive_deviation_calculation(self):
+        _, snap = importer.map_row(
+            {
+                "project_code": "1001",
+                "ordered_n": 100,
+                "ordered_e": 100,
+                "progress_w": 10,
+                "progress_c": 50,
+                "progress_pm": 100,
+                "progress_e": 0,
+                "dist_c": 0.5,
+                "dist_pm": 0.25,
+                "dist_e": 0.25,
+                "real_hours": 130,
+            }
+        )
+
+        self.assertEqual(snap["ordered_total"], 200.0)
+        self.assertEqual(snap["horas_teoricas"], 100.0)
+        self.assertEqual(snap["desviacion_h"], 30.0)
+        self.assertEqual(snap["desviacion_pct"], 30.0)
+
 
     def test_extreme_deviation_pct_is_not_persisted_when_db_numeric_would_overflow(self):
         _, snap = importer.map_row(
@@ -93,7 +115,7 @@ class ImporterDistributionFieldTests(unittest.TestCase):
                 "progress_c": 1,
                 "progress_pm": 0,
                 "progress_e": 0,
-                "dist_c": 1,
+                "dist_c": 0.01,
                 "dist_pm": 0,
                 "dist_e": 0,
                 "real_hours": 200,
