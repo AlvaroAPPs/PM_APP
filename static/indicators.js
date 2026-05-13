@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 
 const MAX_CHART_POINTS = 25;
+const MAX_SNAPSHOT_CHART_POINTS = 12;
 const DEFAULT_TOTAL_HOURS = null;
 let activeProjectCode = null;
 let activeTotalHours = DEFAULT_TOTAL_HOURS;
@@ -596,19 +597,20 @@ function buildProjectionForHours(progressWeekly, realCumulative, weekLabels, tot
 
 function renderCharts(weekly, totalHours, roleHours) {
   const visibleWeekly = windowSeries(weekly);
-  const labels = visibleWeekly.map((item) =>
+  const visibleSnapshotWeekly = windowSeries(weekly, MAX_SNAPSHOT_CHART_POINTS);
+  const labels = visibleSnapshotWeekly.map((item) =>
     formatWeekLabel(item.year, item.week)
   );
-  const progressData = visibleWeekly.map((item) => toNumber(item.progress_w));
-  const deviationData = visibleWeekly.map((item) => toNumber(item.desviacion_pct));
-  const realHoursRaw = visibleWeekly.map((item) => toNumber(item.real_hours));
-  const realHoursDeltaRaw = visibleWeekly.map((item) =>
+  const progressData = visibleSnapshotWeekly.map((item) => toNumber(item.progress_w));
+  const deviationData = visibleSnapshotWeekly.map((item) => toNumber(item.desviacion_pct));
+  const realHoursRaw = visibleSnapshotWeekly.map((item) => toNumber(item.real_hours));
+  const realHoursDeltaRaw = visibleSnapshotWeekly.map((item) =>
     toNumber(item.real_hours_delta)
   );
-  const theoreticalDeltaRaw = visibleWeekly.map((item) =>
+  const theoreticalDeltaRaw = visibleSnapshotWeekly.map((item) =>
     toNumber(item.horas_teoricas_delta)
   );
-  const theoreticalRaw = visibleWeekly.map((item) => toNumber(item.horas_teoricas));
+  const theoreticalRaw = visibleSnapshotWeekly.map((item) => toNumber(item.horas_teoricas));
   const realWeeklyHours = realHoursDeltaRaw.every((value) => value !== null)
     ? realHoursDeltaRaw
     : safeWeeklySeries(realHoursRaw);
@@ -623,7 +625,7 @@ function renderCharts(weekly, totalHours, roleHours) {
     fullProgressCumulative.push(progressTotal);
   });
   const progressCumulative = fullProgressCumulative.slice(
-    Math.max(0, fullProgressCumulative.length - visibleWeekly.length)
+    Math.max(0, fullProgressCumulative.length - visibleSnapshotWeekly.length)
   );
 
   const progressDeltas = safeWeeklySeries(progressCumulative);
@@ -641,14 +643,14 @@ function renderCharts(weekly, totalHours, roleHours) {
 
   const progressDomain = calculateDomain(progressData);
   const deviationDomain = calculateDomain(deviationData);
-  const hoursCompareWeekly = visibleWeekly.filter(
+  const hoursCompareWeekly = visibleSnapshotWeekly.filter(
     (item) => item.progress_w_delta !== null && item.progress_w_delta !== undefined
   );
   const hoursCompareLabels = hoursCompareWeekly.map((item) =>
     formatWeekLabel(item.year, item.week)
   );
   const hoursCompareReal = hoursCompareWeekly.map((item) => {
-    const index = visibleWeekly.indexOf(item);
+    const index = visibleSnapshotWeekly.indexOf(item);
     return index >= 0 ? realWeeklyHours[index] : null;
   });
   const hoursCompareTheoretical = hoursCompareWeekly.map((item) =>
