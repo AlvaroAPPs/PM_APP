@@ -844,6 +844,129 @@ def fetch_deviations_results(
     return results, columns, numeric_columns, row_styles
 
 
+def qualifies_increased_hours_without_progress(
+    latest_real_hours: object,
+    previous_real_hours: object,
+    latest_progress: object,
+    previous_progress: object,
+) -> bool:
+    latest_real = to_float(latest_real_hours)
+    previous_real = to_float(previous_real_hours)
+    latest_progress_value = to_float(latest_progress)
+    previous_progress_value = to_float(previous_progress)
+    if (
+        latest_real is None
+        or previous_real is None
+        or latest_progress_value is None
+        or previous_progress_value is None
+    ):
+        return False
+    return latest_real > previous_real and latest_progress_value <= previous_progress_value
+
+
+def fetch_increased_hours_without_progress_results(
+    teams: list[str],
+    project_name: str = "",
+    project_code: str = "",
+) -> tuple[list[dict], list[str], set[str], list[str | None]]:
+    where_clauses = ["COALESCE(p.is_historical, FALSE) = FALSE"]
+    params: list[object] = []
+    project_name = (project_name or "").strip()
+    project_code = (project_code or "").strip()
+    if project_name:
+        where_clauses.append("p.project_name ILIKE %s")
+        params.append(f"%{project_name}%")
+    if project_code:
+        where_clauses.append("p.project_code = %s")
+        params.append(project_code)
+    if teams:
+        where_clauses.append("latest.team = ANY(%s::text[])")
+        params.append(teams)
+    where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    sql = f"""
+    SELECT p.id AS project_id,
+           p.project_code,
+           p.project_name,
+           latest.team,
+           latest.ordered_total,
+           latest.progress_w AS latest_progress,
+           latest.real_hours AS latest_real_hours,
+           previous.progress_w AS previous_progress,
+           previous.real_hours AS previous_real_hours
+    FROM projects p
+    JOIN LATERAL (
+        SELECT ps.team,
+               ps.ordered_total,
+               ps.progress_w,
+               ps.real_hours,
+               ps.snapshot_year,
+               ps.snapshot_week,
+               ps.snapshot_at
+        FROM project_snapshot ps
+        WHERE ps.project_id = p.id
+        ORDER BY ps.snapshot_year DESC, ps.snapshot_week DESC, ps.snapshot_at DESC
+        LIMIT 1
+    ) latest ON TRUE
+    JOIN LATERAL (
+        SELECT ps.progress_w,
+               ps.real_hours
+        FROM project_snapshot ps
+        WHERE ps.project_id = p.id
+        ORDER BY ps.snapshot_year DESC, ps.snapshot_week DESC, ps.snapshot_at DESC
+        LIMIT 1 OFFSET 1
+    ) previous ON TRUE
+    {where_sql}
+      AND latest.real_hours > previous.real_hours
+      AND latest.progress_w <= previous.progress_w
+    ORDER BY p.project_name ASC, p.project_code ASC
+    """
+
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+
+    columns = [
+        "Código",
+        "Proyecto",
+        "Equipo",
+        "% Avance",
+        "Desvío H.Real",
+        "H.Real actual",
+        "H.Real anterior",
+    ]
+    numeric_columns = {"% Avance", "Desvío H.Real", "H.Real actual", "H.Real anterior"}
+    results: list[dict] = []
+    row_styles: list[str | None] = []
+    for row in rows:
+        latest_real = to_float(row[6])
+        previous_progress = to_float(row[7])
+        previous_real = to_float(row[8])
+        latest_progress = to_float(row[5])
+        if not qualifies_increased_hours_without_progress(
+            latest_real, previous_real, latest_progress, previous_progress
+        ):
+            continue
+        results.append(
+            {
+                "Código": row[1],
+                "Proyecto": row[2],
+                "Equipo": row[3],
+                "% Avance": latest_progress,
+                "Desvío H.Real": latest_real - previous_real,
+                "H.Real actual": latest_real,
+                "H.Real anterior": previous_real,
+                "_project_id": row[0],
+                "_project_code": row[1],
+                "_ordered_total": to_float(row[4]),
+            }
+        )
+        row_styles.append(None)
+
+    return results, columns, numeric_columns, row_styles
+
+
 def fetch_filter_options() -> tuple[list[str], list[str]]:
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
@@ -1304,6 +1427,7 @@ def consultas(request: Request):
     supported_queries = {
         "desviaciones": "Desviaciones",
         "stopped_unplanned": "Stopped / No planificados",
+        "hours_without_progress": "Horas reales sin avance",
     }
     consulta = request.query_params.get("consulta")
     if consulta not in supported_queries:
@@ -1319,6 +1443,8 @@ def consultas(request: Request):
     selected_status = (request.query_params.get("status") or "both").strip().lower()
     if selected_status not in {"planned", "stopped", "both"}:
         selected_status = "both"
+    selected_project_name = (request.query_params.get("project_name") or "").strip()
+    selected_project_code = (request.query_params.get("project_code") or "").strip()
 
     if consulta == "desviaciones" and applied:
         results, columns, numeric_columns, row_styles = fetch_deviations_results(
@@ -1328,6 +1454,12 @@ def consultas(request: Request):
         results, columns, numeric_columns, row_styles = fetch_stopped_unplanned_results(
             selected_teams,
             selected_status,
+        )
+    elif consulta == "hours_without_progress" and applied:
+        results, columns, numeric_columns, row_styles = fetch_increased_hours_without_progress_results(
+            selected_teams,
+            selected_project_name,
+            selected_project_code,
         )
     else:
         results, columns, numeric_columns, row_styles = [], [], set(), []
@@ -1340,6 +1472,11 @@ def consultas(request: Request):
         export_params["order_phase"] = selected_phases
     if consulta == "stopped_unplanned":
         export_params["status"] = selected_status
+    if consulta == "hours_without_progress":
+        if selected_project_name:
+            export_params["project_name"] = selected_project_name
+        if selected_project_code:
+            export_params["project_code"] = selected_project_code
     export_url = "/consultas/export"
     if export_params:
         export_url = f"{export_url}?{urllib.parse.urlencode(export_params, doseq=True)}"
@@ -1356,6 +1493,8 @@ def consultas(request: Request):
             "selected_teams": selected_teams,
             "selected_phases": selected_phases,
             "selected_status": selected_status,
+            "selected_project_name": selected_project_name,
+            "selected_project_code": selected_project_code,
             "selected_query": consulta,
             "supported_queries": supported_queries,
             "export_url": export_url,
@@ -1375,6 +1514,8 @@ def consultas_export(request: Request):
         value for value in request.query_params.getlist("order_phase") if value
     ]
     selected_status = (request.query_params.get("status") or "both").strip().lower()
+    selected_project_name = (request.query_params.get("project_name") or "").strip()
+    selected_project_code = (request.query_params.get("project_code") or "").strip()
 
     if consulta == "desviaciones":
         results, columns, _numeric_columns, row_styles = fetch_deviations_results(
@@ -1387,6 +1528,13 @@ def consultas_export(request: Request):
             selected_status,
         )
         filename = "consultas_stopped_unplanned.xlsx"
+    elif consulta == "hours_without_progress":
+        results, columns, _numeric_columns, row_styles = fetch_increased_hours_without_progress_results(
+            selected_teams,
+            selected_project_name,
+            selected_project_code,
+        )
+        filename = "consultas_horas_sin_avance.xlsx"
     else:
         raise HTTPException(status_code=400, detail="Consulta no soportada")
 

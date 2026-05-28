@@ -156,6 +156,16 @@
             </div>
             <div class="hidden-inputs" data-inputs="equipo"></div>
           </div>
+          {% if selected_query == 'hours_without_progress' %}
+          <div class="col-12 col-md-4">
+            <label class="form-label" for="project_name">Proyecto</label>
+            <input class="form-control" id="project_name" name="project_name" value="{{ selected_project_name }}" placeholder="Nombre contiene...">
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label" for="project_code">Código</label>
+            <input class="form-control" id="project_code" name="project_code" value="{{ selected_project_code }}" placeholder="Código de proyecto">
+          </div>
+          {% endif %}
           {% if selected_query == 'desviaciones' %}
           <div class="col-12 col-md-4">
             <label class="form-label">Order phase</label>
