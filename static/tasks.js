@@ -14,6 +14,12 @@ function fmtDate(v) {
   return Number.isNaN(d.getTime()) ? v : d.toLocaleDateString("es-ES");
 }
 
+function fmtDateTime(v) {
+  if (!v) return "—";
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? v : d.toLocaleString("es-ES");
+}
+
 function statusLabel(status) {
   const map = { OPEN: "Abierta", IN_PROGRESS: "Proceso", PAUSED: "Parada", CLOSED: "Cerrada" };
   return map[status] || status;
@@ -147,6 +153,29 @@ function buildProjectDetailLink(projectCode) {
   return `/estado-proyecto?${params.toString()}`;
 }
 
+function renderNotesLog(container, notesLog) {
+  if (!container) return;
+  const rows = Array.isArray(notesLog) ? notesLog.filter((row) => row) : [];
+  container.innerHTML = "";
+  if (!rows.length) {
+    container.textContent = "—";
+    return;
+  }
+  rows.slice().reverse().forEach((row) => {
+    const entry = document.createElement("div");
+    entry.className = "mb-2";
+    const stamp = document.createElement("div");
+    stamp.className = "text-muted small";
+    stamp.textContent = fmtDateTime(row.saved_at);
+    const text = document.createElement("div");
+    text.style.whiteSpace = "pre-wrap";
+    text.textContent = row.notes || "—";
+    entry.appendChild(stamp);
+    entry.appendChild(text);
+    container.appendChild(entry);
+  });
+}
+
 function openTaskDetail(task) {
   const parsed = splitDescriptionAndSubtasks(task.description || "");
   $("detailProject").textContent = `${task.project_code || "—"} - ${task.project_name || "—"}`;
@@ -156,6 +185,7 @@ function openTaskDetail(task) {
   $("detailOwner").textContent = task.owner_role || "—";
   $("detailPlannedDate").textContent = fmtDate(task.planned_date);
   $("detailDescription").textContent = parsed.description || "—";
+  renderNotesLog($("detailNotesLog"), task.notes_log);
   const detailSubtasks = $("detailSubtasks");
   if (detailSubtasks) {
     if (!parsed.subtasks.length) {
@@ -213,6 +243,7 @@ function resetTaskForm() {
   $("plannedDate").value = "";
   $("taskStatus").value = "OPEN";
   $("taskDescription").value = "";
+  $("taskNotes").value = "";
   const subtasksContainer = $("subtasksContainer");
   if (subtasksContainer) subtasksContainer.innerHTML = "";
   addSubtaskRow();
@@ -229,6 +260,7 @@ function fillTaskForm(task) {
   $("plannedDate").value = task.planned_date || "";
   $("taskStatus").value = task.status || "OPEN";
   $("taskDescription").value = parsed.description || "";
+  $("taskNotes").value = task.notes || "";
   const subtasksContainer = $("subtasksContainer");
   if (subtasksContainer) subtasksContainer.innerHTML = "";
   if (parsed.subtasks.length) {
@@ -349,6 +381,7 @@ async function submitTask() {
     planned_date: $("plannedDate")?.value || null,
     status: $("taskStatus")?.value || "OPEN",
     description: composeDescriptionWithSubtasks(taskDescription, subtasks),
+    notes: ($("taskNotes")?.value || "").trim(),
   };
 
   if (!payload.project_id || !payload.title || !payload.type || !payload.status || !payload.description) {
@@ -366,6 +399,7 @@ async function submitTask() {
         planned_date: payload.planned_date,
         status: payload.status,
         description: payload.description,
+        notes: payload.notes,
       }
     : payload;
 

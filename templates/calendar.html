@@ -190,6 +190,7 @@
             <dt class="col-sm-3">Fecha prevista</dt><dd id="detailDate" class="col-sm-9">—</dd>
             <dt class="col-sm-3">Descripción</dt><dd id="detailDescription" class="col-sm-9" style="white-space: pre-wrap;">—</dd>
             <dt class="col-sm-3">Tareas</dt><dd id="detailChecklist" class="col-sm-9">—</dd>
+            <dt class="col-sm-3">Notas / log</dt><dd id="detailNotesLog" class="col-sm-9">—</dd>
           </dl>
         </div>
         <div class="modal-footer">
@@ -217,6 +218,7 @@
             <div class="col-md-6"><label class="form-label">Fecha prevista</label><input id="editDate" type="date" class="form-control" /></div>
             <div class="col-md-6"><label class="form-label">Estado</label><select id="editStatus" class="form-select"><option value="OPEN">Abierta</option><option value="IN_PROGRESS">Proceso</option><option value="PAUSED">Parada</option><option value="CLOSED">Cerrada</option></select></div>
             <div class="col-12"><label class="form-label">Descripción</label><textarea id="editDescription" class="form-control" rows="4"></textarea></div>
+            <div class="col-12"><label class="form-label">Notas / log</label><textarea id="editNotes" class="form-control" rows="3"></textarea></div>
             <div class="col-12">
               <label class="form-label">Checklist (sub-tareas)</label>
               <div id="editChecklist"></div>
@@ -257,6 +259,7 @@
             <div class="col-md-6"><label class="form-label">Título</label><input id="createTitle" class="form-control" /></div>
             <div class="col-md-6"><label class="form-label">Estado</label><select id="createStatus" class="form-select"><option value="OPEN">Abierta</option><option value="IN_PROGRESS">Proceso</option><option value="PAUSED">Parada</option></select></div>
             <div class="col-12"><label class="form-label">Descripción</label><textarea id="createDescription" class="form-control" rows="3"></textarea></div>
+            <div class="col-12"><label class="form-label">Notas / log</label><textarea id="createNotes" class="form-control" rows="3"></textarea></div>
             <div class="col-12">
               <label class="form-label">Checklist (tareas internas)</label>
               <div id="createChecklist"></div>

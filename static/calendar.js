@@ -40,6 +40,12 @@ function fmtDate(value) {
   return d.toLocaleDateString("es-ES");
 }
 
+function fmtDateTime(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleString("es-ES");
+}
+
 function statusLabel(status) {
   return { OPEN: "Abierta", IN_PROGRESS: "Proceso", PAUSED: "Parada", CLOSED: "Cerrada" }[status] || status;
 }
@@ -358,6 +364,29 @@ function buildDayCell(day, tasksByDay, notesByDay, outsideMonth) {
   return cell;
 }
 
+function renderTaskNotesLog(container, notesLog) {
+  if (!container) return;
+  const rows = Array.isArray(notesLog) ? notesLog.filter((row) => row) : [];
+  container.innerHTML = "";
+  if (!rows.length) {
+    container.textContent = "—";
+    return;
+  }
+  rows.slice().reverse().forEach((row) => {
+    const entry = document.createElement("div");
+    entry.className = "mb-2";
+    const stamp = document.createElement("div");
+    stamp.className = "text-muted small";
+    stamp.textContent = fmtDateTime(row.saved_at);
+    const text = document.createElement("div");
+    text.style.whiteSpace = "pre-wrap";
+    text.textContent = row.notes || "—";
+    entry.appendChild(stamp);
+    entry.appendChild(text);
+    container.appendChild(entry);
+  });
+}
+
 function openTaskDetail(task) {
   detailEntity = "task";
   selectedNote = null;
@@ -373,6 +402,7 @@ function openTaskDetail(task) {
   $("detailOwner").textContent = task.owner_role || "—";
   $("detailDate").textContent = fmtDate(task.planned_date);
   $("detailDescription").textContent = parsed.description || "—";
+  renderTaskNotesLog($("detailNotesLog"), task.notes_log);
 
   const checklistEl = $("detailChecklist");
   if (!parsed.subtasks.length) {
@@ -412,6 +442,8 @@ function openNoteDetail(note) {
   $("detailOwner").textContent = "—";
   $("detailDate").textContent = fmtDate(note.date);
   $("detailDescription").textContent = note.comment || "—";
+  const notesLogEl = $("detailNotesLog");
+  if (notesLogEl) notesLogEl.textContent = "—";
   const checklistEl = $("detailChecklist");
   const checklist = Array.isArray(note.checklist) ? note.checklist.filter((item) => item && item.text) : [];
   if (!checklist.length) {
@@ -440,6 +472,7 @@ function openEditModal() {
   $("editDate").value = selectedTask.planned_date || "";
   $("editStatus").value = selectedTask.status || "OPEN";
   $("editDescription").value = parsed.description || "";
+  $("editNotes").value = selectedTask.notes || "";
   const box = $("editChecklist");
   box.innerHTML = "";
   if (parsed.subtasks.length) {
@@ -553,6 +586,7 @@ async function saveEdit() {
     planned_date: $("editDate").value || null,
     status: $("editStatus").value,
     description: composeDescriptionWithSubtasks(($("editDescription").value || "").trim(), readEditChecklist()),
+    notes: ($("editNotes").value || "").trim(),
   };
   if (!payload.title || !payload.description) {
     $("editError").textContent = "Título y descripción son obligatorios.";
@@ -715,6 +749,7 @@ async function saveCreateTask() {
     status: $("createStatus").value,
     title: ($("createTitle").value || "").trim(),
     description: composeDescriptionWithChecklist(($("createDescription").value || "").trim(), checklist),
+    notes: ($("createNotes").value || "").trim(),
   };
   if (!payload.project_id || !payload.title || !payload.description) {
     $("createTaskError").textContent = "Proyecto, título y descripción son obligatorios (busca y selecciona un proyecto).";
@@ -748,6 +783,7 @@ function openCreateTaskModal(type) {
   $("createDate").value = toIsoDate(selectedDate);
   $("createTitle").value = "";
   $("createDescription").value = "";
+  $("createNotes").value = "";
   $("createProjectSearch").value = "";
   renderCreateProjectOptions([]);
   const checklistBox = $("createChecklist");

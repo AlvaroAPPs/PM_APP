@@ -79,6 +79,7 @@ class ProjectTaskCreateIn(BaseModel):
     status: str = "OPEN"
     title: str
     description: str
+    notes: str | None = None
 
 
 class ProjectTaskStatusIn(BaseModel):
@@ -92,6 +93,7 @@ class ProjectTaskUpdateIn(BaseModel):
     status: str
     title: str
     description: str
+    notes: str | None = None
 
 
 class ChecklistToggleIn(BaseModel):
@@ -129,6 +131,29 @@ def normalize_comment(value: object) -> str | None:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="ignore")
     return str(value)
+
+
+def normalize_task_notes_log(value: object) -> list[dict[str, str | None]]:
+    if not isinstance(value, list):
+        return []
+    rows: list[dict[str, str | None]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        notes = item.get("notes")
+        saved_at = item.get("saved_at")
+        rows.append({
+            "notes": "" if notes is None else str(notes),
+            "saved_at": None if saved_at is None else str(saved_at),
+        })
+    return rows
+
+
+def latest_task_notes(value: object) -> str:
+    rows = normalize_task_notes_log(value)
+    if not rows:
+        return ""
+    return rows[-1].get("notes") or ""
 
 
 def to_float(value: object) -> float | None:
@@ -1106,6 +1131,7 @@ def ensure_project_tasks_storage(cur: psycopg.Cursor) -> None:
             status TEXT NOT NULL CHECK (status IN ('OPEN', 'IN_PROGRESS', 'PAUSED', 'CLOSED')) DEFAULT 'OPEN',
             title TEXT,
             description TEXT NOT NULL,
+            notes_log JSONB NOT NULL DEFAULT '[]'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
@@ -1122,6 +1148,12 @@ def ensure_project_tasks_storage(cur: psycopg.Cursor) -> None:
         UPDATE project_tasks
         SET title = LEFT(description, 120)
         WHERE title IS NULL OR BTRIM(title) = '';
+        """
+    )
+    cur.execute(
+        """
+        ALTER TABLE project_tasks
+        ADD COLUMN IF NOT EXISTS notes_log JSONB NOT NULL DEFAULT '[]'::jsonb;
         """
     )
     cur.execute(
@@ -2644,6 +2676,7 @@ def create_project_task(payload: ProjectTaskCreateIn):
     status = (payload.status or "OPEN").strip().upper()
     title = (payload.title or "").strip()
     description = (payload.description or "").strip()
+    notes = (payload.notes or "").strip()
 
     if task_type not in TASK_TYPES:
         raise HTTPException(status_code=400, detail="Invalid task type")
@@ -2673,11 +2706,12 @@ def create_project_task(payload: ProjectTaskCreateIn):
 
             cur.execute(
                 """
-                INSERT INTO project_tasks (project_id, type, owner_role, planned_date, status, title, description)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO project_tasks (project_id, type, owner_role, planned_date, status, title, description, notes_log)
+                VALUES (%s, %s, %s, %s, %s, %s, %s,
+                        CASE WHEN %s = '' THEN '[]'::jsonb ELSE jsonb_build_array(jsonb_build_object('notes', %s, 'saved_at', now())) END)
                 RETURNING id
                 """,
-                (payload.project_id, task_type, owner_role, payload.planned_date, status, title, description),
+                (payload.project_id, task_type, owner_role, payload.planned_date, status, title, description, notes, notes),
             )
             row = cur.fetchone()
         conn.commit()
@@ -2737,7 +2771,7 @@ def list_project_tasks(
                 f"""
                 SELECT t.id, t.project_id, p.project_code, p.project_name,
                        t.type, t.owner_role, t.planned_date, t.status, t.title, t.description,
-                       t.created_at, t.updated_at
+                       t.notes_log, t.created_at, t.updated_at
                 FROM project_tasks t
                 JOIN projects p ON p.id = t.project_id
                 WHERE {where_sql}
@@ -2758,8 +2792,10 @@ def list_project_tasks(
             "status": r[7],
             "title": r[8],
             "description": r[9],
-            "created_at": r[10].isoformat() if r[10] else None,
-            "updated_at": r[11].isoformat() if r[11] else None,
+            "notes": latest_task_notes(r[10]),
+            "notes_log": normalize_task_notes_log(r[10]),
+            "created_at": r[11].isoformat() if r[11] else None,
+            "updated_at": r[12].isoformat() if r[12] else None,
         }
         for r in rows
     ]
@@ -2827,6 +2863,9 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
     status = (payload.status or "").strip().upper()
     title = (payload.title or "").strip()
     description = (payload.description or "").strip()
+    payload_fields = getattr(payload, "model_fields_set", getattr(payload, "__fields_set__", set()))
+    notes_supplied = "notes" in payload_fields
+    notes = (payload.notes or "").strip()
 
     if task_type not in TASK_TYPES:
         raise HTTPException(status_code=400, detail="Invalid task type")
@@ -2851,6 +2890,11 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
                     status = %s,
                     title = %s,
                     description = %s,
+                    notes_log = CASE
+                        WHEN NOT %s THEN t.notes_log
+                        WHEN %s = COALESCE(t.notes_log->-1->>'notes', '') THEN t.notes_log
+                        ELSE t.notes_log || jsonb_build_array(jsonb_build_object('notes', %s, 'saved_at', now()))
+                    END,
                     updated_at = now()
                 FROM projects p
                 WHERE t.id = %s
@@ -2858,7 +2902,7 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
                   AND COALESCE(p.is_historical, FALSE) = FALSE
                 RETURNING t.id
                 """,
-                (task_type, owner_role, payload.planned_date, status, title, description, task_id),
+                (task_type, owner_role, payload.planned_date, status, title, description, notes_supplied, notes, notes, task_id),
             )
             row = cur.fetchone()
             if not row:

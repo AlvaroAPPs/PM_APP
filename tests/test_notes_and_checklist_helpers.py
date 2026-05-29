@@ -29,6 +29,27 @@ class NotesAndChecklistHelpersTests(unittest.TestCase):
         self.assertEqual(description, "Descripción")
         self.assertEqual(subtasks, [{"text": "A", "done": False}, {"text": "B", "done": True}])
 
+    def test_task_notes_log_normalization_ignores_invalid_rows(self):
+        rows = app.normalize_task_notes_log([
+            {"notes": "Created", "saved_at": "2026-01-01T10:00:00+00:00"},
+            "invalid",
+            {"notes": None, "saved_at": None},
+        ])
+        self.assertEqual(rows, [
+            {"notes": "Created", "saved_at": "2026-01-01T10:00:00+00:00"},
+            {"notes": "", "saved_at": None},
+        ])
+
+    def test_latest_task_notes_returns_last_log_entry(self):
+        self.assertEqual(
+            app.latest_task_notes([
+                {"notes": "First", "saved_at": "2026-01-01T10:00:00+00:00"},
+                {"notes": "Second", "saved_at": "2026-01-01T11:00:00+00:00"},
+            ]),
+            "Second",
+        )
+        self.assertEqual(app.latest_task_notes(None), "")
+
 
 if __name__ == "__main__":
     unittest.main()
