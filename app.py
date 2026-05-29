@@ -868,9 +868,11 @@ def fetch_increased_hours_without_progress_results(
     teams: list[str],
     project_name: str = "",
     project_code: str = "",
+    project_managers: list[str] | None = None,
 ) -> tuple[list[dict], list[str], set[str], list[str | None]]:
     where_clauses = ["COALESCE(p.is_historical, FALSE) = FALSE"]
     params: list[object] = []
+    project_managers = project_managers or []
     project_name = (project_name or "").strip()
     project_code = (project_code or "").strip()
     if project_name:
@@ -882,6 +884,9 @@ def fetch_increased_hours_without_progress_results(
     if teams:
         where_clauses.append("latest.team = ANY(%s::text[])")
         params.append(teams)
+    if project_managers:
+        where_clauses.append("p.project_manager = ANY(%s::text[])")
+        params.append(project_managers)
     where_sql = "WHERE " + " AND ".join(where_clauses)
 
     sql = f"""
@@ -889,6 +894,7 @@ def fetch_increased_hours_without_progress_results(
            p.project_code,
            p.project_name,
            latest.team,
+           p.project_manager,
            latest.ordered_total,
            latest.progress_w AS latest_progress,
            latest.real_hours AS latest_real_hours,
@@ -931,6 +937,7 @@ def fetch_increased_hours_without_progress_results(
         "Código",
         "Proyecto",
         "Equipo",
+        "PM",
         "% Avance",
         "Desvío H.Real",
         "H.Real actual",
@@ -940,10 +947,10 @@ def fetch_increased_hours_without_progress_results(
     results: list[dict] = []
     row_styles: list[str | None] = []
     for row in rows:
-        latest_real = to_float(row[6])
-        previous_progress = to_float(row[7])
-        previous_real = to_float(row[8])
-        latest_progress = to_float(row[5])
+        latest_real = to_float(row[7])
+        previous_progress = to_float(row[8])
+        previous_real = to_float(row[9])
+        latest_progress = to_float(row[6])
         if not qualifies_increased_hours_without_progress(
             latest_real, previous_real, latest_progress, previous_progress
         ):
@@ -953,13 +960,14 @@ def fetch_increased_hours_without_progress_results(
                 "Código": row[1],
                 "Proyecto": row[2],
                 "Equipo": row[3],
+                "PM": row[4],
                 "% Avance": latest_progress,
                 "Desvío H.Real": latest_real - previous_real,
                 "H.Real actual": latest_real,
                 "H.Real anterior": previous_real,
                 "_project_id": row[0],
                 "_project_code": row[1],
-                "_ordered_total": to_float(row[4]),
+                "_ordered_total": to_float(row[5]),
             }
         )
         row_styles.append(None)
@@ -967,7 +975,7 @@ def fetch_increased_hours_without_progress_results(
     return results, columns, numeric_columns, row_styles
 
 
-def fetch_filter_options() -> tuple[list[str], list[str]]:
+def fetch_filter_options() -> tuple[list[str], list[str], list[str]]:
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -988,7 +996,16 @@ def fetch_filter_options() -> tuple[list[str], list[str]]:
                 """
             )
             phases = [row[0] for row in cur.fetchall()]
-    return teams, phases
+            cur.execute(
+                """
+                SELECT DISTINCT project_manager
+                FROM projects
+                WHERE project_manager IS NOT NULL AND project_manager <> ''
+                ORDER BY project_manager
+                """
+            )
+            project_managers = [row[0] for row in cur.fetchall()]
+    return teams, phases, project_managers
 
 
 def ensure_details_columns(cur: psycopg.Cursor) -> None:
@@ -1443,6 +1460,9 @@ def consultas(request: Request):
     selected_status = (request.query_params.get("status") or "both").strip().lower()
     if selected_status not in {"planned", "stopped", "both"}:
         selected_status = "both"
+    selected_project_managers = [
+        value for value in request.query_params.getlist("pm") if value
+    ]
     selected_project_name = (request.query_params.get("project_name") or "").strip()
     selected_project_code = (request.query_params.get("project_code") or "").strip()
 
@@ -1460,11 +1480,12 @@ def consultas(request: Request):
             selected_teams,
             selected_project_name,
             selected_project_code,
+            selected_project_managers,
         )
     else:
         results, columns, numeric_columns, row_styles = [], [], set(), []
 
-    teams, phases = fetch_filter_options()
+    teams, phases, project_managers = fetch_filter_options()
     export_params = {"consulta": consulta} if consulta else {}
     if selected_teams:
         export_params["equipo"] = selected_teams
@@ -1477,6 +1498,8 @@ def consultas(request: Request):
             export_params["project_name"] = selected_project_name
         if selected_project_code:
             export_params["project_code"] = selected_project_code
+        if selected_project_managers:
+            export_params["pm"] = selected_project_managers
     export_url = "/consultas/export"
     if export_params:
         export_url = f"{export_url}?{urllib.parse.urlencode(export_params, doseq=True)}"
@@ -1490,9 +1513,11 @@ def consultas(request: Request):
             "numeric_columns": numeric_columns,
             "teams": teams,
             "phases": phases,
+            "project_managers": project_managers,
             "selected_teams": selected_teams,
             "selected_phases": selected_phases,
             "selected_status": selected_status,
+            "selected_project_managers": selected_project_managers,
             "selected_project_name": selected_project_name,
             "selected_project_code": selected_project_code,
             "selected_query": consulta,
@@ -1514,6 +1539,9 @@ def consultas_export(request: Request):
         value for value in request.query_params.getlist("order_phase") if value
     ]
     selected_status = (request.query_params.get("status") or "both").strip().lower()
+    selected_project_managers = [
+        value for value in request.query_params.getlist("pm") if value
+    ]
     selected_project_name = (request.query_params.get("project_name") or "").strip()
     selected_project_code = (request.query_params.get("project_code") or "").strip()
 
@@ -1533,6 +1561,7 @@ def consultas_export(request: Request):
             selected_teams,
             selected_project_name,
             selected_project_code,
+            selected_project_managers,
         )
         filename = "consultas_horas_sin_avance.xlsx"
     else:

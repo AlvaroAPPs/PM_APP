@@ -23,6 +23,9 @@
       max-height: calc(100vh - 340px);
       overflow: auto;
     }
+    .table-wrapper table { min-width: 1320px; }
+    .table-wrapper th,
+    .table-wrapper td { white-space: nowrap; }
     @media (max-width: 991.98px) {
       .queries-layout { min-height: 0; }
       .table-wrapper { max-height: none; min-height: 0; }
@@ -34,52 +37,9 @@
       z-index: 1;
     }
 
-    .sticky-indicator,
-    .sticky-project,
-    .sticky-code {
-      position: sticky;
-    }
     .sticky-indicator {
-      left: 0;
-      width: 64px;
-      min-width: 64px;
-      max-width: 64px;
-      z-index: 6;
-    }
-    .sticky-project {
-      left: 64px;
-      width: 260px;
-      min-width: 260px;
-      z-index: 5;
-    }
-    .sticky-code {
-      left: 324px;
-      width: 140px;
-      min-width: 140px;
-      z-index: 5;
-    }
-    .table-wrapper thead .sticky-indicator { z-index: 9; }
-    .table-wrapper thead .sticky-project,
-    .table-wrapper thead .sticky-code { z-index: 8; }
-    .table-wrapper tbody .sticky-indicator,
-    .table-wrapper tbody .sticky-project,
-    .table-wrapper tbody .sticky-code {
-      background: #fff;
-    }
-    .table-wrapper tbody tr.table-danger .sticky-indicator,
-    .table-wrapper tbody tr.table-danger .sticky-project,
-    .table-wrapper tbody tr.table-danger .sticky-code {
-      background: var(--bs-table-bg);
-    }
-    .table-wrapper tbody tr.table-warning .sticky-indicator,
-    .table-wrapper tbody tr.table-warning .sticky-project,
-    .table-wrapper tbody tr.table-warning .sticky-code {
-      background: var(--bs-table-bg);
-    }
-    .table-wrapper tbody tr.table-success .sticky-indicator,
-    .table-wrapper tbody tr.table-success .sticky-project,
-    .table-wrapper tbody tr.table-success .sticky-code {
-      background: var(--bs-table-bg);
+      width: 90px;
+      min-width: 90px;
     }
     .table-wrapper tbody tr.row-stopped td { color: #dc3545; }
     .table-wrapper tbody tr.row-unplanned td { color: #0d3b66; }
@@ -112,6 +72,15 @@
       <div>
         <h1 class="fw-bold mb-0">Consultas</h1>
       </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <a class="btn btn-outline-primary" href="/estado-proyecto">Estado proyecto</a>
+      <a class="btn btn-outline-primary" href="/menu-personal">Menú personal</a>
+      <a class="btn btn-outline-primary" href="/tasks">Tasks</a>
+      <a class="btn btn-outline-primary" href="/calendar">Calendar</a>
+      <a class="btn btn-outline-primary" href="/historicals">Históricos</a>
+      <a class="btn btn-outline-primary" href="/importacion">Nuevos datos</a>
     </div>
 
     <div class="card shadow-soft mb-3">
@@ -157,6 +126,35 @@
             <div class="hidden-inputs" data-inputs="equipo"></div>
           </div>
           {% if selected_query == 'hours_without_progress' %}
+          <div class="col-12 col-md-4">
+            <label class="form-label">PM</label>
+            <div class="dropdown w-100">
+              <button
+                class="form-select w-100 text-start d-flex justify-content-between align-items-center"
+                type="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                data-summary-target="pm"
+              >
+                <span class="summary-text">Todos</span>
+                <span class="ms-2">▾</span>
+              </button>
+              <div class="dropdown-menu w-100 p-2" data-options="pm">
+                <div class="form-check">
+                  <input class="form-check-input select-all" type="checkbox" id="pm_all">
+                  <label class="form-check-label" for="pm_all">Todos</label>
+                </div>
+                <hr class="my-2">
+                {% for project_manager in project_managers %}
+                <div class="form-check">
+                  <input class="form-check-input option-checkbox" type="checkbox" id="pm_{{ loop.index }}" value="{{ project_manager }}" {% if project_manager in selected_project_managers %}checked{% endif %}>
+                  <label class="form-check-label" for="pm_{{ loop.index }}">{{ project_manager }}</label>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="hidden-inputs" data-inputs="pm"></div>
+          </div>
           <div class="col-12 col-md-4">
             <label class="form-label" for="project_name">Proyecto</label>
             <input class="form-control" id="project_name" name="project_name" value="{{ selected_project_name }}" placeholder="Nombre contiene...">
@@ -327,6 +325,7 @@
     const selectedValues = {
       equipo: {{ selected_teams|tojson }},
       order_phase: {{ selected_phases|tojson }},
+      pm: {{ selected_project_managers|tojson }},
     };
 
     function updateHiddenInputs(name, values) {
@@ -404,6 +403,7 @@
 
     initMultiSelect("equipo");
     initMultiSelect("order_phase");
+    initMultiSelect("pm");
 
     const form = document.getElementById("queries-form");
     const querySelect = form ? form.querySelector('select[name="consulta"]') : null;
