@@ -36,8 +36,13 @@ class NotesAndChecklistHelpersTests(unittest.TestCase):
             {"notes": None, "saved_at": None},
         ])
         self.assertEqual(rows, [
-            {"notes": "Created", "saved_at": "2026-01-01T10:00:00+00:00"},
-            {"notes": "", "saved_at": None},
+            {
+                "notes": "Created",
+                "created_at": "2026-01-01T10:00:00+00:00",
+                "updated_at": "2026-01-01T10:00:00+00:00",
+                "saved_at": "2026-01-01T10:00:00+00:00",
+            },
+            {"notes": "", "created_at": None, "updated_at": None, "saved_at": None},
         ])
 
     def test_latest_task_notes_returns_last_log_entry(self):

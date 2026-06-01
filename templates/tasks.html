@@ -109,9 +109,14 @@
               <label class="form-label">Descripción</label>
               <textarea id="taskDescription" class="form-control" rows="4"></textarea>
             </div>
+            <div id="taskNotesLogEditor" class="col-12 d-none">
+              <label class="form-label">Historial de notas / log</label>
+              <div id="taskNotesLogEditorEntries" class="d-flex flex-column gap-2"></div>
+            </div>
             <div class="col-12">
-              <label class="form-label">Notas / log</label>
+              <label id="taskNotesLabel" class="form-label" for="taskNotes">Nota inicial / log</label>
               <textarea id="taskNotes" class="form-control" rows="3"></textarea>
+              <button id="addTaskNote" type="button" class="btn btn-sm btn-outline-secondary mt-2 d-none">Añadir log</button>
             </div>
             <div class="col-12">
               <div class="d-flex justify-content-between align-items-center mb-2">

@@ -6,6 +6,7 @@ let lockedProject = false;
 let newTaskModal = null;
 let taskDetailModal = null;
 let editingTaskId = null;
+let editingTask = null;
 const SUBTASKS_MARKER = "\n\n---SUBTASKS---\n";
 
 function fmtDate(v) {
@@ -153,6 +154,12 @@ function buildProjectDetailLink(projectCode) {
   return `/estado-proyecto?${params.toString()}`;
 }
 
+function noteSummary(row) {
+  const createdAt = fmtDateTime(row.created_at || row.saved_at);
+  const updatedAt = fmtDateTime(row.updated_at || row.saved_at);
+  return `Creado: ${createdAt} · Editado: ${updatedAt}`;
+}
+
 function renderNotesLog(container, notesLog) {
   if (!container) return;
   const rows = Array.isArray(notesLog) ? notesLog.filter((row) => row) : [];
@@ -161,18 +168,49 @@ function renderNotesLog(container, notesLog) {
     container.textContent = "—";
     return;
   }
-  rows.slice().reverse().forEach((row) => {
-    const entry = document.createElement("div");
-    entry.className = "mb-2";
-    const stamp = document.createElement("div");
-    stamp.className = "text-muted small";
-    stamp.textContent = fmtDateTime(row.saved_at);
+  rows.map((row, index) => ({ row, index })).reverse().forEach(({ row }) => {
+    const detail = document.createElement("details");
+    detail.className = "mb-2";
+    const summary = document.createElement("summary");
+    summary.className = "text-muted small";
+    summary.textContent = noteSummary(row);
     const text = document.createElement("div");
+    text.className = "mt-2";
     text.style.whiteSpace = "pre-wrap";
     text.textContent = row.notes || "—";
-    entry.appendChild(stamp);
-    entry.appendChild(text);
-    container.appendChild(entry);
+    detail.appendChild(summary);
+    detail.appendChild(text);
+    container.appendChild(detail);
+  });
+}
+
+function renderEditableNotesLog(container, notesLog) {
+  if (!container) return;
+  const rows = Array.isArray(notesLog) ? notesLog.filter((row) => row) : [];
+  container.innerHTML = "";
+  if (!rows.length) {
+    container.textContent = "No hay logs todavía.";
+    return;
+  }
+  rows.map((row, index) => ({ row, index })).reverse().forEach(({ row, index }) => {
+    const detail = document.createElement("details");
+    detail.className = "border rounded p-2";
+    const summary = document.createElement("summary");
+    summary.className = "text-muted small";
+    summary.textContent = noteSummary(row);
+    const textarea = document.createElement("textarea");
+    textarea.className = "form-control form-control-sm mt-2";
+    textarea.rows = 3;
+    textarea.value = row.notes || "";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-sm btn-outline-secondary mt-2";
+    button.textContent = "Guardar edición";
+    button.addEventListener("click", async () => saveTaskNote(index, textarea.value));
+    detail.appendChild(summary);
+    detail.appendChild(textarea);
+    detail.appendChild(button);
+    container.appendChild(detail);
   });
 }
 
@@ -233,6 +271,7 @@ function renderProjectOptions(options) {
 
 function resetTaskForm() {
   editingTaskId = null;
+  editingTask = null;
   $("taskModalTitle").textContent = "Nueva Tarea / PP";
   $("saveTask").textContent = "Guardar";
   $("taskFormError").textContent = "";
@@ -244,6 +283,10 @@ function resetTaskForm() {
   $("taskStatus").value = "OPEN";
   $("taskDescription").value = "";
   $("taskNotes").value = "";
+  $("taskNotesLabel").textContent = "Nota inicial / log";
+  $("addTaskNote").classList.add("d-none");
+  $("taskNotesLogEditor").classList.add("d-none");
+  renderEditableNotesLog($("taskNotesLogEditorEntries"), []);
   const subtasksContainer = $("subtasksContainer");
   if (subtasksContainer) subtasksContainer.innerHTML = "";
   addSubtaskRow();
@@ -252,6 +295,7 @@ function resetTaskForm() {
 function fillTaskForm(task) {
   const parsed = splitDescriptionAndSubtasks(task.description || "");
   editingTaskId = task.id;
+  editingTask = task;
   $("taskModalTitle").textContent = "Editar Tarea / PP";
   $("saveTask").textContent = "Actualizar";
   $("taskTitle").value = task.title || "";
@@ -260,7 +304,11 @@ function fillTaskForm(task) {
   $("plannedDate").value = task.planned_date || "";
   $("taskStatus").value = task.status || "OPEN";
   $("taskDescription").value = parsed.description || "";
-  $("taskNotes").value = task.notes || "";
+  $("taskNotes").value = "";
+  $("taskNotesLabel").textContent = "Nuevo log";
+  $("addTaskNote").classList.remove("d-none");
+  $("taskNotesLogEditor").classList.remove("d-none");
+  renderEditableNotesLog($("taskNotesLogEditorEntries"), task.notes_log);
   const subtasksContainer = $("subtasksContainer");
   if (subtasksContainer) subtasksContainer.innerHTML = "";
   if (parsed.subtasks.length) {
@@ -399,9 +447,10 @@ async function submitTask() {
         planned_date: payload.planned_date,
         status: payload.status,
         description: payload.description,
-        notes: payload.notes,
       }
     : payload;
+
+  if (editingTaskId) delete updatePayload.notes;
 
   const res = await fetch(endpoint, {
     method,
@@ -419,6 +468,34 @@ async function submitTask() {
   resetTaskForm();
   newTaskModal.hide();
   loadTasks();
+}
+
+async function saveTaskNote(noteIndex, notesValue) {
+  if (!editingTaskId) return;
+  const notes = (notesValue || "").trim();
+  if (!notes) {
+    $("taskFormError").textContent = "El log no puede estar vacío.";
+    return;
+  }
+  const isEdit = Number.isInteger(noteIndex) && noteIndex >= 0;
+  const endpoint = isEdit
+    ? `${API}/project-tasks/${editingTaskId}/notes/${noteIndex}`
+    : `${API}/project-tasks/${editingTaskId}/notes`;
+  const res = await fetch(endpoint, {
+    method: isEdit ? "PUT" : "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notes }),
+  });
+  if (!res.ok) {
+    $("taskFormError").textContent = isEdit ? "No se pudo editar el log." : "No se pudo añadir el log.";
+    return;
+  }
+  const payload = await res.json();
+  editingTask = { ...(editingTask || {}), notes: payload.notes || "", notes_log: payload.notes_log || [] };
+  renderEditableNotesLog($("taskNotesLogEditorEntries"), editingTask.notes_log);
+  $("taskNotes").value = "";
+  $("taskFormError").textContent = "";
+  await loadTasks();
 }
 
 async function setupProjectPicker() {
@@ -467,6 +544,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   $("showClosed")?.addEventListener("change", loadTasks);
   $("saveTask")?.addEventListener("click", submitTask);
+  $("addTaskNote")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    saveTaskNote(null, $("taskNotes")?.value || "");
+  });
   $("addSubtaskRow")?.addEventListener("click", (e) => {
     e.preventDefault();
     addSubtaskRow();

@@ -86,6 +86,10 @@ class ProjectTaskStatusIn(BaseModel):
     status: str
 
 
+class ProjectTaskNoteIn(BaseModel):
+    notes: str
+
+
 class ProjectTaskUpdateIn(BaseModel):
     type: str
     owner_role: str
@@ -141,10 +145,13 @@ def normalize_task_notes_log(value: object) -> list[dict[str, str | None]]:
         if not isinstance(item, dict):
             continue
         notes = item.get("notes")
-        saved_at = item.get("saved_at")
+        created_at = item.get("created_at") or item.get("saved_at")
+        updated_at = item.get("updated_at") or item.get("saved_at") or created_at
         rows.append({
             "notes": "" if notes is None else str(notes),
-            "saved_at": None if saved_at is None else str(saved_at),
+            "created_at": None if created_at is None else str(created_at),
+            "updated_at": None if updated_at is None else str(updated_at),
+            "saved_at": None if updated_at is None else str(updated_at),
         })
     return rows
 
@@ -2704,14 +2711,16 @@ def create_project_task(payload: ProjectTaskCreateIn):
             if not cur.fetchone():
                 raise HTTPException(status_code=404, detail="Project not found")
 
+            cur.execute("SELECT now()")
+            saved_at = cur.fetchone()[0].isoformat()
+            notes_log = [] if not notes else [{"notes": notes, "created_at": saved_at, "updated_at": saved_at}]
             cur.execute(
                 """
                 INSERT INTO project_tasks (project_id, type, owner_role, planned_date, status, title, description, notes_log)
-                VALUES (%s, %s, %s, %s, %s, %s, %s,
-                        CASE WHEN %s = '' THEN '[]'::jsonb ELSE jsonb_build_array(jsonb_build_object('notes', %s, 'saved_at', now())) END)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (payload.project_id, task_type, owner_role, payload.planned_date, status, title, description, notes, notes),
+                (payload.project_id, task_type, owner_role, payload.planned_date, status, title, description, Json(notes_log)),
             )
             row = cur.fetchone()
         conn.commit()
@@ -2892,8 +2901,8 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
                     description = %s,
                     notes_log = CASE
                         WHEN NOT %s THEN t.notes_log
-                        WHEN %s = COALESCE(t.notes_log->-1->>'notes', '') THEN t.notes_log
-                        ELSE t.notes_log || jsonb_build_array(jsonb_build_object('notes', %s, 'saved_at', now()))
+                        WHEN %s = '' THEN t.notes_log
+                        ELSE t.notes_log || jsonb_build_array(jsonb_build_object('notes', %s, 'created_at', now(), 'updated_at', now()))
                     END,
                     updated_at = now()
                 FROM projects p
@@ -2911,6 +2920,83 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
     return {"status": "ok"}
 
 
+@app.post("/project-tasks/{task_id}/notes")
+def add_project_task_note(task_id: int, payload: ProjectTaskNoteIn):
+    notes = (payload.notes or "").strip()
+    if not notes:
+        raise HTTPException(status_code=400, detail="Notes are required")
+
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_tasks_storage(cur)
+            cur.execute(
+                """
+                SELECT t.notes_log, now()
+                FROM project_tasks t
+                JOIN projects p ON p.id = t.project_id
+                WHERE t.id = %s
+                  AND COALESCE(p.is_historical, FALSE) = FALSE
+                """,
+                (task_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Task not found")
+            saved_at = row[1].isoformat()
+            notes_log = normalize_task_notes_log(row[0])
+            notes_log.append({"notes": notes, "created_at": saved_at, "updated_at": saved_at})
+            cur.execute(
+                """
+                UPDATE project_tasks
+                SET notes_log = %s,
+                    updated_at = now()
+                WHERE id = %s
+                """,
+                (Json(notes_log), task_id),
+            )
+        conn.commit()
+    return {"status": "ok", "notes": latest_task_notes(notes_log), "notes_log": notes_log}
+
+
+@app.put("/project-tasks/{task_id}/notes/{note_index}")
+def update_project_task_note(task_id: int, note_index: int, payload: ProjectTaskNoteIn):
+    notes = (payload.notes or "").strip()
+    if not notes:
+        raise HTTPException(status_code=400, detail="Notes are required")
+
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_tasks_storage(cur)
+            cur.execute(
+                """
+                SELECT t.notes_log, now()
+                FROM project_tasks t
+                JOIN projects p ON p.id = t.project_id
+                WHERE t.id = %s
+                  AND COALESCE(p.is_historical, FALSE) = FALSE
+                """,
+                (task_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Task not found")
+            notes_log = normalize_task_notes_log(row[0])
+            if note_index < 0 or note_index >= len(notes_log):
+                raise HTTPException(status_code=404, detail="Note not found")
+            saved_at = row[1].isoformat()
+            created_at = notes_log[note_index].get("created_at") or notes_log[note_index].get("saved_at") or saved_at
+            notes_log[note_index] = {"notes": notes, "created_at": created_at, "updated_at": saved_at, "saved_at": saved_at}
+            cur.execute(
+                """
+                UPDATE project_tasks
+                SET notes_log = %s,
+                    updated_at = now()
+                WHERE id = %s
+                """,
+                (Json(notes_log), task_id),
+            )
+        conn.commit()
+    return {"status": "ok", "notes": latest_task_notes(notes_log), "notes_log": notes_log}
 
 
 @app.patch("/project-tasks/{task_id}/subtasks/{subtask_index}")

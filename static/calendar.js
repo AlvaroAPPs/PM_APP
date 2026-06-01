@@ -364,6 +364,12 @@ function buildDayCell(day, tasksByDay, notesByDay, outsideMonth) {
   return cell;
 }
 
+function taskNoteSummary(row) {
+  const createdAt = fmtDateTime(row.created_at || row.saved_at);
+  const updatedAt = fmtDateTime(row.updated_at || row.saved_at);
+  return `Creado: ${createdAt} · Editado: ${updatedAt}`;
+}
+
 function renderTaskNotesLog(container, notesLog) {
   if (!container) return;
   const rows = Array.isArray(notesLog) ? notesLog.filter((row) => row) : [];
@@ -372,18 +378,49 @@ function renderTaskNotesLog(container, notesLog) {
     container.textContent = "—";
     return;
   }
-  rows.slice().reverse().forEach((row) => {
-    const entry = document.createElement("div");
-    entry.className = "mb-2";
-    const stamp = document.createElement("div");
-    stamp.className = "text-muted small";
-    stamp.textContent = fmtDateTime(row.saved_at);
+  rows.map((row, index) => ({ row, index })).reverse().forEach(({ row }) => {
+    const detail = document.createElement("details");
+    detail.className = "mb-2";
+    const summary = document.createElement("summary");
+    summary.className = "text-muted small";
+    summary.textContent = taskNoteSummary(row);
     const text = document.createElement("div");
+    text.className = "mt-2";
     text.style.whiteSpace = "pre-wrap";
     text.textContent = row.notes || "—";
-    entry.appendChild(stamp);
-    entry.appendChild(text);
-    container.appendChild(entry);
+    detail.appendChild(summary);
+    detail.appendChild(text);
+    container.appendChild(detail);
+  });
+}
+
+function renderEditableTaskNotesLog(container, notesLog) {
+  if (!container) return;
+  const rows = Array.isArray(notesLog) ? notesLog.filter((row) => row) : [];
+  container.innerHTML = "";
+  if (!rows.length) {
+    container.textContent = "No hay logs todavía.";
+    return;
+  }
+  rows.map((row, index) => ({ row, index })).reverse().forEach(({ row, index }) => {
+    const detail = document.createElement("details");
+    detail.className = "border rounded p-2";
+    const summary = document.createElement("summary");
+    summary.className = "text-muted small";
+    summary.textContent = taskNoteSummary(row);
+    const textarea = document.createElement("textarea");
+    textarea.className = "form-control form-control-sm mt-2";
+    textarea.rows = 3;
+    textarea.value = row.notes || "";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-sm btn-outline-secondary mt-2";
+    button.textContent = "Guardar edición";
+    button.addEventListener("click", async () => saveTaskLog(index, textarea.value));
+    detail.appendChild(summary);
+    detail.appendChild(textarea);
+    detail.appendChild(button);
+    container.appendChild(detail);
   });
 }
 
@@ -472,7 +509,8 @@ function openEditModal() {
   $("editDate").value = selectedTask.planned_date || "";
   $("editStatus").value = selectedTask.status || "OPEN";
   $("editDescription").value = parsed.description || "";
-  $("editNotes").value = selectedTask.notes || "";
+  $("editNewNote").value = "";
+  renderEditableTaskNotesLog($("editNotesLog"), selectedTask.notes_log);
   const box = $("editChecklist");
   box.innerHTML = "";
   if (parsed.subtasks.length) {
@@ -586,7 +624,6 @@ async function saveEdit() {
     planned_date: $("editDate").value || null,
     status: $("editStatus").value,
     description: composeDescriptionWithSubtasks(($("editDescription").value || "").trim(), readEditChecklist()),
-    notes: ($("editNotes").value || "").trim(),
   };
   if (!payload.title || !payload.description) {
     $("editError").textContent = "Título y descripción son obligatorios.";
@@ -605,6 +642,35 @@ async function saveEdit() {
 
   editModal.hide();
   detailModal.hide();
+  await refreshCalendarData();
+}
+
+async function saveTaskLog(noteIndex, notesValue) {
+  if (!selectedTask) return;
+  const notes = (notesValue || "").trim();
+  if (!notes) {
+    $("editError").textContent = "El log no puede estar vacío.";
+    return;
+  }
+  const isEdit = Number.isInteger(noteIndex) && noteIndex >= 0;
+  const endpoint = isEdit
+    ? `${API}/project-tasks/${selectedTask.id}/notes/${noteIndex}`
+    : `${API}/project-tasks/${selectedTask.id}/notes`;
+  const res = await fetch(endpoint, {
+    method: isEdit ? "PUT" : "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notes }),
+  });
+  if (!res.ok) {
+    $("editError").textContent = isEdit ? "No se pudo editar el log." : "No se pudo añadir el log.";
+    return;
+  }
+  const payload = await res.json();
+  selectedTask = { ...selectedTask, notes: payload.notes || "", notes_log: payload.notes_log || [] };
+  renderEditableTaskNotesLog($("editNotesLog"), selectedTask.notes_log);
+  renderTaskNotesLog($("detailNotesLog"), selectedTask.notes_log);
+  $("editNewNote").value = "";
+  $("editError").textContent = "";
   await refreshCalendarData();
 }
 
@@ -888,6 +954,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("createNoteOption")?.addEventListener("click", openCreateNoteModal);
   $("detailEdit")?.addEventListener("click", openEditModal);
   $("saveEditTask")?.addEventListener("click", saveEdit);
+  $("addEditNote")?.addEventListener("click", () => saveTaskLog(null, $("editNewNote")?.value || ""));
   $("addEditChecklistItem")?.addEventListener("click", () => $("editChecklist").appendChild(buildEditChecklistItem()));
   $("detailClose")?.addEventListener("click", closeTask);
   $("detailNavigate")?.addEventListener("click", navigateTask);
