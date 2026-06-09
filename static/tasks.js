@@ -465,17 +465,20 @@ async function submitTask() {
     return;
   }
 
+  const newLog = editingTaskId ? ($("taskNotes")?.value || "").trim() : "";
+  if (newLog && !await saveTaskNote(null, newLog)) return;
+
   resetTaskForm();
   newTaskModal.hide();
   loadTasks();
 }
 
 async function saveTaskNote(noteIndex, notesValue) {
-  if (!editingTaskId) return;
+  if (!editingTaskId) return false;
   const notes = (notesValue || "").trim();
   if (!notes) {
     $("taskFormError").textContent = "El log no puede estar vacío.";
-    return;
+    return false;
   }
   const isEdit = Number.isInteger(noteIndex) && noteIndex >= 0;
   const endpoint = isEdit
@@ -488,7 +491,7 @@ async function saveTaskNote(noteIndex, notesValue) {
   });
   if (!res.ok) {
     $("taskFormError").textContent = isEdit ? "No se pudo editar el log." : "No se pudo añadir el log.";
-    return;
+    return false;
   }
   const payload = await res.json();
   editingTask = { ...(editingTask || {}), notes: payload.notes || "", notes_log: payload.notes_log || [] };
@@ -496,6 +499,7 @@ async function saveTaskNote(noteIndex, notesValue) {
   $("taskNotes").value = "";
   $("taskFormError").textContent = "";
   await loadTasks();
+  return true;
 }
 
 async function setupProjectPicker() {

@@ -640,17 +640,20 @@ async function saveEdit() {
     return;
   }
 
+  const newLog = ($("editNewNote").value || "").trim();
+  if (newLog && !await saveTaskLog(null, newLog)) return;
+
   editModal.hide();
   detailModal.hide();
   await refreshCalendarData();
 }
 
 async function saveTaskLog(noteIndex, notesValue) {
-  if (!selectedTask) return;
+  if (!selectedTask) return false;
   const notes = (notesValue || "").trim();
   if (!notes) {
     $("editError").textContent = "El log no puede estar vacío.";
-    return;
+    return false;
   }
   const isEdit = Number.isInteger(noteIndex) && noteIndex >= 0;
   const endpoint = isEdit
@@ -663,7 +666,7 @@ async function saveTaskLog(noteIndex, notesValue) {
   });
   if (!res.ok) {
     $("editError").textContent = isEdit ? "No se pudo editar el log." : "No se pudo añadir el log.";
-    return;
+    return false;
   }
   const payload = await res.json();
   selectedTask = { ...selectedTask, notes: payload.notes || "", notes_log: payload.notes_log || [] };
@@ -672,6 +675,7 @@ async function saveTaskLog(noteIndex, notesValue) {
   $("editNewNote").value = "";
   $("editError").textContent = "";
   await refreshCalendarData();
+  return true;
 }
 
 async function closeTask() {

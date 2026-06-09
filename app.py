@@ -2872,9 +2872,6 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
     status = (payload.status or "").strip().upper()
     title = (payload.title or "").strip()
     description = (payload.description or "").strip()
-    payload_fields = getattr(payload, "model_fields_set", getattr(payload, "__fields_set__", set()))
-    notes_supplied = "notes" in payload_fields
-    notes = (payload.notes or "").strip()
 
     if task_type not in TASK_TYPES:
         raise HTTPException(status_code=400, detail="Invalid task type")
@@ -2899,11 +2896,6 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
                     status = %s,
                     title = %s,
                     description = %s,
-                    notes_log = CASE
-                        WHEN NOT %s THEN t.notes_log
-                        WHEN %s = '' THEN t.notes_log
-                        ELSE t.notes_log || jsonb_build_array(jsonb_build_object('notes', %s, 'created_at', now(), 'updated_at', now()))
-                    END,
                     updated_at = now()
                 FROM projects p
                 WHERE t.id = %s
@@ -2911,7 +2903,7 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
                   AND COALESCE(p.is_historical, FALSE) = FALSE
                 RETURNING t.id
                 """,
-                (task_type, owner_role, payload.planned_date, status, title, description, notes_supplied, notes, notes, task_id),
+                (task_type, owner_role, payload.planned_date, status, title, description, task_id),
             )
             row = cur.fetchone()
             if not row:
