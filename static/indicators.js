@@ -302,7 +302,7 @@ function renderPhaseChangesTable(phasesHistory) {
   });
 }
 
-function buildLineChart(ctx, labels, datasetLabel, data, color, domain) {
+function buildLineChart(ctx, labels, datasetLabel, data, color, domain, additionalDatasets = []) {
   return new Chart(ctx, {
     type: "line",
     data: {
@@ -316,6 +316,7 @@ function buildLineChart(ctx, labels, datasetLabel, data, color, domain) {
           tension: 0.25,
           fill: false,
         },
+        ...additionalDatasets,
       ],
     },
     options: {
@@ -602,6 +603,9 @@ function renderCharts(weekly, totalHours, roleHours) {
     formatWeekLabel(item.year, item.week)
   );
   const progressData = visibleSnapshotWeekly.map((item) => toNumber(item.progress_w));
+  const progressCData = visibleSnapshotWeekly.map((item) => toNumber(item.progress_c));
+  const progressPmData = visibleSnapshotWeekly.map((item) => toNumber(item.progress_pm));
+  const progressEData = visibleSnapshotWeekly.map((item) => toNumber(item.progress_e));
   const deviationData = visibleSnapshotWeekly.map((item) => toNumber(item.desviacion_pct));
   const realHoursRaw = visibleSnapshotWeekly.map((item) => toNumber(item.real_hours));
   const realHoursDeltaRaw = visibleSnapshotWeekly.map((item) =>
@@ -641,7 +645,9 @@ function renderCharts(weekly, totalHours, roleHours) {
         Number.isFinite(value) ? Math.round(value) : null
       );
 
-  const progressDomain = calculateDomain(progressData);
+  const progressDomain = calculateDomain(
+    progressData.concat(progressCData, progressPmData, progressEData)
+  );
   const deviationDomain = calculateDomain(deviationData);
   const hoursCompareWeekly = visibleSnapshotWeekly.filter(
     (item) => item.progress_w_delta !== null && item.progress_w_delta !== undefined
@@ -666,7 +672,33 @@ function renderCharts(weekly, totalHours, roleHours) {
     "Progreso semanal",
     progressData.map((value) => (value === null ? null : Math.round(value))),
     "#2563eb",
-    progressDomain
+    progressDomain,
+    [
+      {
+        label: "Progreso C",
+        data: progressCData.map((value) => (value === null ? null : Math.round(value))),
+        borderColor: "#16a34a",
+        backgroundColor: "#16a34a",
+        tension: 0.25,
+        fill: false,
+      },
+      {
+        label: "Progreso PM",
+        data: progressPmData.map((value) => (value === null ? null : Math.round(value))),
+        borderColor: "#f97316",
+        backgroundColor: "#f97316",
+        tension: 0.25,
+        fill: false,
+      },
+      {
+        label: "Progreso E",
+        data: progressEData.map((value) => (value === null ? null : Math.round(value))),
+        borderColor: "#9333ea",
+        backgroundColor: "#9333ea",
+        tension: 0.25,
+        fill: false,
+      },
+    ]
   );
   buildLineChart(
     $("chartDeviation"),

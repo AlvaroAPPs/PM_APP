@@ -3289,7 +3289,7 @@ def project_weekly_metrics(project_code: str):
             cur.execute(
                 """
                 SELECT snapshot_year, snapshot_week,
-                       progress_w, desviacion_pct,
+                       progress_w, progress_c, progress_pm, progress_e, desviacion_pct,
                        real_hours, horas_teoricas,
                        progress_w_delta, real_hours_delta,
                        horas_teoricas_delta, desviacion_pct_delta
@@ -3306,13 +3306,16 @@ def project_weekly_metrics(project_code: str):
             "year": r[0],
             "week": r[1],
             "progress_w": to_float(r[2]),
-            "desviacion_pct": to_float(r[3]),
-            "real_hours": to_float(r[4]),
-            "horas_teoricas": to_float(r[5]),
-            "progress_w_delta": to_float(r[6]),
-            "real_hours_delta": to_float(r[7]),
-            "horas_teoricas_delta": to_float(r[8]),
-            "desviacion_pct_delta": to_float(r[9]),
+            "progress_c": to_float(r[3]),
+            "progress_pm": to_float(r[4]),
+            "progress_e": to_float(r[5]),
+            "desviacion_pct": to_float(r[6]),
+            "real_hours": to_float(r[7]),
+            "horas_teoricas": to_float(r[8]),
+            "progress_w_delta": to_float(r[9]),
+            "real_hours_delta": to_float(r[10]),
+            "horas_teoricas_delta": to_float(r[11]),
+            "desviacion_pct_delta": to_float(r[12]),
         }
         for r in rows
     ]
