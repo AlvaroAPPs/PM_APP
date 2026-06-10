@@ -302,7 +302,7 @@ function renderPhaseChangesTable(phasesHistory) {
   });
 }
 
-function buildLineChart(ctx, labels, datasetLabel, data, color, domain, additionalDatasets = []) {
+function buildLineChart(ctx, labels, datasetLabel, data, color, domain, additionalDatasets = [], legendOrder = []) {
   return new Chart(ctx, {
     type: "line",
     data: {
@@ -323,7 +323,15 @@ function buildLineChart(ctx, labels, datasetLabel, data, color, domain, addition
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: legendOrder.length > 0,
+          position: "top",
+          labels: {
+            boxWidth: 12,
+            boxHeight: 2,
+            sort: (a, b) => legendOrder.indexOf(a.text) - legendOrder.indexOf(b.text),
+          },
+        },
         tooltip: {
           callbacks: {
             label: (context) => formatInt(context.parsed.y),
@@ -669,13 +677,13 @@ function renderCharts(weekly, totalHours, roleHours) {
   buildLineChart(
     $("chartProgress"),
     labels,
-    "Progreso semanal",
+    "W",
     progressData.map((value) => (value === null ? null : Math.round(value))),
     "#2563eb",
     progressDomain,
     [
       {
-        label: "Progreso C",
+        label: "C",
         data: progressCData.map((value) => (value === null ? null : Math.round(value))),
         borderColor: "#16a34a",
         backgroundColor: "#16a34a",
@@ -683,7 +691,7 @@ function renderCharts(weekly, totalHours, roleHours) {
         fill: false,
       },
       {
-        label: "Progreso PM",
+        label: "PM",
         data: progressPmData.map((value) => (value === null ? null : Math.round(value))),
         borderColor: "#f97316",
         backgroundColor: "#f97316",
@@ -691,14 +699,15 @@ function renderCharts(weekly, totalHours, roleHours) {
         fill: false,
       },
       {
-        label: "Progreso E",
+        label: "E",
         data: progressEData.map((value) => (value === null ? null : Math.round(value))),
         borderColor: "#9333ea",
         backgroundColor: "#9333ea",
         tension: 0.25,
         fill: false,
       },
-    ]
+    ],
+    ["PM", "C", "E", "W"]
   );
   buildLineChart(
     $("chartDeviation"),
