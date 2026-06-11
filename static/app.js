@@ -163,6 +163,9 @@ function resetUI() {
   setValue("consumed_role_pm", "");
   setValue("consumed_role_consultant", "");
   setValue("consumed_role_technician", "");
+  setValue("deviation_role_pm", "");
+  setValue("deviation_role_consultant", "");
+  setValue("deviation_role_technician", "");
   setValue("project_comment_input", "");
 }
 
@@ -342,6 +345,11 @@ async function loadProject(code) {
   setValue("consumed_role_pm", toInputValue(consumedRoleValues.pm ?? 0));
   setValue("consumed_role_consultant", toInputValue(consumedRoleValues.consultant ?? 0));
   setValue("consumed_role_technician", toInputValue(consumedRoleValues.technician ?? 0));
+
+  const deviationRoleValues = s.deviation_role || {};
+  setValue("deviation_role_pm", toInputValue(deviationRoleValues.pm ?? 0));
+  setValue("deviation_role_consultant", toInputValue(deviationRoleValues.consultant ?? 0));
+  setValue("deviation_role_technician", toInputValue(deviationRoleValues.technician ?? 0));
 
   setValue("project_comment_input", s.project_comment ?? "");
   updateTaskCounterLinks();

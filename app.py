@@ -169,6 +169,34 @@ def to_float(value: object) -> float | None:
     return float(value)
 
 
+def _percentage_factor(value: object) -> float:
+    numeric = to_float(value)
+    if numeric is None:
+        return 0.0
+    return numeric if abs(numeric) <= 1 else numeric / 100.0
+
+
+def project_status_role_values(latest: dict) -> tuple[dict, dict, dict]:
+    role_fields = {
+        "pm": ("dist_pm", "deviation_pmd"),
+        "consultant": ("dist_c", "deviation_cd"),
+        "technician": ("dist_e", "deviation_ed"),
+    }
+    total_assigned = to_float(latest.get("ordered_total")) or 0.0
+    total_consumed = to_float(latest.get("real_hours")) or 0.0
+    assigned_hours_role = {}
+    consumed_hours_role = {}
+    deviation_role = {}
+    for role, (distribution_field, deviation_field) in role_fields.items():
+        assigned_factor = _percentage_factor(latest.get(distribution_field))
+        deviation_factor = _percentage_factor(latest.get(deviation_field))
+        assigned_hours_role[role] = total_assigned * assigned_factor
+        deviation_role[role] = deviation_factor * 100.0
+        # Positive OTS deviation means better/on-plan, so it reduces calculated consumption.
+        consumed_hours_role[role] = total_consumed * assigned_factor * (1.0 - deviation_factor)
+    return assigned_hours_role, consumed_hours_role, deviation_role
+
+
 def to_date_iso(value: object) -> str | None:
     if value is None:
         return None
@@ -2450,17 +2478,7 @@ def project_details(project_code: str):
         "hypercare": float(p[13] or 0),
     }
 
-    assigned_hours_role = {
-        "pm": float(p[14] or 0),
-        "consultant": float(p[15] or 0),
-        "technician": float(p[16] or 0),
-    }
-
-    consumed_hours_role = {
-        "pm": float(p[17] or 0),
-        "consultant": float(p[18] or 0),
-        "technician": float(p[19] or 0),
-    }
+    assigned_hours_role, consumed_hours_role, deviation_role = project_status_role_values(latest_dict)
 
     project = {
         "id": p[0],
@@ -2482,6 +2500,7 @@ def project_details(project_code: str):
         "assigned_hours_phase": assigned_hours_phase,
         "assigned_hours_role": assigned_hours_role,
         "consumed_hours_role": consumed_hours_role,
+        "deviation_role": deviation_role,
         "project_comment": normalize_comment(project_comment),
         "excel_comments": normalize_comment(excel_comments),
     }
