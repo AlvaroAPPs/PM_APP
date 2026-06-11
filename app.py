@@ -200,11 +200,19 @@ def _allocate_rounded_total(raw_values: dict, total: float, increment: float, pr
     return {role: units * increment for role, units in allocated_units.items()}
 
 
+def _deviation_projection_stage(progress: float, design_ok: object, validation_ok: object) -> float:
+    if design_ok is False or progress < 20.0:
+        return 20.0
+    if validation_ok is False or progress < 70.0:
+        return 70.0
+    return 100.0
+
+
 def project_status_role_values(latest: dict) -> tuple[dict, dict, dict, dict]:
     role_fields = {
-        "pm": ("dist_pm", "deviation_pmd"),
-        "consultant": ("dist_c", "deviation_cd"),
-        "technician": ("dist_e", "deviation_ed"),
+        "pm": ("dist_pm", "progress_pm", "deviation_pmd"),
+        "consultant": ("dist_c", "progress_c", "deviation_cd"),
+        "technician": ("dist_e", "progress_e", "deviation_ed"),
     }
     total_assigned = to_float(latest.get("ordered_total")) or 0.0
     total_consumed = to_float(latest.get("real_hours")) or 0.0
@@ -212,17 +220,21 @@ def project_status_role_values(latest: dict) -> tuple[dict, dict, dict, dict]:
     raw_assigned = {}
     raw_consumed = {}
     deviation_role = {"total": round(_percentage_factor(latest.get("deviation_td")) * 100.0, 2)}
-    for role, (distribution_field, deviation_field) in role_fields.items():
+    for role, (distribution_field, progress_field, deviation_field) in role_fields.items():
         assigned_factor = _percentage_factor(latest.get(distribution_field))
-        deviation_factor = _percentage_factor(latest.get(deviation_field))
+        progress = _percentage_factor(latest.get(progress_field)) * 100.0
+        deviation = _percentage_factor(latest.get(deviation_field)) * 100.0
         assigned_percentage_role[role] = assigned_factor * 100.0
         raw_assigned[role] = total_assigned * assigned_factor
-        deviation_role[role] = round(deviation_factor * 100.0, 2)
-        # Positive OTS deviation means better/on-plan, so it reduces calculated consumption.
-        raw_consumed[role] = max(0.0, total_consumed * assigned_factor * (1.0 - deviation_factor))
+        deviation_role[role] = round(deviation, 2)
+        stage = _deviation_projection_stage(progress, latest.get("design_ok"), latest.get("validation_ok"))
+        # Invert the OTS deviation formula to recover incurred role hours before normalization.
+        raw_consumed[role] = max(0.0, raw_assigned[role] * (progress / 100.0) * (1.0 - deviation / stage))
 
     assigned_hours_role = _allocate_rounded_total(raw_assigned, round(total_assigned), 1.0, prefer_non_pm=True)
-    consumed_hours_role = _allocate_rounded_total(raw_consumed, total_consumed, 0.25)
+    # If OTS cannot reconstruct any role consumption, assigned distribution is the safest normalization fallback.
+    consumed_source = raw_consumed if sum(raw_consumed.values()) else raw_assigned
+    consumed_hours_role = _allocate_rounded_total(consumed_source, total_consumed, 0.25)
     return assigned_hours_role, consumed_hours_role, deviation_role, assigned_percentage_role
 
 
