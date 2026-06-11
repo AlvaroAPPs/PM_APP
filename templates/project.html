@@ -368,16 +368,16 @@
               <div class="fw-semibold mb-2">Horas asignadas por rol</div>
               <div class="row g-2">
                 <div class="col-12 col-md-4">
-                  <label class="muted small fw-semibold" for="role_pm">Project Manager (PM)</label>
-                  <input id="role_pm" type="number" step="0.01" class="form-control" readonly />
+                  <label class="muted small fw-semibold" for="role_pm">Project Manager (PM) <span id="role_pm_pct" class="text-primary"></span></label>
+                  <input id="role_pm" type="number" step="1" class="form-control" readonly />
                 </div>
                 <div class="col-12 col-md-4">
-                  <label class="muted small fw-semibold" for="role_consultant">Consultor</label>
-                  <input id="role_consultant" type="number" step="0.01" class="form-control" readonly />
+                  <label class="muted small fw-semibold" for="role_consultant">Consultor <span id="role_consultant_pct" class="text-primary"></span></label>
+                  <input id="role_consultant" type="number" step="1" class="form-control" readonly />
                 </div>
                 <div class="col-12 col-md-4">
-                  <label class="muted small fw-semibold" for="role_technician">Técnico</label>
-                  <input id="role_technician" type="number" step="0.01" class="form-control" readonly />
+                  <label class="muted small fw-semibold" for="role_technician">Técnico <span id="role_technician_pct" class="text-primary"></span></label>
+                  <input id="role_technician" type="number" step="1" class="form-control" readonly />
                 </div>
               </div>
             </div>
@@ -405,17 +405,45 @@
 
           <div class="card shadow-soft mb-3">
             <div class="card-body">
-              <div class="fw-semibold mb-2">Desviación OTS por rol (%)</div>
+              <div class="fw-semibold mb-2">Avance OTS (%)</div>
               <div class="row g-2">
-                <div class="col-12 col-md-4">
+                <div class="col-12 col-md-3">
+                  <label class="muted small fw-semibold" for="progress_role_total">Total</label>
+                  <input id="progress_role_total" type="number" step="0.01" class="form-control" readonly />
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="muted small fw-semibold" for="progress_role_pm">Project Manager (PM)</label>
+                  <input id="progress_role_pm" type="number" step="0.01" class="form-control" readonly />
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="muted small fw-semibold" for="progress_role_consultant">Consultor</label>
+                  <input id="progress_role_consultant" type="number" step="0.01" class="form-control" readonly />
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="muted small fw-semibold" for="progress_role_technician">Técnico</label>
+                  <input id="progress_role_technician" type="number" step="0.01" class="form-control" readonly />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card shadow-soft mb-3">
+            <div class="card-body">
+              <div class="fw-semibold mb-2">Desviación OTS (%)</div>
+              <div class="row g-2">
+                <div class="col-12 col-md-3">
+                  <label class="muted small fw-semibold" for="deviation_role_total">Total</label>
+                  <input id="deviation_role_total" type="number" step="0.01" class="form-control" readonly />
+                </div>
+                <div class="col-12 col-md-3">
                   <label class="muted small fw-semibold" for="deviation_role_pm">Project Manager (PM)</label>
                   <input id="deviation_role_pm" type="number" step="0.01" class="form-control" readonly />
                 </div>
-                <div class="col-12 col-md-4">
+                <div class="col-12 col-md-3">
                   <label class="muted small fw-semibold" for="deviation_role_consultant">Consultor</label>
                   <input id="deviation_role_consultant" type="number" step="0.01" class="form-control" readonly />
                 </div>
-                <div class="col-12 col-md-4">
+                <div class="col-12 col-md-3">
                   <label class="muted small fw-semibold" for="deviation_role_technician">Técnico</label>
                   <input id="deviation_role_technician" type="number" step="0.01" class="form-control" readonly />
                 </div>
@@ -454,6 +482,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=9"></script>
+  <script src="/static/app.js?v=10"></script>
 </body>
 </html>

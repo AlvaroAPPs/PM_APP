@@ -160,9 +160,17 @@ function resetUI() {
   setValue("role_pm", "");
   setValue("role_consultant", "");
   setValue("role_technician", "");
+  setText("role_pm_pct", "");
+  setText("role_consultant_pct", "");
+  setText("role_technician_pct", "");
   setValue("consumed_role_pm", "");
   setValue("consumed_role_consultant", "");
   setValue("consumed_role_technician", "");
+  setValue("progress_role_total", "");
+  setValue("progress_role_pm", "");
+  setValue("progress_role_consultant", "");
+  setValue("progress_role_technician", "");
+  setValue("deviation_role_total", "");
   setValue("deviation_role_pm", "");
   setValue("deviation_role_consultant", "");
   setValue("deviation_role_technician", "");
@@ -337,19 +345,30 @@ async function loadProject(code) {
   setValue("phase_hypercare", toInputValue(phaseValues.hypercare ?? 0));
 
   const roleValues = s.assigned_hours_role || {};
+  const rolePercentages = s.assigned_percentage_role || {};
   setValue("role_pm", toInputValue(roleValues.pm ?? 0));
   setValue("role_consultant", toInputValue(roleValues.consultant ?? 0));
   setValue("role_technician", toInputValue(roleValues.technician ?? 0));
+  setText("role_pm_pct", fmtPct(rolePercentages.pm ?? 0));
+  setText("role_consultant_pct", fmtPct(rolePercentages.consultant ?? 0));
+  setText("role_technician_pct", fmtPct(rolePercentages.technician ?? 0));
 
   const consumedRoleValues = s.consumed_hours_role || {};
-  setValue("consumed_role_pm", toInputValue(consumedRoleValues.pm ?? 0));
-  setValue("consumed_role_consultant", toInputValue(consumedRoleValues.consultant ?? 0));
-  setValue("consumed_role_technician", toInputValue(consumedRoleValues.technician ?? 0));
+  setValue("consumed_role_pm", fmtFixed2(consumedRoleValues.pm ?? 0));
+  setValue("consumed_role_consultant", fmtFixed2(consumedRoleValues.consultant ?? 0));
+  setValue("consumed_role_technician", fmtFixed2(consumedRoleValues.technician ?? 0));
+
+  const progressRoleValues = s.progress_role || {};
+  setValue("progress_role_total", fmtFixed2(progressRoleValues.total ?? 0));
+  setValue("progress_role_pm", fmtFixed2(progressRoleValues.pm ?? 0));
+  setValue("progress_role_consultant", fmtFixed2(progressRoleValues.consultant ?? 0));
+  setValue("progress_role_technician", fmtFixed2(progressRoleValues.technician ?? 0));
 
   const deviationRoleValues = s.deviation_role || {};
-  setValue("deviation_role_pm", toInputValue(deviationRoleValues.pm ?? 0));
-  setValue("deviation_role_consultant", toInputValue(deviationRoleValues.consultant ?? 0));
-  setValue("deviation_role_technician", toInputValue(deviationRoleValues.technician ?? 0));
+  setValue("deviation_role_total", fmtFixed2(deviationRoleValues.total ?? 0));
+  setValue("deviation_role_pm", fmtFixed2(deviationRoleValues.pm ?? 0));
+  setValue("deviation_role_consultant", fmtFixed2(deviationRoleValues.consultant ?? 0));
+  setValue("deviation_role_technician", fmtFixed2(deviationRoleValues.technician ?? 0));
 
   setValue("project_comment_input", s.project_comment ?? "");
   updateTaskCounterLinks();
