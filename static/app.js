@@ -183,6 +183,10 @@ function resetUI() {
   setValue("deviation_role_pm", "");
   setValue("deviation_role_consultant", "");
   setValue("deviation_role_technician", "");
+  setValue("pm_deviation_role_total", "");
+  setValue("pm_deviation_role_pm", "");
+  setValue("pm_deviation_role_consultant", "");
+  setValue("pm_deviation_role_technician", "");
   setValue("project_comment_input", "");
 }
 
@@ -382,6 +386,12 @@ async function loadProject(code) {
   setValue("deviation_role_pm", fmtFixed2(deviationRoleValues.pm ?? 0));
   setValue("deviation_role_consultant", fmtFixed2(deviationRoleValues.consultant ?? 0));
   setValue("deviation_role_technician", fmtFixed2(deviationRoleValues.technician ?? 0));
+
+  const pmDeviationRoleValues = s.pm_deviation_role || {};
+  setValue("pm_deviation_role_total", fmtFixed2(pmDeviationRoleValues.total ?? 0));
+  setValue("pm_deviation_role_pm", fmtFixed2(pmDeviationRoleValues.pm ?? 0));
+  setValue("pm_deviation_role_consultant", fmtFixed2(pmDeviationRoleValues.consultant ?? 0));
+  setValue("pm_deviation_role_technician", fmtFixed2(pmDeviationRoleValues.technician ?? 0));
 
   setValue("project_comment_input", s.project_comment ?? "");
   updateTaskCounterLinks();

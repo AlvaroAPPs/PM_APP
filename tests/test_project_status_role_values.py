@@ -77,6 +77,27 @@ class ProjectStatusRoleValuesTests(unittest.TestCase):
 
         self.assertEqual(increment, {"pm": 0.0, "consultant": 0.0, "technician": 0.0})
 
+    def test_pm_deviation_uses_role_progress_weight_and_consumed_hours(self):
+        deviation = app.project_status_pm_deviation(
+            {
+                "ordered_total": 100,
+                "dist_pm": 20,
+                "dist_c": 50,
+                "dist_e": 30,
+                "progress_pm": 50,
+                "progress_c": 40,
+                "progress_e": 100,
+            },
+            {"pm": 8.0, "consultant": 25.0, "technician": 24.0},
+        )
+
+        self.assertEqual(deviation, {"pm": 20.0, "consultant": -25.0, "technician": 20.0, "total": 5.0})
+
+    def test_pm_deviation_is_safe_when_theoretical_hours_are_missing(self):
+        deviation = app.project_status_pm_deviation({}, {"pm": 2.0, "consultant": 3.0, "technician": 4.0})
+
+        self.assertEqual(deviation, {"pm": 0.0, "consultant": 0.0, "technician": 0.0, "total": 0.0})
+
     def test_progress_and_total_deviation_support_percentages_and_ratios(self):
         progress = app.project_status_progress_values(
             {"progress_w": 75.123, "progress_pm": 0.5, "progress_c": 25, "progress_e": 0.33333}

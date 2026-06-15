@@ -253,6 +253,28 @@ def project_status_consumed_role_increment(current: dict, previous: dict | None)
     return {role: round(hours - previous.get(role, 0.0), 2) for role, hours in current.items()}
 
 
+def project_status_pm_deviation(latest: dict, consumed_hours_role: dict) -> dict:
+    role_fields = {
+        "pm": ("dist_pm", "progress_pm"),
+        "consultant": ("dist_c", "progress_c"),
+        "technician": ("dist_e", "progress_e"),
+    }
+    total_assigned = to_float(latest.get("ordered_total")) or 0.0
+    theoretical_role = {
+        role: total_assigned * _percentage_factor(latest.get(distribution_field)) * _percentage_factor(latest.get(progress_field))
+        for role, (distribution_field, progress_field) in role_fields.items()
+    }
+    deviation = {
+        role: round(((theoretical - consumed_hours_role.get(role, 0.0)) / theoretical) * 100.0, 2)
+        if theoretical else 0.0
+        for role, theoretical in theoretical_role.items()
+    }
+    total_theoretical = sum(theoretical_role.values())
+    total_consumed = sum(consumed_hours_role.values())
+    deviation["total"] = round(((total_theoretical - total_consumed) / total_theoretical) * 100.0, 2) if total_theoretical else 0.0
+    return deviation
+
+
 def to_date_iso(value: object) -> str | None:
     if value is None:
         return None
@@ -2539,6 +2561,7 @@ def project_details(project_code: str):
     previous_consumed_hours_role = project_status_role_values(previous_dict)[1] if previous_dict else None
     consumed_hours_role_increment = project_status_consumed_role_increment(consumed_hours_role, previous_consumed_hours_role)
     progress_role = project_status_progress_values(latest_dict)
+    pm_deviation_role = project_status_pm_deviation(latest_dict, consumed_hours_role)
 
     project = {
         "id": p[0],
@@ -2564,6 +2587,7 @@ def project_details(project_code: str):
         "consumed_hours_role_increment": consumed_hours_role_increment,
         "progress_role": progress_role,
         "deviation_role": deviation_role,
+        "pm_deviation_role": pm_deviation_role,
         "project_comment": normalize_comment(project_comment),
         "excel_comments": normalize_comment(excel_comments),
     }
