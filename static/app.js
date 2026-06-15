@@ -166,9 +166,9 @@ function resetUI() {
   setValue("role_pm", "");
   setValue("role_consultant", "");
   setValue("role_technician", "");
-  setText("role_pm_pct", "");
-  setText("role_consultant_pct", "");
-  setText("role_technician_pct", "");
+  setValue("role_pm_pct", "");
+  setValue("role_consultant_pct", "");
+  setValue("role_technician_pct", "");
   setValue("consumed_role_pm", "");
   setValue("consumed_role_consultant", "");
   setValue("consumed_role_technician", "");
@@ -362,9 +362,9 @@ async function loadProject(code) {
   setValue("role_pm", toInputValue(roleValues.pm ?? 0));
   setValue("role_consultant", toInputValue(roleValues.consultant ?? 0));
   setValue("role_technician", toInputValue(roleValues.technician ?? 0));
-  setText("role_pm_pct", fmtPct(rolePercentages.pm ?? 0));
-  setText("role_consultant_pct", fmtPct(rolePercentages.consultant ?? 0));
-  setText("role_technician_pct", fmtPct(rolePercentages.technician ?? 0));
+  setValue("role_pm_pct", toInputValue(rolePercentages.pm ?? 0));
+  setValue("role_consultant_pct", toInputValue(rolePercentages.consultant ?? 0));
+  setValue("role_technician_pct", toInputValue(rolePercentages.technician ?? 0));
 
   const consumedRoleValues = s.consumed_hours_role || {};
   setValue("consumed_role_pm", fmtFixed2(consumedRoleValues.pm ?? 0));
@@ -410,6 +410,41 @@ async function postJson(url, payload) {
   }
   return res.json();
 }
+
+async function saveProjectStatusRoleValues() {
+  if (!currentProjectId) {
+    alert("Carga un proyecto antes de guardar.");
+    return;
+  }
+  const status = $("projectStatusRoleValuesStatus");
+  const payload = {
+    progress_pm: Number($("progress_role_pm").value),
+    progress_consultant: Number($("progress_role_consultant").value),
+    progress_technician: Number($("progress_role_technician").value),
+    percentage_pm: Number($("role_pm_pct").value),
+    percentage_consultant: Number($("role_consultant_pct").value),
+    percentage_technician: Number($("role_technician_pct").value),
+  };
+  const values = Object.values(payload);
+  if (values.some((value) => !Number.isFinite(value) || value < 0 || value > 100)) {
+    alert("Los avances y porcentajes deben estar entre 0 y 100.");
+    return;
+  }
+  if (Math.abs(payload.percentage_pm + payload.percentage_consultant + payload.percentage_technician - 100) > 0.01) {
+    alert("Los porcentajes asignados por rol deben sumar 100.");
+    return;
+  }
+  if (status) status.textContent = "Guardando...";
+  try {
+    await postJson(`${API}/projects/${currentProjectId}/status-role-values`, payload);
+    await loadProject(currentProjectCode);
+    if (status) status.textContent = "Guardado";
+  } catch (err) {
+    if (status) status.textContent = "Error al guardar";
+    alert(err.message);
+  }
+}
+
 
 async function savePhaseHours() {
   if (!currentProjectId) {
@@ -638,6 +673,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const savePhase = $("savePhase");
   if (savePhase) savePhase.addEventListener("click", savePhaseHours);
+
+  const saveProjectStatusRoleValuesButton = $("saveProjectStatusRoleValues");
+  if (saveProjectStatusRoleValuesButton) saveProjectStatusRoleValuesButton.addEventListener("click", saveProjectStatusRoleValues);
 
   const saveRole = $("saveRole");
   if (saveRole) saveRole.addEventListener("click", saveRoleHours);

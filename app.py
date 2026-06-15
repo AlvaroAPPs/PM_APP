@@ -58,6 +58,15 @@ class AssignedHoursRoleIn(BaseModel):
     hours: float | None = None
 
 
+class ProjectStatusRoleEditIn(BaseModel):
+    progress_pm: float
+    progress_consultant: float
+    progress_technician: float
+    percentage_pm: float
+    percentage_consultant: float
+    percentage_technician: float
+
+
 class ProjectCommentIn(BaseModel):
     comment_text: str | None = None
 
@@ -176,6 +185,10 @@ def _percentage_factor(value: object) -> float:
     return numeric if abs(numeric) <= 1 else numeric / 100.0
 
 
+def _percentage_value(value: object) -> float:
+    return to_float(value) or 0.0
+
+
 def _allocate_rounded_total(raw_values: dict, total: float, increment: float, prefer_non_pm: bool = False) -> dict:
     total_units = round(total / increment)
     raw_total = sum(raw_values.values())
@@ -219,11 +232,11 @@ def project_status_role_values(latest: dict) -> tuple[dict, dict, dict, dict]:
     assigned_percentage_role = {}
     raw_assigned = {}
     raw_consumed = {}
-    deviation_role = {"total": round(_percentage_factor(latest.get("deviation_td")) * 100.0, 2)}
+    deviation_role = {"total": round(_percentage_value(latest.get("deviation_td")), 2)}
     for role, (distribution_field, progress_field, deviation_field) in role_fields.items():
         assigned_factor = _percentage_factor(latest.get(distribution_field))
-        progress = _percentage_factor(latest.get(progress_field)) * 100.0
-        deviation = _percentage_factor(latest.get(deviation_field)) * 100.0
+        progress = _percentage_value(latest.get(progress_field))
+        deviation = _percentage_value(latest.get(deviation_field))
         assigned_percentage_role[role] = assigned_factor * 100.0
         raw_assigned[role] = total_assigned * assigned_factor
         deviation_role[role] = round(deviation, 2)
@@ -240,10 +253,10 @@ def project_status_role_values(latest: dict) -> tuple[dict, dict, dict, dict]:
 
 def project_status_progress_values(latest: dict) -> dict:
     return {
-        "total": round(_percentage_factor(latest.get("progress_w")) * 100.0, 2),
-        "pm": round(_percentage_factor(latest.get("progress_pm")) * 100.0, 2),
-        "consultant": round(_percentage_factor(latest.get("progress_c")) * 100.0, 2),
-        "technician": round(_percentage_factor(latest.get("progress_e")) * 100.0, 2),
+        "total": round(_percentage_value(latest.get("progress_w")), 2),
+        "pm": round(_percentage_value(latest.get("progress_pm")), 2),
+        "consultant": round(_percentage_value(latest.get("progress_c")), 2),
+        "technician": round(_percentage_value(latest.get("progress_e")), 2),
     }
 
 
@@ -251,6 +264,55 @@ def project_status_consumed_role_increment(current: dict, previous: dict | None)
     if previous is None:
         return {role: 0.0 for role in current}
     return {role: round(hours - previous.get(role, 0.0), 2) for role, hours in current.items()}
+
+
+def project_status_role_edit_values(latest: dict, payload: ProjectStatusRoleEditIn) -> dict:
+    progress = {
+        "pm": payload.progress_pm,
+        "consultant": payload.progress_consultant,
+        "technician": payload.progress_technician,
+    }
+    percentage = {
+        "pm": payload.percentage_pm,
+        "consultant": payload.percentage_consultant,
+        "technician": payload.percentage_technician,
+    }
+    if any(not 0 <= value <= 100 for value in (*progress.values(), *percentage.values())):
+        raise ValueError("Role progress and percentages must be between 0 and 100")
+    if abs(sum(percentage.values()) - 100.0) > 0.01:
+        raise ValueError("Assigned role percentages must total 100")
+
+    _, consumed_hours_role, _, _ = project_status_role_values(latest)
+    total_assigned = to_float(latest.get("ordered_total")) or 0.0
+    total_consumed = to_float(latest.get("real_hours")) or 0.0
+    weighted_progress = sum((percentage[role] / 100.0) * progress[role] for role in ROLES)
+    theoretical_total = total_assigned * (weighted_progress / 100.0)
+    deviation_h = total_consumed - theoretical_total
+    deviation_pct = (deviation_h / theoretical_total) * 100.0 if theoretical_total else None
+    deviation_total = ((theoretical_total - total_consumed) / theoretical_total) * 100.0 if theoretical_total else 0.0
+
+    role_deviation = {}
+    for role in ROLES:
+        theoretical = total_assigned * (percentage[role] / 100.0) * (progress[role] / 100.0)
+        stage = _deviation_projection_stage(progress[role], latest.get("design_ok"), latest.get("validation_ok"))
+        role_deviation[role] = stage * (1.0 - consumed_hours_role[role] / theoretical) if theoretical else 0.0
+
+    return {
+        "progress_w": weighted_progress,
+        "progress_pm": progress["pm"],
+        "progress_c": progress["consultant"],
+        "progress_e": progress["technician"],
+        "dist_pm": percentage["pm"] / 100.0,
+        "dist_c": percentage["consultant"] / 100.0,
+        "dist_e": percentage["technician"] / 100.0,
+        "deviation_td": deviation_total,
+        "deviation_pmd": role_deviation["pm"],
+        "deviation_cd": role_deviation["consultant"],
+        "deviation_ed": role_deviation["technician"],
+        "horas_teoricas": theoretical_total,
+        "desviacion_h": deviation_h,
+        "desviacion_pct": deviation_pct,
+    }
 
 
 def project_status_pm_deviation(latest: dict, consumed_hours_role: dict) -> dict:
@@ -261,7 +323,7 @@ def project_status_pm_deviation(latest: dict, consumed_hours_role: dict) -> dict
     }
     total_assigned = to_float(latest.get("ordered_total")) or 0.0
     theoretical_role = {
-        role: total_assigned * _percentage_factor(latest.get(distribution_field)) * _percentage_factor(latest.get(progress_field))
+        role: total_assigned * _percentage_factor(latest.get(distribution_field)) * (_percentage_value(latest.get(progress_field)) / 100.0)
         for role, (distribution_field, progress_field) in role_fields.items()
     }
     deviation = {
@@ -3471,6 +3533,54 @@ def project_phase_history(project_code: str):
         }
         for r in rows
     ]
+
+
+@app.post("/projects/{project_id}/status-role-values")
+def update_project_status_role_values(project_id: int, payload: ProjectStatusRoleEditIn):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM project_snapshot
+                WHERE project_id = %s
+                ORDER BY snapshot_year DESC, snapshot_week DESC, snapshot_at DESC
+                LIMIT 2
+                """,
+                (project_id,),
+            )
+            snapshots = cur.fetchall()
+            if not snapshots:
+                raise HTTPException(status_code=404, detail="No snapshots for project")
+            colnames = [desc[0] for desc in cur.description]
+            latest = dict(zip(colnames, snapshots[0]))
+            previous = dict(zip(colnames, snapshots[1])) if len(snapshots) > 1 else None
+            try:
+                values = project_status_role_edit_values(latest, payload)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+            values["progress_w_delta"] = values["progress_w"] - to_float(previous.get("progress_w")) if previous and previous.get("progress_w") is not None else None
+            values["horas_teoricas_delta"] = values["horas_teoricas"] - to_float(previous.get("horas_teoricas")) if previous and previous.get("horas_teoricas") is not None else None
+            values["desviacion_pct_delta"] = values["desviacion_pct"] - to_float(previous.get("desviacion_pct")) if previous and previous.get("desviacion_pct") is not None and values["desviacion_pct"] is not None else None
+            real_hours_delta = to_float(latest.get("real_hours_delta"))
+            values["productividad_proyecto"] = real_hours_delta / values["horas_teoricas_delta"] if real_hours_delta is not None and values["horas_teoricas_delta"] not in (None, 0) else None
+            values["snapshot_id"] = latest["id"]
+            cur.execute(
+                """
+                UPDATE project_snapshot SET
+                    progress_w = %(progress_w)s, progress_pm = %(progress_pm)s, progress_c = %(progress_c)s, progress_e = %(progress_e)s,
+                    dist_pm = %(dist_pm)s, dist_c = %(dist_c)s, dist_e = %(dist_e)s,
+                    deviation_td = %(deviation_td)s, deviation_pmd = %(deviation_pmd)s, deviation_cd = %(deviation_cd)s, deviation_ed = %(deviation_ed)s,
+                    horas_teoricas = %(horas_teoricas)s, desviacion_h = %(desviacion_h)s, desviacion_pct = %(desviacion_pct)s,
+                    progress_w_delta = %(progress_w_delta)s, horas_teoricas_delta = %(horas_teoricas_delta)s,
+                    desviacion_pct_delta = %(desviacion_pct_delta)s, productividad_proyecto = %(productividad_proyecto)s
+                WHERE id = %(snapshot_id)s
+                """,
+                values,
+            )
+        conn.commit()
+    return {"status": "ok"}
 
 
 @app.post("/projects/{project_id}/assigned-hours/phase")
