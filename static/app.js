@@ -38,6 +38,12 @@ function fmtFixed2(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n.toFixed(2) : String(v);
 }
+function fmtSignedHours(v) {
+  if (isEmpty(v)) return "—";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v);
+  return `${n > 0 ? "+" : ""}${n.toFixed(2)} h`;
+}
 function fmtDateISO(v) {
   if (isEmpty(v)) return "—";
   if (v instanceof Date) {
@@ -166,6 +172,9 @@ function resetUI() {
   setValue("consumed_role_pm", "");
   setValue("consumed_role_consultant", "");
   setValue("consumed_role_technician", "");
+  setText("consumed_role_pm_increment", "");
+  setText("consumed_role_consultant_increment", "");
+  setText("consumed_role_technician_increment", "");
   setValue("progress_role_total", "");
   setValue("progress_role_pm", "");
   setValue("progress_role_consultant", "");
@@ -357,6 +366,10 @@ async function loadProject(code) {
   setValue("consumed_role_pm", fmtFixed2(consumedRoleValues.pm ?? 0));
   setValue("consumed_role_consultant", fmtFixed2(consumedRoleValues.consultant ?? 0));
   setValue("consumed_role_technician", fmtFixed2(consumedRoleValues.technician ?? 0));
+  const consumedRoleIncrements = s.consumed_hours_role_increment || {};
+  setText("consumed_role_pm_increment", fmtSignedHours(consumedRoleIncrements.pm ?? 0));
+  setText("consumed_role_consultant_increment", fmtSignedHours(consumedRoleIncrements.consultant ?? 0));
+  setText("consumed_role_technician_increment", fmtSignedHours(consumedRoleIncrements.technician ?? 0));
 
   const progressRoleValues = s.progress_role || {};
   setValue("progress_role_total", fmtFixed2(progressRoleValues.total ?? 0));

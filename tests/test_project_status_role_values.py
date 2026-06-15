@@ -61,6 +61,22 @@ class ProjectStatusRoleValuesTests(unittest.TestCase):
         self.assertEqual(deviation, {"total": 0.0, **expected})
         self.assertEqual(percentages, expected)
 
+
+    def test_consumed_role_increment_compares_with_previous_snapshot(self):
+        increment = app.project_status_consumed_role_increment(
+            {"pm": 12.25, "consultant": 30.5, "technician": 20.0},
+            {"pm": 10.0, "consultant": 31.0, "technician": 15.25},
+        )
+
+        self.assertEqual(increment, {"pm": 2.25, "consultant": -0.5, "technician": 4.75})
+
+    def test_consumed_role_increment_is_zero_without_previous_snapshot(self):
+        increment = app.project_status_consumed_role_increment(
+            {"pm": 12.25, "consultant": 30.5, "technician": 20.0}, None
+        )
+
+        self.assertEqual(increment, {"pm": 0.0, "consultant": 0.0, "technician": 0.0})
+
     def test_progress_and_total_deviation_support_percentages_and_ratios(self):
         progress = app.project_status_progress_values(
             {"progress_w": 75.123, "progress_pm": 0.5, "progress_c": 25, "progress_e": 0.33333}

@@ -247,6 +247,12 @@ def project_status_progress_values(latest: dict) -> dict:
     }
 
 
+def project_status_consumed_role_increment(current: dict, previous: dict | None) -> dict:
+    if previous is None:
+        return {role: 0.0 for role in current}
+    return {role: round(hours - previous.get(role, 0.0), 2) for role, hours in current.items()}
+
+
 def to_date_iso(value: object) -> str | None:
     if value is None:
         return None
@@ -2496,16 +2502,17 @@ def project_details(project_code: str):
                 FROM project_snapshot
                 WHERE project_id = %s
                 ORDER BY snapshot_year DESC, snapshot_week DESC, snapshot_at DESC
-                LIMIT 1
+                LIMIT 2
                 """,
                 (project_id,),
             )
-            latest = cur.fetchone()
-            if not latest:
+            snapshots = cur.fetchall()
+            if not snapshots:
                 raise HTTPException(status_code=404, detail="No snapshots for project")
 
             colnames = [desc[0] for desc in cur.description]
-            latest_dict = dict(zip(colnames, latest))
+            latest_dict = dict(zip(colnames, snapshots[0]))
+            previous_dict = dict(zip(colnames, snapshots[1])) if len(snapshots) > 1 else None
 
             cur.execute(
                 """
@@ -2529,6 +2536,8 @@ def project_details(project_code: str):
     }
 
     assigned_hours_role, consumed_hours_role, deviation_role, assigned_percentage_role = project_status_role_values(latest_dict)
+    previous_consumed_hours_role = project_status_role_values(previous_dict)[1] if previous_dict else None
+    consumed_hours_role_increment = project_status_consumed_role_increment(consumed_hours_role, previous_consumed_hours_role)
     progress_role = project_status_progress_values(latest_dict)
 
     project = {
@@ -2552,6 +2561,7 @@ def project_details(project_code: str):
         "assigned_hours_role": assigned_hours_role,
         "assigned_percentage_role": assigned_percentage_role,
         "consumed_hours_role": consumed_hours_role,
+        "consumed_hours_role_increment": consumed_hours_role_increment,
         "progress_role": progress_role,
         "deviation_role": deviation_role,
         "project_comment": normalize_comment(project_comment),
