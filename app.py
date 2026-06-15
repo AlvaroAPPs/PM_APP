@@ -246,8 +246,15 @@ def project_status_role_values(latest: dict) -> tuple[dict, dict, dict, dict]:
 
     assigned_hours_role = _allocate_rounded_total(raw_assigned, round(total_assigned), 1.0, prefer_non_pm=True)
     # If OTS cannot reconstruct any role consumption, assigned distribution is the safest normalization fallback.
-    consumed_source = raw_consumed if sum(raw_consumed.values()) else raw_assigned
-    consumed_hours_role = _allocate_rounded_total(consumed_source, total_consumed, 0.25)
+    stored_consumed = {
+        role: latest.get(f"status_consumed_hours_{role}")
+        for role in ROLES
+    }
+    if all(value is not None for value in stored_consumed.values()):
+        consumed_hours_role = {role: to_float(value) or 0.0 for role, value in stored_consumed.items()}
+    else:
+        consumed_source = raw_consumed if sum(raw_consumed.values()) else raw_assigned
+        consumed_hours_role = _allocate_rounded_total(consumed_source, total_consumed, 0.25)
     return assigned_hours_role, consumed_hours_role, deviation_role, assigned_percentage_role
 
 
@@ -294,6 +301,7 @@ def project_status_role_edit_values(latest: dict, payload: ProjectStatusRoleEdit
     for role in ROLES:
         theoretical = total_assigned * (percentage[role] / 100.0) * (progress[role] / 100.0)
         stage = _deviation_projection_stage(progress[role], latest.get("design_ok"), latest.get("validation_ok"))
+        # OTS deviation is undefined at zero theoretical hours; retain consumed hours and expose a safe zero deviation.
         role_deviation[role] = stage * (1.0 - consumed_hours_role[role] / theoretical) if theoretical else 0.0
     deviation_total = sum((percentage[role] / 100.0) * role_deviation[role] for role in ROLES)
 
@@ -312,6 +320,9 @@ def project_status_role_edit_values(latest: dict, payload: ProjectStatusRoleEdit
         "horas_teoricas": theoretical_total,
         "desviacion_h": deviation_h,
         "desviacion_pct": deviation_pct,
+        "status_consumed_hours_pm": consumed_hours_role["pm"],
+        "status_consumed_hours_consultant": consumed_hours_role["consultant"],
+        "status_consumed_hours_technician": consumed_hours_role["technician"],
     }
 
 
@@ -1223,6 +1234,17 @@ def ensure_details_columns(cur: psycopg.Cursor) -> None:
         ADD COLUMN IF NOT EXISTS consumed_hours_pm NUMERIC DEFAULT 0,
         ADD COLUMN IF NOT EXISTS consumed_hours_consultant NUMERIC DEFAULT 0,
         ADD COLUMN IF NOT EXISTS consumed_hours_technician NUMERIC DEFAULT 0;
+        """
+    )
+
+
+def ensure_project_snapshot_status_columns(cur: psycopg.Cursor) -> None:
+    cur.execute(
+        """
+        ALTER TABLE project_snapshot
+        ADD COLUMN IF NOT EXISTS status_consumed_hours_pm NUMERIC,
+        ADD COLUMN IF NOT EXISTS status_consumed_hours_consultant NUMERIC,
+        ADD COLUMN IF NOT EXISTS status_consumed_hours_technician NUMERIC;
         """
     )
 
@@ -2561,6 +2583,7 @@ def project_details(project_code: str):
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             ensure_details_columns(cur)
+            ensure_project_snapshot_status_columns(cur)
             cur.execute(
                 """
                 SELECT id, project_code, project_name, client, company, team, project_manager, consultant, status,
@@ -3539,6 +3562,7 @@ def project_phase_history(project_code: str):
 def update_project_status_role_values(project_id: int, payload: ProjectStatusRoleEditIn):
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
+            ensure_project_snapshot_status_columns(cur)
             cur.execute(
                 """
                 SELECT *
@@ -3573,6 +3597,9 @@ def update_project_status_role_values(project_id: int, payload: ProjectStatusRol
                     dist_pm = %(dist_pm)s, dist_c = %(dist_c)s, dist_e = %(dist_e)s,
                     deviation_td = %(deviation_td)s, deviation_pmd = %(deviation_pmd)s, deviation_cd = %(deviation_cd)s, deviation_ed = %(deviation_ed)s,
                     horas_teoricas = %(horas_teoricas)s, desviacion_h = %(desviacion_h)s, desviacion_pct = %(desviacion_pct)s,
+                    status_consumed_hours_pm = %(status_consumed_hours_pm)s,
+                    status_consumed_hours_consultant = %(status_consumed_hours_consultant)s,
+                    status_consumed_hours_technician = %(status_consumed_hours_technician)s,
                     progress_w_delta = %(progress_w_delta)s, horas_teoricas_delta = %(horas_teoricas_delta)s,
                     desviacion_pct_delta = %(desviacion_pct_delta)s, productividad_proyecto = %(productividad_proyecto)s
                 WHERE id = %(snapshot_id)s

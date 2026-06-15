@@ -20,7 +20,7 @@ class FakeStatusRoleCursor:
     def __exit__(self, *args):
         return False
 
-    def execute(self, query, payload):
+    def execute(self, query, payload=None):
         if "UPDATE project_snapshot" in query:
             self.saved = payload
 
@@ -164,6 +164,38 @@ class ProjectStatusRoleValuesTests(unittest.TestCase):
         self.assertEqual(values["dist_pm"], 0.25)
         self.assertEqual(values["progress_c"], 50)
 
+    def test_role_edits_preserve_consumed_hours_when_progress_is_zero(self):
+        latest = {
+            "ordered_total": 100,
+            "real_hours": 40,
+            "dist_pm": 20,
+            "dist_c": 50,
+            "dist_e": 30,
+            "progress_pm": 50,
+            "progress_c": 40,
+            "progress_e": 100,
+            "deviation_pmd": 0,
+            "deviation_cd": 0,
+            "deviation_ed": 0,
+            "design_ok": True,
+            "validation_ok": True,
+        }
+        original_consumed = app.project_status_role_values(latest)[1]
+        payload = app.ProjectStatusRoleEditIn(
+            progress_pm=0,
+            progress_consultant=60,
+            progress_technician=80,
+            percentage_pm=30,
+            percentage_consultant=40,
+            percentage_technician=30,
+        )
+
+        values = app.project_status_role_edit_values(latest, payload)
+        updated = {**latest, **values}
+
+        self.assertEqual(app.project_status_role_values(updated)[1], original_consumed)
+        self.assertEqual(values["deviation_pmd"], 0.0)
+
     def test_role_edits_are_persisted_to_latest_snapshot(self):
         connection = FakeStatusRoleConnection()
         payload = app.ProjectStatusRoleEditIn(
@@ -183,6 +215,7 @@ class ProjectStatusRoleValuesTests(unittest.TestCase):
         self.assertEqual(connection.cursor_instance.saved["snapshot_id"], 10)
         self.assertEqual(connection.cursor_instance.saved["progress_w"], 61.5)
         self.assertEqual(connection.cursor_instance.saved["dist_pm"], 0.25)
+        self.assertEqual(connection.cursor_instance.saved["status_consumed_hours_pm"], 6.75)
 
     def test_role_edits_require_percentages_to_total_100(self):
         payload = app.ProjectStatusRoleEditIn(
