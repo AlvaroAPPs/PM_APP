@@ -154,7 +154,13 @@ class ProjectStatusRoleValuesTests(unittest.TestCase):
         self.assertEqual(values["horas_teoricas"], 61.5)
         self.assertAlmostEqual(values["desviacion_h"], -21.5)
         self.assertAlmostEqual(values["desviacion_pct"], -34.959349593495936)
-        self.assertAlmostEqual(values["deviation_td"], 34.959349593495936)
+        expected_total_deviation = (
+            0.25 * values["deviation_pmd"]
+            + 0.45 * values["deviation_cd"]
+            + 0.30 * values["deviation_ed"]
+        )
+        self.assertAlmostEqual(values["deviation_td"], expected_total_deviation)
+        self.assertAlmostEqual(values["deviation_td"], 27.575)
         self.assertEqual(values["dist_pm"], 0.25)
         self.assertEqual(values["progress_c"], 50)
 

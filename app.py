@@ -289,13 +289,13 @@ def project_status_role_edit_values(latest: dict, payload: ProjectStatusRoleEdit
     theoretical_total = total_assigned * (weighted_progress / 100.0)
     deviation_h = total_consumed - theoretical_total
     deviation_pct = (deviation_h / theoretical_total) * 100.0 if theoretical_total else None
-    deviation_total = ((theoretical_total - total_consumed) / theoretical_total) * 100.0 if theoretical_total else 0.0
 
     role_deviation = {}
     for role in ROLES:
         theoretical = total_assigned * (percentage[role] / 100.0) * (progress[role] / 100.0)
         stage = _deviation_projection_stage(progress[role], latest.get("design_ok"), latest.get("validation_ok"))
         role_deviation[role] = stage * (1.0 - consumed_hours_role[role] / theoretical) if theoretical else 0.0
+    deviation_total = sum((percentage[role] / 100.0) * role_deviation[role] for role in ROLES)
 
     return {
         "progress_w": weighted_progress,
