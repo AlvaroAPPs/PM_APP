@@ -4,7 +4,9 @@ import types
 import unittest
 
 
-if "pandas" not in sys.modules:
+try:
+    import pandas  # noqa: F401
+except ImportError:
     pandas_stub = types.ModuleType("pandas")
 
     def isna(value):
@@ -19,7 +21,9 @@ if "pandas" not in sys.modules:
     pandas_stub.to_datetime = None
     sys.modules["pandas"] = pandas_stub
 
-if "psycopg" not in sys.modules:
+try:
+    import psycopg  # noqa: F401
+except ImportError:
     psycopg_stub = types.ModuleType("psycopg")
     psycopg_stub.Cursor = object
     sys.modules["psycopg"] = psycopg_stub
@@ -59,6 +63,26 @@ class ImporterDistributionFieldTests(unittest.TestCase):
         self.assertEqual(snap["dist_c"], 10.5)
         self.assertEqual(snap["dist_pm"], 20.0)
         self.assertEqual(snap["dist_e"], 30.0)
+
+    def test_map_row_accepts_decimal_comma_and_percent_distribution_values(self):
+        _, snap = importer.map_row(
+            {
+                "project_code": "1001",
+                "ordered_n": 100,
+                "ordered_e": 0,
+                "progress_c": 50,
+                "progress_pm": 50,
+                "progress_e": 50,
+                "dist_c": "33,33%",
+                "dist_pm": "33,33%",
+                "dist_e": "33,34%",
+            }
+        )
+
+        self.assertEqual(snap["dist_c"], 33.33)
+        self.assertEqual(snap["dist_pm"], 33.33)
+        self.assertEqual(snap["dist_e"], 33.34)
+        self.assertAlmostEqual(snap["horas_teoricas"], 50.0)
 
 
     def test_role_distribution_values_drive_deviation_calculation(self):

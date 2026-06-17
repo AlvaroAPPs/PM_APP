@@ -73,6 +73,7 @@ class ProjectCommentIn(BaseModel):
 
 TASK_TYPES = {"TASK", "PP"}
 TASK_OWNER_ROLES = {"PM", "CONSULTORIA", "TECH", "COMERCIAL", "CLIENTE"}
+ROLE_PERCENTAGE_TOTAL_TOLERANCE = 0.05
 TASK_STATUSES = {"OPEN", "IN_PROGRESS", "PAUSED", "CLOSED"}
 NOTE_TYPES = {"GENERAL", "REUNION"}
 GENERAL_INTERNAL_PROJECT_CODE = "AMPLIACIONES_VARIOS"
@@ -286,7 +287,7 @@ def project_status_role_edit_values(latest: dict, payload: ProjectStatusRoleEdit
     }
     if any(not 0 <= value <= 100 for value in (*progress.values(), *percentage.values())):
         raise ValueError("Role progress and percentages must be between 0 and 100")
-    if abs(sum(percentage.values()) - 100.0) > 0.01:
+    if abs(sum(percentage.values()) - 100.0) > ROLE_PERCENTAGE_TOTAL_TOLERANCE:
         raise ValueError("Assigned role percentages must total 100")
 
     _, consumed_hours_role, _, _ = project_status_role_values(latest)

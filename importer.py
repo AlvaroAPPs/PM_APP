@@ -55,8 +55,14 @@ def _to_float(v) -> Optional[float]:
         return None
     if isinstance(v, float) and pd.isna(v):
         return None
-    if isinstance(v, str) and v.strip() == "":
-        return None
+    if isinstance(v, str):
+        v = v.strip()
+        if v == "":
+            return None
+        if v.endswith("%"):
+            v = v[:-1].strip()
+        if "," in v and "." not in v:
+            v = v.replace(",", ".")
     try:
         n = float(v)
         if pd.isna(n):

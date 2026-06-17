@@ -430,7 +430,7 @@ async function saveProjectStatusRoleValues() {
     alert("Los avances y porcentajes deben estar entre 0 y 100.");
     return;
   }
-  if (Math.abs(payload.percentage_pm + payload.percentage_consultant + payload.percentage_technician - 100) > 0.01) {
+  if (Math.abs(payload.percentage_pm + payload.percentage_consultant + payload.percentage_technician - 100) > 0.05) {
     alert("Los porcentajes asignados por rol deben sumar 100.");
     return;
   }

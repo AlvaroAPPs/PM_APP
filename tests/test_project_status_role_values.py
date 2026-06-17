@@ -230,6 +230,21 @@ class ProjectStatusRoleValuesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must total 100"):
             app.project_status_role_edit_values({}, payload)
 
+    def test_role_edits_accept_decimal_percentages_with_rounding_difference(self):
+        payload = app.ProjectStatusRoleEditIn(
+            progress_pm=50,
+            progress_consultant=50,
+            progress_technician=50,
+            percentage_pm=33.33,
+            percentage_consultant=33.33,
+            percentage_technician=33.33,
+        )
+
+        values = app.project_status_role_edit_values({"ordered_total": 100, "real_hours": 10}, payload)
+
+        self.assertAlmostEqual(values["progress_w"], 49.995)
+        self.assertAlmostEqual(values["dist_pm"], 0.3333)
+
     def test_pm_deviation_uses_role_progress_weight_and_consumed_hours(self):
         deviation = app.project_status_pm_deviation(
             {
