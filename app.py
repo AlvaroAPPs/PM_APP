@@ -73,7 +73,7 @@ class ProjectCommentIn(BaseModel):
 
 TASK_TYPES = {"TASK", "PP"}
 TASK_OWNER_ROLES = {"PM", "CONSULTORIA", "TECH", "COMERCIAL", "CLIENTE"}
-ROLE_PERCENTAGE_TOTAL_TOLERANCE = 0.05
+ROLE_PERCENTAGE_TOTAL_TOLERANCE = 0.001
 TASK_STATUSES = {"OPEN", "IN_PROGRESS", "PAUSED", "CLOSED"}
 NOTE_TYPES = {"GENERAL", "REUNION"}
 GENERAL_INTERNAL_PROJECT_CODE = "AMPLIACIONES_VARIOS"
@@ -311,9 +311,9 @@ def project_status_role_edit_values(latest: dict, payload: ProjectStatusRoleEdit
         "progress_pm": progress["pm"],
         "progress_c": progress["consultant"],
         "progress_e": progress["technician"],
-        "dist_pm": percentage["pm"] / 100.0,
-        "dist_c": percentage["consultant"] / 100.0,
-        "dist_e": percentage["technician"] / 100.0,
+        "dist_pm": percentage["pm"],
+        "dist_c": percentage["consultant"],
+        "dist_e": percentage["technician"],
         "deviation_td": deviation_total,
         "deviation_pmd": role_deviation["pm"],
         "deviation_cd": role_deviation["consultant"],
@@ -1240,6 +1240,14 @@ def ensure_details_columns(cur: psycopg.Cursor) -> None:
 
 
 def ensure_project_snapshot_status_columns(cur: psycopg.Cursor) -> None:
+    cur.execute(
+        """
+        ALTER TABLE project_snapshot
+        ALTER COLUMN dist_pm TYPE NUMERIC USING dist_pm::numeric,
+        ALTER COLUMN dist_c TYPE NUMERIC USING dist_c::numeric,
+        ALTER COLUMN dist_e TYPE NUMERIC USING dist_e::numeric;
+        """
+    )
     cur.execute(
         """
         ALTER TABLE project_snapshot

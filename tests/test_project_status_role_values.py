@@ -161,7 +161,7 @@ class ProjectStatusRoleValuesTests(unittest.TestCase):
         )
         self.assertAlmostEqual(values["deviation_td"], expected_total_deviation)
         self.assertAlmostEqual(values["deviation_td"], 27.575)
-        self.assertEqual(values["dist_pm"], 0.25)
+        self.assertEqual(values["dist_pm"], 25)
         self.assertEqual(values["progress_c"], 50)
 
     def test_role_edits_preserve_consumed_hours_when_progress_is_zero(self):
@@ -214,7 +214,7 @@ class ProjectStatusRoleValuesTests(unittest.TestCase):
         self.assertTrue(connection.committed)
         self.assertEqual(connection.cursor_instance.saved["snapshot_id"], 10)
         self.assertEqual(connection.cursor_instance.saved["progress_w"], 61.5)
-        self.assertEqual(connection.cursor_instance.saved["dist_pm"], 0.25)
+        self.assertEqual(connection.cursor_instance.saved["dist_pm"], 25)
         self.assertEqual(connection.cursor_instance.saved["status_consumed_hours_pm"], 6.75)
 
     def test_role_edits_require_percentages_to_total_100(self):
@@ -237,13 +237,13 @@ class ProjectStatusRoleValuesTests(unittest.TestCase):
             progress_technician=50,
             percentage_pm=33.33,
             percentage_consultant=33.33,
-            percentage_technician=33.33,
+            percentage_technician=33.34,
         )
 
         values = app.project_status_role_edit_values({"ordered_total": 100, "real_hours": 10}, payload)
 
-        self.assertAlmostEqual(values["progress_w"], 49.995)
-        self.assertAlmostEqual(values["dist_pm"], 0.3333)
+        self.assertAlmostEqual(values["progress_w"], 50.0)
+        self.assertAlmostEqual(values["dist_pm"], 33.33)
 
     def test_pm_deviation_uses_role_progress_weight_and_consumed_hours(self):
         deviation = app.project_status_pm_deviation(
