@@ -1956,8 +1956,10 @@ def fetch_project_list(
                        COALESCE(task_counts.task_open_count, 0) AS task_open_count,
                        COALESCE(task_counts.pp_open_count, 0) AS pp_open_count,
                        COALESCE(notes_counts.notes_count, 0) AS notes_count,
-                       COALESCE(minutes_counts.minutes_count, 0) AS minutes_count
+                       COALESCE(minutes_counts.minutes_count, 0) AS minutes_count,
+                       h.moved_to_historical_week
                 FROM projects p
+                LEFT JOIN projects_historical h ON UPPER(BTRIM(h.project_code)) = UPPER(BTRIM(p.project_code))
                 LEFT JOIN LATERAL (
                     SELECT ordered_total,
                            ordered_n,
@@ -2067,6 +2069,7 @@ def fetch_project_list(
                         "pp_count": int(row[13] or 0),
                         "notes_count": int(row[14] or 0),
                         "minutes_count": int(row[15] or 0),
+                        "moved_to_historical_week": row[16],
                         "indicator_status": overall_status,
                     }
                 )
