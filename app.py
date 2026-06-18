@@ -1922,7 +1922,9 @@ def fetch_project_list(
 ) -> list[dict]:
     where_clauses = []
     params: list[object] = []
-    if not include_historical:
+    if include_historical:
+        where_clauses.append("COALESCE(p.is_historical, FALSE) = TRUE")
+    else:
         where_clauses.append("COALESCE(p.is_historical, FALSE) = FALSE")
     if pm_name:
         where_clauses.append("p.project_manager = %s")

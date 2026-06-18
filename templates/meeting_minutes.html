@@ -33,7 +33,7 @@
               <select id="project_id" class="form-select">
                 <option value="">Sin asociar</option>
                 {% for project in projects %}
-                <option value="{{ project.id }}">{{ project.project_code }} - {{ project.project_name }}</option>
+                <option value="{{ project.id }}" {% if selected_project_id == project.id %}selected{% endif %}>{{ project.project_code }} - {{ project.project_name }}</option>
                 {% endfor %}
               </select>
             </div>

@@ -87,7 +87,12 @@ def _parse_date(value: str | None) -> date | None:
 
 
 @router.get("/meeting-minutes", response_class=HTMLResponse)
-def meeting_minutes_page(request: Request, minutes_id: int | None = None):
+def meeting_minutes_page(
+    request: Request,
+    minutes_id: int | None = None,
+    project_id: str | None = Query(default=None),
+):
+    selected_project_id = _parse_optional_int(project_id)
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             ensure_meeting_minutes_storage(cur)
@@ -98,8 +103,10 @@ def meeting_minutes_page(request: Request, minutes_id: int | None = None):
                 SELECT id, project_code, project_name
                 FROM projects
                 WHERE COALESCE(is_historical, FALSE) = FALSE
+                   OR (%s IS NOT NULL AND id = %s)
                 ORDER BY project_name ASC, project_code ASC
-                """
+                """,
+                (selected_project_id, selected_project_id),
             )
             projects = [
                 {"id": int(row[0]), "project_code": row[1], "project_name": row[2]}
@@ -141,7 +148,12 @@ def meeting_minutes_page(request: Request, minutes_id: int | None = None):
                 }
     return templates.TemplateResponse(
         "meeting_minutes.html",
-        {"request": request, "projects": projects, "existing_minutes": existing_minutes},
+        {
+            "request": request,
+            "projects": projects,
+            "existing_minutes": existing_minutes,
+            "selected_project_id": selected_project_id,
+        },
     )
 
 
