@@ -103,11 +103,13 @@ function setActionsEnabled(isEnabled) {
   const actCharts = $("actCharts");
   const actReport = $("actReport");
   const btnExportPdf = $("btnExportPdf");
+  const btnOpenChart = $("btnOpenChart");
   const reportFormat = $("reportFormat");
   if (actTasks) actTasks.disabled = !isEnabled;
   if (actCharts) actCharts.disabled = !isEnabled;
   if (actReport) actReport.disabled = !isEnabled;
   if (btnExportPdf) btnExportPdf.disabled = !isEnabled;
+  if (btnOpenChart) btnOpenChart.disabled = !isEnabled;
   if (reportFormat) reportFormat.disabled = !isEnabled;
 }
 
@@ -210,15 +212,16 @@ function updateTaskCounterLinks() {
   notesLink.href = `/calendar?notes=1&projectId=${encodeURIComponent(String(currentProjectId))}`;
 }
 
+function getReturnToTarget() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("return_to") || "/";
+}
+
 function configureTopBackButton() {
   const btn = $("topBackBtn");
   if (!btn) return;
   btn.addEventListener("click", () => {
-    if (window.history.length > 1) {
-      window.history.back();
-    } else {
-      window.location.href = "/";
-    }
+    window.location.href = getReturnToTarget();
   });
 }
 
@@ -639,22 +642,29 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  function openProjectCharts() {
+    if (!currentProjectCode) {
+      alert("Carga un proyecto antes de continuar.");
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set("code", currentProjectCode);
+    if (currentProjectName) params.set("name", currentProjectName);
+    if (Number.isFinite(currentProjectTotalHours)) {
+      params.set("totalHours", String(currentProjectTotalHours));
+    }
+    params.set("return_to", getReturnToTarget());
+    window.location.href = `/projects/${encodeURIComponent(currentProjectCode)}/indicators?${params.toString()}`;
+  }
+
   const actCharts = $("actCharts");
   if (actCharts) {
-    actCharts.addEventListener("click", () => {
-      if (!currentProjectCode) {
-        alert("Carga un proyecto antes de continuar.");
-        return;
-      }
-      const params = new URLSearchParams();
-      params.set("code", currentProjectCode);
-      if (currentProjectName) params.set("name", currentProjectName);
-      if (Number.isFinite(currentProjectTotalHours)) {
-        params.set("totalHours", String(currentProjectTotalHours));
-      }
-      params.set("return_to", `${window.location.pathname}${window.location.search}`);
-      window.location.href = `/projects/${encodeURIComponent(currentProjectCode)}/indicators?${params.toString()}`;
-    });
+    actCharts.addEventListener("click", openProjectCharts);
+  }
+
+  const btnOpenChart = $("btnOpenChart");
+  if (btnOpenChart) {
+    btnOpenChart.addEventListener("click", openProjectCharts);
   }
 
   const actReport = $("actReport");

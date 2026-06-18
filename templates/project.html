@@ -18,8 +18,8 @@
     .shadow-soft { box-shadow: 0 10px 30px rgba(16,24,40,.06); }
 
     /* Layout */
-    .layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; }
-    .sidebar { position: sticky; top: 16px; }
+    .layout { display: block; }
+    .sidebar { display: none; }
     .sidebar .list-group-item { border-radius: 12px; border: 1px solid #e7e9f0; }
     .sidebar .list-group-item + .list-group-item { margin-top: 10px; }
     .action-title { font-weight: 700; }
@@ -61,6 +61,9 @@
         </select>
         <button id="btnExportPdf" class="btn btn-outline-secondary" disabled>
           <i class="bi bi-file-earmark-arrow-down me-1"></i> Generar informe
+        </button>
+        <button id="btnOpenChart" class="btn btn-outline-secondary" disabled>
+          <i class="bi bi-graph-up me-1"></i> Gráfico
         </button>
       </div>
     </div>

@@ -905,18 +905,21 @@ async function init() {
   if (projectCodeEl && projectCode) {
     projectCodeEl.textContent = projectCode;
   }
+  const params = new URLSearchParams(window.location.search);
+  const returnTo = params.get("return_to") || "/";
   if (backLink && projectCode) {
-    const params = new URLSearchParams(window.location.search);
-    const returnTo = params.get("return_to");
-    const fallbackParams = new URLSearchParams();
-    fallbackParams.set("q", projectCode);
-    const fallbackUrl = `/estado-proyecto?${fallbackParams.toString()}`;
-    const targetUrl = returnTo || fallbackUrl;
-    backLink.href = targetUrl;
+    backLink.href = returnTo;
     backLink.addEventListener("click", (event) => {
       event.preventDefault();
-      window.location.href = targetUrl;
+      window.location.href = returnTo;
     });
+  }
+  const statusLink = $("backToProjectStatus");
+  if (statusLink && projectCode) {
+    const statusParams = new URLSearchParams();
+    statusParams.set("q", projectCode);
+    statusParams.set("return_to", returnTo);
+    statusLink.href = `/estado-proyecto?${statusParams.toString()}`;
   }
   if (!projectCode) return;
 
