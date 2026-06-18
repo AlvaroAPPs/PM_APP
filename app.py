@@ -1668,8 +1668,29 @@ def stopped_unplanned_row_class(is_stopped: bool, is_unplanned: bool) -> str:
 
 # ---------- WEB ----------
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+def index(
+    request: Request,
+    q: str = Query(""),
+    my_projects: bool = Query(False),
+    include_historical: bool = Query(False),
+):
+    pm_name = "Alvaro Blanco Pérez"
+    projects = fetch_project_list(
+        search_query=q,
+        pm_name=pm_name if my_projects else None,
+        include_historical=include_historical,
+    )
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "projects": projects,
+            "pm_name": pm_name,
+            "q": (q or "").strip(),
+            "my_projects": my_projects,
+            "include_historical": include_historical,
+        },
+    )
 
 
 @app.get("/estado-proyecto", response_class=HTMLResponse)
@@ -1894,14 +1915,30 @@ def project_indicators(request: Request, project_code: str):
 def importacion(request: Request):
     return templates.TemplateResponse("import.html", {"request": request})
 
-@app.get("/menu-personal", response_class=HTMLResponse)
-def menu_personal(request: Request):
-    pm_name = "Alvaro Blanco Pérez"
+def fetch_project_list(
+    search_query: str = "",
+    pm_name: str | None = None,
+    include_historical: bool = False,
+) -> list[dict]:
+    where_clauses = []
+    params: list[object] = []
+    if not include_historical:
+        where_clauses.append("COALESCE(p.is_historical, FALSE) = FALSE")
+    if pm_name:
+        where_clauses.append("p.project_manager = %s")
+        params.append(pm_name)
+    query = (search_query or "").strip()
+    if query:
+        where_clauses.append("(p.project_name ILIKE %s OR p.project_code ILIKE %s)")
+        like = f"%{query}%"
+        params.extend([like, like])
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             ensure_meeting_minutes_storage(cur)
             cur.execute(
-                """
+                f"""
                 SELECT p.id,
                        p.project_code,
                        p.project_name,
@@ -1948,16 +1985,13 @@ def menu_personal(request: Request):
                     FROM meeting_minutes m
                     WHERE m.project_id = p.id
                 ) minutes_counts ON TRUE
-                WHERE p.project_manager = %s
-                  AND COALESCE(p.is_historical, FALSE) = FALSE
+                {where_sql}
                 """,
-                (pm_name,),
+                params,
             )
             rows = cur.fetchall()
 
-    projects = []
-    with psycopg.connect(DB_DSN) as conn:
-        with conn.cursor() as cur:
+            projects = []
             for row in rows:
                 project_id = row[0]
                 cur.execute(
@@ -1969,7 +2003,6 @@ def menu_personal(request: Request):
                     """,
                     (project_id,),
                 )
-                weekly_rows = cur.fetchall()
                 weekly = [
                     {
                         "progress_w": r[0],
@@ -1977,7 +2010,7 @@ def menu_personal(request: Request):
                         "real_hours": r[2],
                         "horas_teoricas": r[3],
                     }
-                    for r in weekly_rows
+                    for r in cur.fetchall()
                 ]
 
                 cur.execute(
@@ -1990,7 +2023,6 @@ def menu_personal(request: Request):
                     """,
                     (project_id,),
                 )
-                phase_rows = cur.fetchall()
                 phases_history = [
                     {
                         "date_kickoff": r[0],
@@ -2000,7 +2032,7 @@ def menu_personal(request: Request):
                         "date_reception": r[4],
                         "date_end": r[5],
                     }
-                    for r in phase_rows
+                    for r in cur.fetchall()
                 ]
 
                 productivity_status = compute_productivity_indicator(weekly)
@@ -2037,8 +2069,13 @@ def menu_personal(request: Request):
                     }
                 )
 
-    projects = sorted(projects, key=lambda item: (item["project_name"] or "").lower())
+    return sorted(projects, key=lambda item: (item["project_name"] or "").lower())
 
+
+@app.get("/menu-personal", response_class=HTMLResponse)
+def menu_personal(request: Request):
+    pm_name = "Alvaro Blanco Pérez"
+    projects = fetch_project_list(pm_name=pm_name)
     return templates.TemplateResponse(
         "menu_personal.html",
         {"request": request, "pm_name": pm_name, "projects": projects},

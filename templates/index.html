@@ -1,105 +1,182 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Programa PM</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <style>
-    body { background:#f6f7fb; }
+    body { background: #f6f7fb; }
     .card { border: 1px solid #e7e9f0; border-radius: 16px; }
     .shadow-soft { box-shadow: 0 10px 30px rgba(16,24,40,.06); }
-    .muted { color:#6b7280; }
+    .muted { color: #6b7280; }
+    .page-shell { min-height: 100vh; }
+    .personal-layout {
+      min-height: calc(100vh - 240px);
+      display: flex;
+      flex-direction: column;
+    }
+    .table-wrapper {
+      flex: 1;
+      min-height: 460px;
+      max-height: calc(100vh - 330px);
+      overflow: auto;
+    }
+    .count-link { text-decoration: none; }
+    .count-link:hover { text-decoration: underline; }
+    @media (max-width: 991.98px) {
+      .personal-layout { min-height: 0; }
+      .table-wrapper { max-height: none; min-height: 0; }
+    }
+    .table-wrapper thead th {
+      position: sticky;
+      top: 0;
+      background: #f6f7fb;
+      z-index: 1;
+    }
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+      border: 1px solid #e5e7eb;
+    }
+    .status-dot.status-red { background: #dc3545; }
+    .status-dot.status-orange { background: #f59e0b; }
+    .status-dot.status-green { background: #16a34a; }
+    .project-row { cursor: default; }
+    .project-row:hover { background: #f3f4f6; }
+    .project-actions {
+      display: inline-flex;
+      gap: .35rem;
+      justify-content: flex-end;
+      width: 100%;
+    }
   </style>
 </head>
 <body>
-  <div class="container py-5">
-    <div class="mb-4">
-      <h1 class="fw-bold mb-1">Programa PM</h1>
-      <div class="muted">Menú principal</div>
+  <div class="container-fluid page-shell py-4 px-3 px-xl-4">
+    <div class="mb-3">
+      <h1 class="fw-bold mb-0">Programa PM</h1>
+      <div class="muted">Listado de proyectos</div>
     </div>
 
-    <div class="row g-3">
-      <div class="col-12 col-md-6 col-lg-4">
-        <a class="text-decoration-none" href="/estado-proyecto">
-          <div class="card shadow-soft">
-            <div class="card-body">
-              <div class="fw-bold">Estado proyecto</div>
-              <div class="muted mt-1">Ver KPIs, fechas y snapshot semanal por código.</div>
-            </div>
-          </div>
-        </a>
-      </div>
-
-      <div class="col-12 col-md-6 col-lg-4">
-        <a class="text-decoration-none" href="/menu-personal">
-          <div class="card shadow-soft">
-            <div class="card-body">
-              <div class="fw-bold">Menu personal</div>
-              <div class="muted mt-1">Listado de proyectos por PM.</div>
-            </div>
-          </div>
-        </a>
-      </div>
-
-      <div class="col-12 col-md-6 col-lg-4">
-        <a class="text-decoration-none" href="/consultas">
-          <div class="card shadow-soft">
-            <div class="card-body">
-              <div class="fw-bold">Consultas</div>
-              <div class="muted mt-1">Explora desviaciones y filtros.</div>
-            </div>
-          </div>
-        </a>
-      </div>
-
-      <div class="col-12 col-md-6 col-lg-4">
-        <a class="text-decoration-none" href="/tasks">
-          <div class="card shadow-soft">
-            <div class="card-body">
-              <div class="fw-bold">Tasks</div>
-              <div class="muted mt-1">Gestión de tareas y PP abiertas/cerradas.</div>
-            </div>
-          </div>
-        </a>
-      </div>
-
-      <div class="col-12 col-md-6 col-lg-4">
-        <a class="text-decoration-none" href="/historicals">
-          <div class="card shadow-soft">
-            <div class="card-body">
-              <div class="fw-bold">Históricos</div>
-              <div class="muted mt-1">Consulta proyectos archivados.</div>
-            </div>
-          </div>
-        </a>
-      </div>
-
-      <div class="col-12 col-md-6 col-lg-4">
-        <a class="text-decoration-none" href="/meeting-minutes/list">
-          <div class="card shadow-soft">
-            <div class="card-body">
-              <div class="fw-bold">Actas de reunión</div>
-              <div class="muted mt-1">Genera actas en español o inglés y exporta a DOCX.</div>
-            </div>
-          </div>
-        </a>
-      </div>
-      <div class="col-12 col-md-6 col-lg-4">
-        <a class="text-decoration-none" href="/importacion">
-          <div class="card shadow-soft">
-            <div class="card-body">
-              <div class="fw-bold">Importación</div>
-              <div class="muted mt-1">Subir Excel y guardar snapshots semanales.</div>
-            </div>
-          </div>
-        </a>
-      </div>
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <a class="btn btn-outline-primary" href="/consultas">Consultas</a>
+      <a class="btn btn-outline-primary" href="/historicals">Históricos</a>
+      <a class="btn btn-outline-primary" href="/tasks">Tasks</a>
+      <a class="btn btn-outline-primary" href="/calendar">Calendar</a>
+      <a class="btn btn-dark" href="/meeting-minutes">Nuevo acta</a>
     </div>
 
-    <div class="mt-4 muted small">
-      API docs: <a href="/docs">/docs</a>
+    <form method="get" action="/" class="card shadow-soft mb-3" id="projectFiltersForm">
+      <div class="card-body row g-3 align-items-end">
+        <div class="col-12 col-lg-5">
+          <label class="form-label" for="projectSearch">Buscar proyecto</label>
+          <input
+            id="projectSearch"
+            class="form-control"
+            type="search"
+            name="q"
+            value="{{ q }}"
+            placeholder="Nombre o código del proyecto"
+          >
+          <div class="form-text">Pulsa Enter para buscar por coincidencia parcial.</div>
+        </div>
+        <div class="col-12 col-sm-6 col-lg-3">
+          <div class="form-check">
+            <input class="form-check-input auto-submit-filter" type="checkbox" id="myProjects" name="my_projects" value="true" {% if my_projects %}checked{% endif %}>
+            <label class="form-check-label" for="myProjects">Mis proyectos</label>
+          </div>
+          <div class="form-text">PM: {{ pm_name }}</div>
+        </div>
+        <div class="col-12 col-sm-6 col-lg-3">
+          <div class="form-check">
+            <input class="form-check-input auto-submit-filter" type="checkbox" id="includeHistorical" name="include_historical" value="true" {% if include_historical %}checked{% endif %}>
+            <label class="form-check-label" for="includeHistorical">Incluir históricos</label>
+          </div>
+        </div>
+        <div class="col-12 col-lg-1 d-grid">
+          <button class="btn btn-primary" type="submit">Buscar</button>
+        </div>
+      </div>
+    </form>
+
+    <div class="card shadow-soft personal-layout">
+      <div class="card-body d-flex flex-column">
+        <div class="table-wrapper">
+          <table class="table table-hover align-middle mb-0">
+            <thead>
+              <tr>
+                <th style="width: 44px;">Indicador</th>
+                <th>Nombre del proyecto</th>
+                <th>Codigo</th>
+                <th>Horas totales</th>
+                <th>Horas reales</th>
+                <th>Desviación</th>
+                <th>% Avance</th>
+                <th>% Facturación</th>
+                <th class="text-end text-nowrap">Nº Tasks</th>
+                <th class="text-end text-nowrap">Nº PP</th>
+                <th class="text-end text-nowrap">Nº Notes</th>
+                <th class="text-end text-nowrap">Nº Actas</th>
+                <th class="text-end" style="width: 170px;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for project in projects %}
+              <tr class="project-row">
+                <td><span class="status-dot status-{{ project.indicator_status }}" aria-label="{{ project.indicator_status }}"></span></td>
+                <td>{{ project.project_name }}</td>
+                <td class="text-nowrap">{{ project.project_code }}</td>
+                <td class="text-end">{% if project.ordered_total is not none %}{{ "%.2f"|format(project.ordered_total) }}{% else %}—{% endif %}</td>
+                <td class="text-end">{% if project.real_hours is not none %}{{ "%.2f"|format(project.real_hours) }}{% else %}—{% endif %}</td>
+                <td class="text-end">{% if project.desviacion_pct is not none %}{{ "%.2f"|format(project.desviacion_pct) }}%{% else %}—{% endif %}</td>
+                <td class="text-end">{% if project.progress_w is not none %}{{ "%.2f"|format(project.progress_w) }}%{% else %}—{% endif %}</td>
+                <td class="text-end">{% if project.payment_inv is not none %}{{ "%.2f"|format(project.payment_inv) }}%{% else %}—{% endif %}</td>
+                <td class="text-end"><a class="count-link" href="/tasks?project_id={{ project.project_id }}&project_code={{ project.project_code | urlencode }}&type=TASK">{{ project.tasks_count }}</a></td>
+                <td class="text-end"><a class="count-link" href="/tasks?project_id={{ project.project_id }}&project_code={{ project.project_code | urlencode }}&type=PP">{{ project.pp_count }}</a></td>
+                <td class="text-end"><a class="count-link" href="/calendar?notes=1&projectId={{ project.project_id }}">{{ project.notes_count }}</a></td>
+                <td class="text-end"><a class="count-link" href="/meeting-minutes/list?project_id={{ project.project_id }}">{{ project.minutes_count }}</a></td>
+                <td class="text-end">
+                  <div class="project-actions">
+                    <a href="/estado-proyecto?q={{ project.project_code }}" class="btn btn-sm btn-outline-secondary project-action-link" title="Ir al detalle del proyecto" aria-label="Ir al detalle del proyecto"><i class="bi bi-box-arrow-up-right"></i></a>
+                    <a href="/projects/{{ project.project_code | urlencode }}/indicators?return_to=%2F&totalHours={{ (project.ordered_total if project.ordered_total is not none else 0) | urlencode }}" class="btn btn-sm btn-outline-secondary project-action-link" title="Ir a indicadores y evolución" aria-label="Ir a indicadores y evolución"><i class="bi bi-graph-up"></i></a>
+                    <div class="btn-group">
+                      <button type="button" class="btn btn-sm btn-outline-dark dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">Crear</button>
+                      <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item project-action-link" href="/tasks?new=1&project_id={{ project.project_id }}&project_code={{ project.project_code | urlencode }}&lock_project=1&type=TASK">Crear Task</a></li>
+                        <li><a class="dropdown-item project-action-link" href="/tasks?new=1&project_id={{ project.project_id }}&project_code={{ project.project_code | urlencode }}&lock_project=1&type=PP">Crear PP</a></li>
+                        <li><a class="dropdown-item project-action-link" href="/calendar?create_note=1&projectId={{ project.project_id }}">Crear Note</a></li>
+                      </ul>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="13" class="muted">No hay proyectos.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
+
+  <script>
+    document.querySelectorAll(".project-action-link").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.stopPropagation();
+      });
+    });
+
+    document.querySelectorAll(".auto-submit-filter").forEach((input) => {
+      input.addEventListener("change", () => {
+        document.getElementById("projectFiltersForm").requestSubmit();
+      });
+    });
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
