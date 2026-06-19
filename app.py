@@ -1677,27 +1677,27 @@ def index(
 ):
     pm_name = "Alvaro Blanco Pérez"
     team_options = [
-        {"label": "BD1", "value": "BD1", "teams": ["Badajoz T1"]},
-        {"label": "BD2", "value": "BD2", "teams": ["Badajoz T2", "Badajoc T2"]},
-        {"label": "T1", "value": "T1", "teams": ["Ampliaciones T1"]},
-        {"label": "T2", "value": "T2", "teams": ["Ampliaciones T2"]},
-        {"label": "T3", "value": "T3", "teams": ["Ampliaciones T3"]},
-        {"label": "T4", "value": "T4", "teams": ["Ampliaciones T4"]},
+        {"label": "BD1", "value": "BD1", "patterns": ["BD1", "%Badajo%T1%"]},
+        {"label": "BD2", "value": "BD2", "patterns": ["BD2", "%Badajo%T2%"]},
+        {"label": "T1", "value": "T1", "patterns": ["T1", "%Ampliaciones%T1%"]},
+        {"label": "T2", "value": "T2", "patterns": ["T2", "%Ampliaciones%T2%"]},
+        {"label": "T3", "value": "T3", "patterns": ["T3", "%Ampliaciones%T3%"]},
+        {"label": "T4", "value": "T4", "patterns": ["T4", "%Ampliaciones%T4%"]},
     ]
     team_options_by_value = {option["value"]: option for option in team_options}
     selected_team_filters = [
         value for value in team_filter if value in team_options_by_value
     ]
-    selected_team_names = [
-        team
+    selected_team_patterns = [
+        pattern
         for value in selected_team_filters
-        for team in team_options_by_value[value]["teams"]
+        for pattern in team_options_by_value[value]["patterns"]
     ]
     projects = fetch_project_list(
         search_query=q,
         pm_name=pm_name if my_projects else None,
         include_historical=include_historical,
-        team_filters=selected_team_names,
+        team_filters=selected_team_patterns,
     )
     return templates.TemplateResponse(
         "index.html",
@@ -1951,10 +1951,10 @@ def fetch_project_list(
     if pm_name:
         where_clauses.append("p.project_manager = %s")
         params.append(pm_name)
-    selected_teams = [value for value in (team_filters or []) if value]
-    if selected_teams:
-        where_clauses.append("p.team = ANY(%s::text[])")
-        params.append(selected_teams)
+    selected_team_patterns = [value for value in (team_filters or []) if value]
+    if selected_team_patterns:
+        where_clauses.append("BTRIM(p.team) ILIKE ANY(%s::text[])")
+        params.append(selected_team_patterns)
     query = (search_query or "").strip()
     if query:
         where_clauses.append("(p.project_name ILIKE %s OR p.project_code ILIKE %s)")
