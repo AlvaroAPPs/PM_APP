@@ -84,20 +84,14 @@
           >
           <div class="form-text">Pulsa Enter para buscar por coincidencia parcial.</div>
         </div>
-        <div class="col-12 col-sm-6 col-lg-3">
+        <div class="col-12 col-sm-6 col-lg-2">
           <div class="form-check">
             <input class="form-check-input auto-submit-filter" type="checkbox" id="myProjects" name="my_projects" value="true" {% if my_projects %}checked{% endif %}>
             <label class="form-check-label" for="myProjects">Mis proyectos</label>
           </div>
           <div class="form-text">PM: {{ pm_name }}</div>
         </div>
-        <div class="col-12 col-sm-6 col-lg-3">
-          <div class="form-check">
-            <input class="form-check-input auto-submit-filter" type="checkbox" id="includeHistorical" name="include_historical" value="true" {% if include_historical %}checked{% endif %}>
-            <label class="form-check-label" for="includeHistorical">Solo históricos</label>
-          </div>
-        </div>
-        <div class="col-12">
+        <div class="col-12 col-lg-4">
           <div class="muted small fw-semibold mb-1">Equipos</div>
           <div class="d-flex flex-wrap gap-3">
             {% for option in team_options %}
@@ -113,6 +107,12 @@
               <label class="form-check-label" for="teamFilter{{ loop.index }}">{{ option.label }}</label>
             </div>
             {% endfor %}
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-lg-2">
+          <div class="form-check">
+            <input class="form-check-input auto-submit-filter" type="checkbox" id="includeHistorical" name="include_historical" value="true" {% if include_historical %}checked{% endif %}>
+            <label class="form-check-label" for="includeHistorical">Solo históricos</label>
           </div>
         </div>
         <div class="col-12 col-lg-1 d-grid">
