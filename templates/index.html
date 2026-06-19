@@ -97,6 +97,24 @@
             <label class="form-check-label" for="includeHistorical">Solo históricos</label>
           </div>
         </div>
+        <div class="col-12">
+          <div class="muted small fw-semibold mb-1">Equipos</div>
+          <div class="d-flex flex-wrap gap-3">
+            {% for option in team_options %}
+            <div class="form-check">
+              <input
+                class="form-check-input auto-submit-filter"
+                type="checkbox"
+                id="teamFilter{{ loop.index }}"
+                name="team_filter"
+                value="{{ option.value }}"
+                {% if option.value in selected_team_filters %}checked{% endif %}
+              >
+              <label class="form-check-label" for="teamFilter{{ loop.index }}">{{ option.label }}</label>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
         <div class="col-12 col-lg-1 d-grid">
           <button class="btn btn-primary" type="submit">Buscar</button>
         </div>
