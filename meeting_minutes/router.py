@@ -1,5 +1,4 @@
 import io
-import json
 import os
 from datetime import date
 
@@ -87,33 +86,8 @@ def _parse_date(value: str | None) -> date | None:
         raise HTTPException(status_code=400, detail="Invalid date") from exc
 
 
-def _isoformat_or_none(value: object) -> str | None:
-    if value is None:
-        return None
-    if hasattr(value, "isoformat"):
-        return value.isoformat()
-    return str(value)
-
-
-def _json_list_or_empty(value: object) -> list:
-    if isinstance(value, list):
-        return value
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return []
-        return parsed if isinstance(parsed, list) else []
-    return []
-
-
 @router.get("/meeting-minutes", response_class=HTMLResponse)
-def meeting_minutes_page(
-    request: Request,
-    minutes_id: int | None = None,
-    project_id: str | None = Query(default=None),
-):
-    selected_project_id = _parse_optional_int(project_id)
+def meeting_minutes_page(request: Request, minutes_id: int | None = None):
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             ensure_meeting_minutes_storage(cur)
@@ -124,10 +98,8 @@ def meeting_minutes_page(
                 SELECT id, project_code, project_name
                 FROM projects
                 WHERE COALESCE(is_historical, FALSE) = FALSE
-                   OR (%s IS NOT NULL AND id = %s)
                 ORDER BY project_name ASC, project_code ASC
-                """,
-                (selected_project_id, selected_project_id),
+                """
             )
             projects = [
                 {"id": int(row[0]), "project_code": row[1], "project_name": row[2]}
@@ -155,13 +127,13 @@ def meeting_minutes_page(
                     "project_subject": row[3] or "",
                     "albaran_number": row[4] or "",
                     "language": row[5] or "es",
-                    "meeting_date": _isoformat_or_none(row[6]) or "",
+                    "meeting_date": row[6].isoformat() if row[6] else "",
                     "start_time": row[7] or "",
                     "end_time": row[8] or "",
                     "location": row[9] or "",
                     "phase": row[10] or "",
-                    "participants": _json_list_or_empty(row[11]),
-                    "topic_blocks": _json_list_or_empty(row[12]),
+                    "participants": row[11] or [],
+                    "topic_blocks": row[12] or [],
                     "topics": row[13] or "",
                     "discussion": row[14] or "",
                     "decisions_actions": row[15] or "",
@@ -169,12 +141,7 @@ def meeting_minutes_page(
                 }
     return templates.TemplateResponse(
         "meeting_minutes.html",
-        {
-            "request": request,
-            "projects": projects,
-            "existing_minutes": existing_minutes,
-            "selected_project_id": selected_project_id,
-        },
+        {"request": request, "projects": projects, "existing_minutes": existing_minutes},
     )
 
 
@@ -250,15 +217,10 @@ def list_meeting_minutes(
             rows = cur.fetchall()
             cur.execute(
                 """
-                SELECT DISTINCT p.id, p.project_code, p.project_name
-                FROM projects p
-                WHERE COALESCE(p.is_historical, FALSE) = FALSE
-                   OR EXISTS (
-                       SELECT 1
-                       FROM meeting_minutes m
-                       WHERE m.project_id = p.id
-                   )
-                ORDER BY p.project_name ASC, p.project_code ASC
+                SELECT id, project_code, project_name
+                FROM projects
+                WHERE COALESCE(is_historical, FALSE) = FALSE
+                ORDER BY project_name ASC, project_code ASC
                 """
             )
             projects = [
@@ -273,8 +235,8 @@ def list_meeting_minutes(
             "project_subject": row[2],
             "albaran_number": row[3],
             "language": row[4],
-            "meeting_date": _isoformat_or_none(row[5]),
-            "created_at": _isoformat_or_none(row[6]),
+            "meeting_date": row[5].isoformat() if row[5] else None,
+            "created_at": row[6].isoformat() if row[6] else None,
             "project_id": row[7],
             "project_code": row[8],
             "project_name": row[9],
@@ -358,10 +320,9 @@ def update_meeting_minutes(minutes_id: int, payload: MeetingMinutesPayload):
             _ensure_internal_project(cur)
             cur.execute(
                 """
-                SELECT project_id, COALESCE(title, ''), project_subject, meeting_date, start_time, end_time,
-                       location, phase, COALESCE(language, 'es'), albaran_number,
-                       COALESCE(participants, '[]'::jsonb), COALESCE(topic_blocks, '[]'::jsonb),
-                       topics, discussion, decisions_actions, planning_next_steps
+                SELECT project_id, title, project_subject, meeting_date, start_time, end_time,
+                       location, phase, language, albaran_number, participants, topic_blocks, topics,
+                       discussion, decisions_actions, planning_next_steps
                 FROM meeting_minutes
                 WHERE id = %s
                 """,
@@ -386,9 +347,9 @@ def update_meeting_minutes(minutes_id: int, payload: MeetingMinutesPayload):
             merged_language = payload.language if payload.language else (current[8] or "es")
             merged_albaran = payload.albaran_number if payload.albaran_number else (current[9] or "")
             incoming_participants = [participant.model_dump() for participant in payload.participants]
-            merged_participants = incoming_participants if incoming_participants else _json_list_or_empty(current[10])
+            merged_participants = incoming_participants if incoming_participants else (current[10] or [])
             incoming_topic_blocks = [block.model_dump() for block in payload.topic_blocks]
-            merged_topic_blocks = incoming_topic_blocks if incoming_topic_blocks else _json_list_or_empty(current[11])
+            merged_topic_blocks = incoming_topic_blocks if incoming_topic_blocks else (current[11] or [])
             merged_topics = payload.topics if payload.topics else (current[12] or "")
             merged_discussion = payload.discussion if payload.discussion else (current[13] or "")
             merged_decisions = payload.decisions_actions if payload.decisions_actions else (current[14] or "")
@@ -463,12 +424,9 @@ def copy_meeting_minutes(minutes_id: int):
                     location, phase, language, albaran_number, participants, topic_blocks, topics,
                     discussion, decisions_actions, planning_next_steps
                 )
-                SELECT project_id,
-                       COALESCE(NULLIF(title, ''), NULLIF(project_subject, ''), 'Acta copiada'),
-                       project_subject, meeting_date, start_time, end_time,
-                       location, phase, COALESCE(NULLIF(language, ''), 'es'), albaran_number,
-                       COALESCE(participants, '[]'::jsonb), COALESCE(topic_blocks, '[]'::jsonb),
-                       topics, discussion, decisions_actions, planning_next_steps
+                SELECT project_id, title, project_subject, meeting_date, start_time, end_time,
+                       location, phase, language, albaran_number, participants, topic_blocks, topics,
+                       discussion, decisions_actions, planning_next_steps
                 FROM meeting_minutes
                 WHERE id = %s
                 RETURNING id

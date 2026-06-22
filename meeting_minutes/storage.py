@@ -33,18 +33,3 @@ def ensure_meeting_minutes_storage(cur: psycopg.Cursor) -> None:
         ADD COLUMN IF NOT EXISTS topic_blocks JSONB NOT NULL DEFAULT '[]'::jsonb
         """
     )
-    cur.execute("ALTER TABLE meeting_minutes ADD COLUMN IF NOT EXISTS project_subject TEXT NULL")
-    cur.execute("ALTER TABLE meeting_minutes ADD COLUMN IF NOT EXISTS meeting_date DATE NULL")
-    cur.execute("ALTER TABLE meeting_minutes ADD COLUMN IF NOT EXISTS start_time TEXT NULL")
-    cur.execute("ALTER TABLE meeting_minutes ADD COLUMN IF NOT EXISTS end_time TEXT NULL")
-    cur.execute("ALTER TABLE meeting_minutes ADD COLUMN IF NOT EXISTS location TEXT NULL")
-    cur.execute("ALTER TABLE meeting_minutes ADD COLUMN IF NOT EXISTS phase TEXT NULL")
-    cur.execute("ALTER TABLE meeting_minutes ADD COLUMN IF NOT EXISTS language VARCHAR(2) NOT NULL DEFAULT 'es'")
-    cur.execute("ALTER TABLE meeting_minutes ADD COLUMN IF NOT EXISTS albaran_number TEXT NULL")
-    cur.execute("ALTER TABLE meeting_minutes ADD COLUMN IF NOT EXISTS participants JSONB NOT NULL DEFAULT '[]'::jsonb")
-    cur.execute("ALTER TABLE meeting_minutes ADD COLUMN IF NOT EXISTS topics TEXT NULL")
-    cur.execute("ALTER TABLE meeting_minutes ADD COLUMN IF NOT EXISTS discussion TEXT NULL")
-    cur.execute("ALTER TABLE meeting_minutes ADD COLUMN IF NOT EXISTS decisions_actions TEXT NULL")
-    cur.execute("ALTER TABLE meeting_minutes ADD COLUMN IF NOT EXISTS planning_next_steps TEXT NULL")
-    cur.execute("ALTER TABLE meeting_minutes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()")
-    cur.execute("ALTER TABLE meeting_minutes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()")
