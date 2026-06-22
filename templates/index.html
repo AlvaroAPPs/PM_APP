@@ -66,7 +66,7 @@
       <a class="btn btn-outline-primary" href="/calendar">Calendario</a>
       <a class="btn btn-outline-primary" href="/tasks">Tareas</a>
       <a class="btn btn-outline-primary" href="/consultas">Consultas</a>
-      <a class="btn btn-dark" href="/meeting-minutes">Nuevo acta</a>
+      <a class="btn btn-outline-primary" href="/meeting-minutes/list">Actas</a>
       <a class="btn btn-outline-primary" href="/importacion">Importación</a>
     </div>
 
@@ -174,7 +174,6 @@
                         <li><a class="dropdown-item project-action-link" href="/tasks?new=1&project_id={{ project.project_id }}&project_code={{ project.project_code | urlencode }}&lock_project=1&type=TASK">Crear Task</a></li>
                         <li><a class="dropdown-item project-action-link" href="/tasks?new=1&project_id={{ project.project_id }}&project_code={{ project.project_code | urlencode }}&lock_project=1&type=PP">Crear PP</a></li>
                         <li><a class="dropdown-item project-action-link" href="/calendar?create_note=1&projectId={{ project.project_id }}">Crear Note</a></li>
-                        <li><a class="dropdown-item project-action-link" href="/meeting-minutes?project_id={{ project.project_id }}">Crear Acta</a></li>
                       </ul>
                     </div>
                   </div>
