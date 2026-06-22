@@ -1,4 +1,5 @@
 import io
+import json
 import os
 from datetime import date
 
@@ -94,6 +95,18 @@ def _isoformat_or_none(value: object) -> str | None:
     return str(value)
 
 
+def _json_list_or_empty(value: object) -> list:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        return parsed if isinstance(parsed, list) else []
+    return []
+
+
 @router.get("/meeting-minutes", response_class=HTMLResponse)
 def meeting_minutes_page(
     request: Request,
@@ -147,8 +160,8 @@ def meeting_minutes_page(
                     "end_time": row[8] or "",
                     "location": row[9] or "",
                     "phase": row[10] or "",
-                    "participants": row[11] or [],
-                    "topic_blocks": row[12] or [],
+                    "participants": _json_list_or_empty(row[11]),
+                    "topic_blocks": _json_list_or_empty(row[12]),
                     "topics": row[13] or "",
                     "discussion": row[14] or "",
                     "decisions_actions": row[15] or "",
@@ -345,9 +358,10 @@ def update_meeting_minutes(minutes_id: int, payload: MeetingMinutesPayload):
             _ensure_internal_project(cur)
             cur.execute(
                 """
-                SELECT project_id, title, project_subject, meeting_date, start_time, end_time,
-                       location, phase, language, albaran_number, participants, topic_blocks, topics,
-                       discussion, decisions_actions, planning_next_steps
+                SELECT project_id, COALESCE(title, ''), project_subject, meeting_date, start_time, end_time,
+                       location, phase, COALESCE(language, 'es'), albaran_number,
+                       COALESCE(participants, '[]'::jsonb), COALESCE(topic_blocks, '[]'::jsonb),
+                       topics, discussion, decisions_actions, planning_next_steps
                 FROM meeting_minutes
                 WHERE id = %s
                 """,
@@ -372,9 +386,9 @@ def update_meeting_minutes(minutes_id: int, payload: MeetingMinutesPayload):
             merged_language = payload.language if payload.language else (current[8] or "es")
             merged_albaran = payload.albaran_number if payload.albaran_number else (current[9] or "")
             incoming_participants = [participant.model_dump() for participant in payload.participants]
-            merged_participants = incoming_participants if incoming_participants else (current[10] or [])
+            merged_participants = incoming_participants if incoming_participants else _json_list_or_empty(current[10])
             incoming_topic_blocks = [block.model_dump() for block in payload.topic_blocks]
-            merged_topic_blocks = incoming_topic_blocks if incoming_topic_blocks else (current[11] or [])
+            merged_topic_blocks = incoming_topic_blocks if incoming_topic_blocks else _json_list_or_empty(current[11])
             merged_topics = payload.topics if payload.topics else (current[12] or "")
             merged_discussion = payload.discussion if payload.discussion else (current[13] or "")
             merged_decisions = payload.decisions_actions if payload.decisions_actions else (current[14] or "")
@@ -449,9 +463,12 @@ def copy_meeting_minutes(minutes_id: int):
                     location, phase, language, albaran_number, participants, topic_blocks, topics,
                     discussion, decisions_actions, planning_next_steps
                 )
-                SELECT project_id, title, project_subject, meeting_date, start_time, end_time,
-                       location, phase, language, albaran_number, participants, topic_blocks, topics,
-                       discussion, decisions_actions, planning_next_steps
+                SELECT project_id,
+                       COALESCE(NULLIF(title, ''), NULLIF(project_subject, ''), 'Acta copiada'),
+                       project_subject, meeting_date, start_time, end_time,
+                       location, phase, COALESCE(NULLIF(language, ''), 'es'), albaran_number,
+                       COALESCE(participants, '[]'::jsonb), COALESCE(topic_blocks, '[]'::jsonb),
+                       topics, discussion, decisions_actions, planning_next_steps
                 FROM meeting_minutes
                 WHERE id = %s
                 RETURNING id
