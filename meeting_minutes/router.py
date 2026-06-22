@@ -86,6 +86,14 @@ def _parse_date(value: str | None) -> date | None:
         raise HTTPException(status_code=400, detail="Invalid date") from exc
 
 
+def _isoformat_or_none(value: object) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
 @router.get("/meeting-minutes", response_class=HTMLResponse)
 def meeting_minutes_page(
     request: Request,
@@ -134,7 +142,7 @@ def meeting_minutes_page(
                     "project_subject": row[3] or "",
                     "albaran_number": row[4] or "",
                     "language": row[5] or "es",
-                    "meeting_date": row[6].isoformat() if row[6] else "",
+                    "meeting_date": _isoformat_or_none(row[6]) or "",
                     "start_time": row[7] or "",
                     "end_time": row[8] or "",
                     "location": row[9] or "",
@@ -229,10 +237,15 @@ def list_meeting_minutes(
             rows = cur.fetchall()
             cur.execute(
                 """
-                SELECT id, project_code, project_name
-                FROM projects
-                WHERE COALESCE(is_historical, FALSE) = FALSE
-                ORDER BY project_name ASC, project_code ASC
+                SELECT DISTINCT p.id, p.project_code, p.project_name
+                FROM projects p
+                WHERE COALESCE(p.is_historical, FALSE) = FALSE
+                   OR EXISTS (
+                       SELECT 1
+                       FROM meeting_minutes m
+                       WHERE m.project_id = p.id
+                   )
+                ORDER BY p.project_name ASC, p.project_code ASC
                 """
             )
             projects = [
@@ -247,8 +260,8 @@ def list_meeting_minutes(
             "project_subject": row[2],
             "albaran_number": row[3],
             "language": row[4],
-            "meeting_date": row[5].isoformat() if row[5] else None,
-            "created_at": row[6].isoformat() if row[6] else None,
+            "meeting_date": _isoformat_or_none(row[5]),
+            "created_at": _isoformat_or_none(row[6]),
             "project_id": row[7],
             "project_code": row[8],
             "project_name": row[9],
