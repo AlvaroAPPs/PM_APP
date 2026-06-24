@@ -1679,10 +1679,10 @@ def index(
     team_options = [
         {"label": "BD1", "value": "BD1", "patterns": ["BD1", "%Badajo%T1%"]},
         {"label": "BD2", "value": "BD2", "patterns": ["BD2", "%Badajo%T2%"]},
-        {"label": "T1", "value": "T1", "patterns": ["T1", "%Ampliaciones%T1%"]},
-        {"label": "T2", "value": "T2", "patterns": ["T2", "%Ampliaciones%T2%"]},
-        {"label": "T3", "value": "T3", "patterns": ["T3", "%Ampliaciones%T3%"]},
-        {"label": "T4", "value": "T4", "patterns": ["T4", "%Ampliaciones%T4%"]},
+        {"label": "T1", "value": "T1", "patterns": ["T1", "Ampliaciones T1"]},
+        {"label": "T2", "value": "T2", "patterns": ["T2", "Ampliaciones T2"]},
+        {"label": "T3", "value": "T3", "patterns": ["T3", "Ampliaciones T3"]},
+        {"label": "T4", "value": "T4", "patterns": ["T4", "Ampliaciones T4"]},
     ]
     team_options_by_value = {option["value"]: option for option in team_options}
     selected_team_filters = [
