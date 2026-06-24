@@ -65,6 +65,9 @@
         <button id="btnOpenChart" class="btn btn-outline-secondary" disabled>
           <i class="bi bi-graph-up me-1"></i> Gráfico
         </button>
+        <button id="btnOpenChecklist" class="btn btn-outline-secondary" disabled>
+          <i class="bi bi-card-checklist me-1"></i> Checklist
+        </button>
       </div>
     </div>
 
@@ -77,6 +80,16 @@
             <div class="fw-bold mb-2">Acciones</div>
 
             <div class="list-group list-group-flush">
+              <button id="actChecklist" class="list-group-item list-group-item-action" disabled>
+                <div class="d-flex align-items-center gap-2">
+                  <i class="bi bi-card-checklist"></i>
+                  <div>
+                    <div class="action-title">Checklist</div>
+                    <div class="muted small">Checklist del proyecto</div>
+                  </div>
+                </div>
+              </button>
+
               <button id="actCharts" class="list-group-item list-group-item-action" disabled>
                 <div class="d-flex align-items-center gap-2">
                   <i class="bi bi-graph-up"></i>

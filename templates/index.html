@@ -68,6 +68,7 @@
       <a class="btn btn-outline-primary" href="/consultas">Consultas</a>
       <a class="btn btn-outline-primary" href="/meeting-minutes/list">Actas</a>
       <a class="btn btn-outline-primary" href="/importacion">Importación</a>
+      <a class="btn btn-outline-primary" href="/configuracion/checklist">Configuración · Checklist</a>
     </div>
 
     <form method="get" action="/" class="card shadow-soft mb-3" id="projectFiltersForm">
@@ -167,6 +168,7 @@
                 <td class="text-end">
                   <div class="project-actions">
                     <a href="/estado-proyecto?q={{ project.project_code | urlencode }}&return_to={{ (request.url.path ~ ('?' ~ request.url.query if request.url.query else '')) | urlencode }}" class="btn btn-sm btn-outline-secondary project-action-link" title="Ir al detalle del proyecto" aria-label="Ir al detalle del proyecto"><i class="bi bi-box-arrow-up-right"></i></a>
+                    <a href="/projects/{{ project.project_code | urlencode }}/checklist" class="btn btn-sm btn-outline-secondary project-action-link" title="Ir al checklist" aria-label="Ir al checklist"><i class="bi bi-card-checklist"></i></a>
                     <a href="/projects/{{ project.project_code | urlencode }}/indicators?return_to={{ (request.url.path ~ ('?' ~ request.url.query if request.url.query else '')) | urlencode }}&totalHours={{ (project.ordered_total if project.ordered_total is not none else 0) | urlencode }}" class="btn btn-sm btn-outline-secondary project-action-link" title="Ir a indicadores y evolución" aria-label="Ir a indicadores y evolución"><i class="bi bi-graph-up"></i></a>
                     <div class="btn-group">
                       <button type="button" class="btn btn-sm btn-outline-dark dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">Crear</button>

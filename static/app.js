@@ -104,12 +104,16 @@ function setActionsEnabled(isEnabled) {
   const actReport = $("actReport");
   const btnExportPdf = $("btnExportPdf");
   const btnOpenChart = $("btnOpenChart");
+  const btnOpenChecklist = $("btnOpenChecklist");
+  const actChecklist = $("actChecklist");
   const reportFormat = $("reportFormat");
   if (actTasks) actTasks.disabled = !isEnabled;
   if (actCharts) actCharts.disabled = !isEnabled;
   if (actReport) actReport.disabled = !isEnabled;
   if (btnExportPdf) btnExportPdf.disabled = !isEnabled;
   if (btnOpenChart) btnOpenChart.disabled = !isEnabled;
+  if (btnOpenChecklist) btnOpenChecklist.disabled = !isEnabled;
+  if (actChecklist) actChecklist.disabled = !isEnabled;
   if (reportFormat) reportFormat.disabled = !isEnabled;
 }
 
@@ -666,6 +670,19 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnOpenChart) {
     btnOpenChart.addEventListener("click", openProjectCharts);
   }
+
+  function openProjectChecklist() {
+    if (!currentProjectCode) {
+      alert("Carga un proyecto antes de continuar.");
+      return;
+    }
+    window.location.href = `/projects/${encodeURIComponent(currentProjectCode)}/checklist`;
+  }
+
+  const btnOpenChecklist = $("btnOpenChecklist");
+  if (btnOpenChecklist) btnOpenChecklist.addEventListener("click", openProjectChecklist);
+  const actChecklist = $("actChecklist");
+  if (actChecklist) actChecklist.addEventListener("click", openProjectChecklist);
 
   const actReport = $("actReport");
   if (actReport) {
