@@ -4026,6 +4026,11 @@ def project_checklist_page(request: Request, project_code: str):
     return templates.TemplateResponse("project_checklist.html", {"request": request, "project_code": project_code})
 
 
+@app.get("/configuracion", response_class=HTMLResponse)
+def configuration_page(request: Request):
+    return templates.TemplateResponse("configuration.html", {"request": request})
+
+
 @app.get("/configuracion/checklist", response_class=HTMLResponse)
 def checklist_configuration_page(request: Request):
     return templates.TemplateResponse("checklist_config.html", {"request": request})
@@ -4111,9 +4116,37 @@ def get_checklist_template():
 def add_checklist_template_item(payload: ChecklistTemplateItemIn):
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM checklist_template_items")
-            position = cur.fetchone()[0]
-            cur.execute("INSERT INTO checklist_template_items (phase, role, warehouse_type, task, position) VALUES (%s,%s,%s,%s,%s) RETURNING id", (payload.phase, payload.role, payload.warehouse_type, payload.task, position))
+            cur.execute(
+                """
+                SELECT MAX(position)
+                FROM checklist_template_items
+                WHERE active = TRUE AND LOWER(phase) = LOWER(%s)
+                """,
+                (payload.phase,),
+            )
+            phase_last_position = cur.fetchone()[0]
+            if phase_last_position is None:
+                cur.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM checklist_template_items")
+                position = cur.fetchone()[0]
+            else:
+                position = phase_last_position + 1
+                cur.execute(
+                    """
+                    UPDATE checklist_template_items
+                    SET position = position + 1,
+                        updated_at = now()
+                    WHERE position >= %s
+                    """,
+                    (position,),
+                )
+            cur.execute(
+                """
+                INSERT INTO checklist_template_items (phase, role, warehouse_type, task, position)
+                VALUES (%s,%s,%s,%s,%s)
+                RETURNING id
+                """,
+                (payload.phase, payload.role, payload.warehouse_type, payload.task, position),
+            )
             item_id = cur.fetchone()[0]
         conn.commit()
     return {"id": item_id}
