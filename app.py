@@ -4013,9 +4013,9 @@ def sync_project_checklist(cur: psycopg.Cursor, project_id: int) -> None:
             role = EXCLUDED.role,
             warehouse_type = EXCLUDED.warehouse_type,
             task = EXCLUDED.task,
-            deleted_at = NULL,
             updated_at = now()
         WHERE project_checklist_items.is_custom = FALSE
+          AND project_checklist_items.deleted_at IS NULL
         """,
         (project_id,),
     )
