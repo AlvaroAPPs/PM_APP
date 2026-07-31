@@ -40,6 +40,7 @@ def startup_init() -> None:
             ensure_historical_storage(cur)
             ensure_project_tasks_storage(cur)
             ensure_project_notes_storage(cur)
+            ensure_project_checklist_storage(cur)
             ensure_meeting_minutes_storage(cur)
             ensure_general_internal_project(cur)
         conn.commit()
@@ -81,6 +82,49 @@ GENERAL_INTERNAL_PROJECT_NAME = "Ampliaciones Varios"
 SUBTASKS_MARKER = "\n\n---SUBTASKS---\n"
 
 
+INITIAL_CHECKLIST_TEMPLATE = [
+    ("PRE KICK-OFF", "PM", "Both", "Verificar que el HVA está disponible"),
+    ("PRE KICK-OFF", "PM", "Both", "Verificar que el HTD está disponible"),
+    ("PRE KICK-OFF", "PM", "Both", "Verificar que el documento de transferencia a operaciones está disponible"),
+    ("PRE KICK-OFF", "PM", "Both", "En almacenes con zonas operativas sujetas a condiciones especiales, p. ej. frío, asegurar que se asigna y está presente de forma constante un recurso preventivo de seguridad durante el acceso del personal. Si este recurso lo proporciona el equipo EasyWMS, como suele ocurrir en almacenes manuales, confirmar que las horas necesarias para duplicar recursos por turno se han planificado e incluido en la oferta."),
+    ("PRE KICK-OFF", "PM", "Both", "Verificar que la oferta está disponible"),
+    ("PRE KICK-OFF", "PM", "Both", "Verificar que hay una versión del layout disponible"),
+    ("KICK-OFF", "PM", "Both", "Solicitar la creación del repositorio GIT"),
+    ("KICK-OFF", "PM", "Both", "Comprobar si el proyecto existe en ITSM; si no, pedir al comercial un desglose correcto de la licencia de la aplicación"),
+    ("KICK-OFF", "PM", "Both", "Kick-Off interno"),
+    ("KICK-OFF", "PM", "Both", "Reunión Kick-Off con el cliente"),
+    ("KICK-OFF", "PM", "Both", "Pestaña de gestión de alcance (primera versión)"),
+    ("KICK-OFF", "PM", "Both", "Planificación del proyecto (primera versión)"),
+    ("KICK-OFF", "PM", "Both", "Informe de progreso"),
+    ("KICK-OFF", "PM", "Both", "Actualización del sitio MSSCC"),
+    ("KICK-OFF", "CT", "Both", "Solicitud de datos maestros y documentación clave"),
+    ("DISEÑO", "PM & CT", "MW", "Visita de captura de datos"),
+    ("DISEÑO", "CT", "Both", "Documento de casos de uso"),
+    ("DISEÑO", "CT", "Both", "Enfoque de solución funcional (antes de iniciar el AF, solo para proyectos categorizados como complejos)"),
+    ("DISEÑO", "PM & CT", "Both", "Presentación del análisis funcional (AF) al responsable"),
+    ("DISEÑO", "PM & CT & DT", "Both", "Reunión periódica de transferencia de conocimiento del análisis funcional"),
+    ("DISEÑO", "PM & CT", "Both", "AF validado por al menos uno de los responsables"),
+    ("DISEÑO", "PM & CT", "Both", "Firma del AF"),
+    ("DISEÑO", "PM & CT", "Both", "Acuerdo sobre la interfaz de comunicación ERP"),
+    ("DISEÑO", "PM & CT & DT", "AW", "Acuerdo sobre la interfaz de comunicación TMS (almacén automático o mixto)"),
+    ("DISEÑO", "PM & CT", "Both", "Acuerdo sobre el diseño de entornos"),
+    ("DISEÑO", "PM & CT & DT", "Both", "Acuerdo sobre cómo realizar el conteo inicial o la carga de datos maestros (ubicaciones dedicadas de picking, etc.)"),
+    ("DISEÑO", "PM & CT & DT", "Both", "Acuerdo sobre el método de conexión con el cliente (las soluciones sin licencia están completamente prohibidas)"),
+    ("DISEÑO", "PM", "Both", "Planificación ERP (primera versión)"),
+    ("DISEÑO", "PM", "Both", "Hoja de gestión de alcance (actualización)"),
+    ("DISEÑO", "PM", "Both", "Planificación del proyecto (actualización)"),
+    ("DISEÑO", "PM", "Both", "Informe de progreso"),
+    ("DISEÑO", "PM", "Both", "Actualización del sitio MSSCC"),
+]
+
+# Add repeated lifecycle controls for remaining phases.
+INITIAL_CHECKLIST_TEMPLATE += [("DESARROLLO", r, w, t) for r,w,t in [
+    ("DT","Both","Confirmación oficial por email tras la revisión del análisis funcional"),("CT","Both","Plan de pruebas EasyWMS"),("DT","Both","Confirmación oficial por email tras la revisión del plan de pruebas EasyWMS"),("DT","AW","Plan de pruebas TMS"),("DT","Both","Configuración EasyS"),("PM & DT","Both","Pruebas de carga"),("DT","Both","Documentación de código"),("DT","Both","Validaciones internas iterativas del equipo de desarrollo"),("DT","Both","Confirmación oficial por email tras la validación interna del equipo de desarrollo"),("CT","Both","Validaciones internas iterativas del consultor"),("CT","Both","Worklog oficial sobre el avance de las validaciones internas"),("CT & DT","Both","Validaciones iterativas con el cliente"),("PM & CT & DT","Both","Probar y validar la solución acordada para el conteo inicial o la carga de datos maestros"),("DT","Both","Despliegue del servidor de producción"),("PM","Both","Desglose de hardware"),("DT","Both","Configuración de hardware (impresoras, TRFs, etc.)"),("DT","Both","Documentación para formación de usuarios clave"),("DT","Both","Formación remota de usuarios clave"),("DT","Both","Despliegue del servidor de pruebas (si aplica)"),("DT","Both","Pruebas remotas TMS"),("PM","Both","Documentación CAE (proyectos españoles con personal MSS)"),("DT","Both","Instalar y configurar el módulo Datawarehouse"),("PM","Both","Gestión de visados u otra documentación requerida para viajar al extranjero (si aplica)"),("DT","Both","Verificar que la solución EasyWMS desplegada solo tiene el alcance acordado"),("PM","AW","Solicitar informe WCS (si aplica)"),("CT","Both","Análisis funcional (actualización)"),("PM","Both","Si hay áreas operativas con condiciones especiales, coordinar con PRL que todo el personal ha recibido la formación adecuada"),("PM","Both","Planificación ERP (actualización)"),("CT & DT","Both","Diseño de entornos (actualización)"),("PM","Both","Pestaña de gestión de alcance (actualización)"),("CT & DT","Both","Interfaz de comunicación ERP (actualización)"),("PM","Both","Planificación del proyecto (actualización)"),("PM","Both","Informe de progreso"),("PM","Both","Actualización del sitio MSSCC")]]
+INITIAL_CHECKLIST_TEMPLATE += [("PREPARACIÓN", r, w, t) for r,w,t in [("DT","Both","Finalizar configuración de hardware (impresoras, TRFs, etc.)"),("DT","Both","Confirmar que los menús RF y SmartUI son los que usará el cliente"),("DT","Both","Configurar grupos de usuarios y permisos"),("DT","Both","Crear CIs en ITSM"),("DT","Both","Crear comprobaciones EasyMonitor en ITSM"),("DT","Both","Conteo inicial o primera carga de datos (stock, contenedores, etc.)"),("DT","Both","Carga de datos maestros"),("DT","AW","Pruebas TMS in situ"),("DT","Both","Formación in situ de usuarios clave"),("PM","Both","Añadir lista de usuarios clave en ITSM"),("DT","Both","Plan de recuperación ante desastres"),("CT","Both","UATs in situ"),("PM & CT & DT","Both","Dry-run"),("DT","Both","Guía de troubleshooting"),("PM & CT & DT","Both","Abrir ticket a SRE para seguimiento de estadísticas de rendimiento"),("CT","Both","Análisis funcional y plan de pruebas (actualización)"),("PM","Both","Pestaña de gestión de alcance (actualización)"),("CT & DT","Both","Interfaz de comunicación ERP (actualización)"),("CT & DT","Both","Diseño de entornos (actualización)"),("PM","Both","Informe de progreso"),("PM","Both","Actualización del sitio MSSCC")]]
+INITIAL_CHECKLIST_TEMPLATE += [("HYPERCARE", r, w, t) for r,w,t in [("PM","Both","Firma de aceptación"),("PM","Both","Solicitar permiso al cliente para obtener archivos multimedia del almacén y asegurar su obtención"),("DT","Both","Solicitar transferencia a telemantenimiento N1"),("PM","Both","Lista de puntos abiertos"),("CT","Both","Análisis funcional y plan de pruebas (actualización)"),("PM","Both","Pestaña de gestión de alcance (actualización)"),("CT & DT","Both","Interfaz de comunicación ERP (actualización)"),("DT","Both","Guía de troubleshooting (actualización)"),("PM","Both","Informe de progreso Hypercare"),("PM","Both","Actualización del sitio MSSCC")]]
+INITIAL_CHECKLIST_TEMPLATE += [("HYPERCARE REMOTO", r, w, t) for r,w,t in [("DT","Both","Transferencia a telemantenimiento N1"),("DT","Both","Solicitar transferencia a telemantenimiento N2"),("DT","Both","Transferencia a telemantenimiento N2"),("PM","Both","Impulsar presentación del servicio de telemantenimiento"),("PM","Both","Lista de puntos abiertos (actualización)"),("CT","Both","Análisis funcional y plan de pruebas (actualización)"),("PM","Both","Pestaña de gestión de alcance (actualización)"),("CT & DT","Both","Interfaz de comunicación ERP (actualización)"),("DT","Both","Guía de troubleshooting (actualización)"),("PM","Both","Informe de progreso Hypercare"),("PM","Both","Actualización del sitio MSSCC")]]
+
+
 class ProjectTaskCreateIn(BaseModel):
     project_id: int
     type: str
@@ -112,6 +156,38 @@ class ProjectTaskUpdateIn(BaseModel):
 
 class ChecklistToggleIn(BaseModel):
     done: bool
+
+
+class ProjectChecklistItemIn(BaseModel):
+    phase: str
+    role: str
+    warehouse_type: str
+    task: str
+    comments: str | None = None
+    completed: bool = False
+
+
+class ProjectChecklistItemUpdateIn(BaseModel):
+    phase: str | None = None
+    role: str | None = None
+    warehouse_type: str | None = None
+    task: str | None = None
+    comments: str | None = None
+    completed: bool | None = None
+
+
+class ChecklistTemplateItemIn(BaseModel):
+    phase: str
+    role: str
+    warehouse_type: str
+    task: str
+
+
+class ChecklistTemplateItemUpdateIn(BaseModel):
+    phase: str
+    role: str
+    warehouse_type: str
+    task: str
 
 
 class NoteChecklistItemIn(BaseModel):
@@ -3865,3 +3941,230 @@ def project_snapshot_word(project_code: str):
         media_type="application/msword",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def ensure_project_checklist_storage(cur: psycopg.Cursor) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS checklist_template_items (
+            id BIGSERIAL PRIMARY KEY,
+            phase TEXT NOT NULL,
+            role TEXT NOT NULL,
+            warehouse_type TEXT NOT NULL,
+            task TEXT NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS project_checklist_items (
+            id BIGSERIAL PRIMARY KEY,
+            project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            template_item_id BIGINT REFERENCES checklist_template_items(id) ON DELETE SET NULL,
+            phase TEXT NOT NULL,
+            role TEXT NOT NULL,
+            warehouse_type TEXT NOT NULL,
+            task TEXT NOT NULL,
+            comments TEXT NOT NULL DEFAULT '',
+            completed BOOLEAN NOT NULL DEFAULT FALSE,
+            is_custom BOOLEAN NOT NULL DEFAULT FALSE,
+            deleted_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE (project_id, template_item_id)
+        );
+        """
+    )
+    cur.execute("SELECT COUNT(*) FROM checklist_template_items")
+    if cur.fetchone()[0] == 0:
+        cur.executemany(
+            """
+            INSERT INTO checklist_template_items (phase, role, warehouse_type, task, position)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            [(phase, role, warehouse, task, index) for index, (phase, role, warehouse, task) in enumerate(INITIAL_CHECKLIST_TEMPLATE, start=1)],
+        )
+
+
+def fetch_project_by_code(cur: psycopg.Cursor, project_code: str) -> tuple[int, str | None]:
+    cur.execute(
+        """SELECT id, project_name FROM projects WHERE project_code = %s AND COALESCE(is_historical, FALSE) = FALSE""",
+        (project_code,),
+    )
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    return row[0], row[1]
+
+
+def sync_project_checklist(cur: psycopg.Cursor, project_id: int) -> None:
+    cur.execute(
+        """
+        INSERT INTO project_checklist_items (project_id, template_item_id, phase, role, warehouse_type, task)
+        SELECT %s, id, phase, role, warehouse_type, task
+        FROM checklist_template_items
+        WHERE active = TRUE
+        ON CONFLICT (project_id, template_item_id) DO UPDATE
+        SET phase = EXCLUDED.phase,
+            role = EXCLUDED.role,
+            warehouse_type = EXCLUDED.warehouse_type,
+            task = EXCLUDED.task,
+            updated_at = now()
+        WHERE project_checklist_items.is_custom = FALSE
+          AND project_checklist_items.deleted_at IS NULL
+        """,
+        (project_id,),
+    )
+
+
+@app.get("/projects/{project_code}/checklist", response_class=HTMLResponse)
+def project_checklist_page(request: Request, project_code: str):
+    return templates.TemplateResponse("project_checklist.html", {"request": request, "project_code": project_code})
+
+
+@app.get("/configuracion", response_class=HTMLResponse)
+def configuration_page(request: Request):
+    return templates.TemplateResponse("configuration.html", {"request": request})
+
+
+@app.get("/configuracion/checklist", response_class=HTMLResponse)
+def checklist_configuration_page(request: Request):
+    return templates.TemplateResponse("checklist_config.html", {"request": request})
+
+
+@app.get("/api/projects/{project_code}/checklist")
+def get_project_checklist(project_code: str):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            project_id, project_name = fetch_project_by_code(cur, project_code)
+            sync_project_checklist(cur, project_id)
+            cur.execute(
+                """
+                SELECT pci.id, pci.template_item_id, pci.phase, pci.role, pci.warehouse_type, pci.task,
+                       pci.comments, pci.completed, pci.is_custom, COALESCE(cti.position, 1000000 + pci.id) AS position
+                FROM project_checklist_items pci
+                LEFT JOIN checklist_template_items cti ON cti.id = pci.template_item_id AND cti.active = TRUE
+                WHERE pci.project_id = %s
+                  AND pci.deleted_at IS NULL
+                  AND (pci.is_custom = TRUE OR cti.id IS NOT NULL)
+                ORDER BY position, pci.id
+                """,
+                (project_id,),
+            )
+            rows = cur.fetchall()
+        conn.commit()
+    return {"project": {"id": project_id, "project_code": project_code, "project_name": project_name}, "items": [
+        {"id": r[0], "template_item_id": r[1], "phase": r[2], "role": r[3], "warehouse_type": r[4], "task": r[5], "comments": r[6], "completed": r[7], "is_custom": r[8]} for r in rows
+    ]}
+
+
+@app.post("/api/projects/{project_code}/checklist")
+def add_project_checklist_item(project_code: str, payload: ProjectChecklistItemIn):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            project_id, _ = fetch_project_by_code(cur, project_code)
+            cur.execute(
+                """INSERT INTO project_checklist_items (project_id, phase, role, warehouse_type, task, comments, completed, is_custom) VALUES (%s,%s,%s,%s,%s,%s,%s,TRUE) RETURNING id""",
+                (project_id, payload.phase, payload.role, payload.warehouse_type, payload.task, payload.comments or "", payload.completed),
+            )
+            item_id = cur.fetchone()[0]
+        conn.commit()
+    return {"id": item_id}
+
+
+@app.patch("/api/project-checklist-items/{item_id}")
+def update_project_checklist_item(item_id: int, payload: ProjectChecklistItemUpdateIn):
+    fields, values = [], []
+    for name in ("phase", "role", "warehouse_type", "task", "comments", "completed"):
+        value = getattr(payload, name)
+        if value is not None:
+            fields.append(f"{name} = %s")
+            values.append(value)
+    if not fields:
+        return {"ok": True}
+    values.append(item_id)
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"UPDATE project_checklist_items SET {', '.join(fields)}, updated_at = now() WHERE id = %s", values)
+        conn.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/project-checklist-items/{item_id}")
+def delete_project_checklist_item(item_id: int):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE project_checklist_items SET deleted_at = now(), updated_at = now() WHERE id = %s", (item_id,))
+        conn.commit()
+    return {"ok": True}
+
+
+@app.get("/api/checklist-template")
+def get_checklist_template():
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, phase, role, warehouse_type, task, position FROM checklist_template_items WHERE active = TRUE ORDER BY position, id")
+            rows = cur.fetchall()
+    return {"items": [{"id": r[0], "phase": r[1], "role": r[2], "warehouse_type": r[3], "task": r[4], "position": r[5]} for r in rows]}
+
+
+@app.post("/api/checklist-template")
+def add_checklist_template_item(payload: ChecklistTemplateItemIn):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT MAX(position)
+                FROM checklist_template_items
+                WHERE active = TRUE AND LOWER(phase) = LOWER(%s)
+                """,
+                (payload.phase,),
+            )
+            phase_last_position = cur.fetchone()[0]
+            if phase_last_position is None:
+                cur.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM checklist_template_items")
+                position = cur.fetchone()[0]
+            else:
+                position = phase_last_position + 1
+                cur.execute(
+                    """
+                    UPDATE checklist_template_items
+                    SET position = position + 1,
+                        updated_at = now()
+                    WHERE position >= %s
+                    """,
+                    (position,),
+                )
+            cur.execute(
+                """
+                INSERT INTO checklist_template_items (phase, role, warehouse_type, task, position)
+                VALUES (%s,%s,%s,%s,%s)
+                RETURNING id
+                """,
+                (payload.phase, payload.role, payload.warehouse_type, payload.task, position),
+            )
+            item_id = cur.fetchone()[0]
+        conn.commit()
+    return {"id": item_id}
+
+
+@app.patch("/api/checklist-template/{item_id}")
+def update_checklist_template_item(item_id: int, payload: ChecklistTemplateItemUpdateIn):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE checklist_template_items SET phase=%s, role=%s, warehouse_type=%s, task=%s, updated_at=now() WHERE id=%s", (payload.phase, payload.role, payload.warehouse_type, payload.task, item_id))
+        conn.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/checklist-template/{item_id}")
+def delete_checklist_template_item(item_id: int):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE checklist_template_items SET active=FALSE, updated_at=now() WHERE id=%s", (item_id,))
+        conn.commit()
+    return {"ok": True}
