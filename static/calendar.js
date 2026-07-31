@@ -86,10 +86,6 @@ function buildEditChecklistItem(text = "", done = false) {
     <button type="button" class="btn btn-sm btn-outline-danger">×</button>
   `;
   wrap.querySelector("button").addEventListener("click", () => wrap.remove());
-  const check = wrap.querySelector('input[type="checkbox"]');
-  if (editingNote && index >= 0) {
-    check.addEventListener("change", (event) => toggleNoteChecklistItem(index, event.currentTarget.checked));
-  }
   return wrap;
 }
 
