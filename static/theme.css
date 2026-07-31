@@ -109,14 +109,15 @@ thead th {
   background-color: var(--pm-accent) !important;
 }
 
-.status-dot.status-red,
-.indicator-card.status-red { background: var(--pm-red); border-left-color: var(--pm-red); }
+.status-dot.status-red { background: var(--pm-red); }
 .status-dot.status-orange,
-.status-dot.status-amber,
+.status-dot.status-amber { background: var(--pm-amber); }
+.status-dot.status-green { background: var(--pm-green); }
+
+.indicator-card.status-red { border-left-color: var(--pm-red); }
 .indicator-card.status-orange,
-.indicator-card.status-amber { background: var(--pm-amber); border-left-color: var(--pm-amber); }
-.status-dot.status-green,
-.indicator-card.status-green { background: var(--pm-green); border-left-color: var(--pm-green); }
+.indicator-card.status-amber { border-left-color: var(--pm-amber); }
+.indicator-card.status-green { border-left-color: var(--pm-green); }
 
 .table-wrapper tbody tr.row-stopped td { color: var(--pm-red) !important; }
 .table-wrapper tbody tr.row-unplanned td { color: var(--pm-accent) !important; }
