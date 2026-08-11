@@ -2527,16 +2527,28 @@ async def import_excel(
                 moved_to_historical_week = historical_week_label(snapshot_year, snapshot_week)
                 cur.execute(
                     """
-                    SELECT COALESCE(is_historical, FALSE)
+                    SELECT id, COALESCE(is_historical, FALSE)
                     FROM projects
                     WHERE project_code = %s
                     """,
                     (code,),
                 )
                 existing_project = cur.fetchone()
-                existing_is_historical = bool(existing_project[0]) if existing_project else False
+                existing_project_id = existing_project[0] if existing_project else None
+                existing_is_historical = bool(existing_project[1]) if existing_project else False
 
-                if existing_is_historical and internal_status in {"closed", "hided"}:
+                existing_has_snapshot = False
+                if existing_project_id is not None:
+                    cur.execute(
+                        "SELECT 1 FROM project_snapshot WHERE project_id = %s LIMIT 1",
+                        (existing_project_id,),
+                    )
+                    existing_has_snapshot = cur.fetchone() is not None
+
+                # Los proyectos ya archivados y sin ninguna fila de snapshot (huecos
+                # de datos de importaciones ALL antiguas, antes de este fix) se
+                # reprocesan para rellenar sus datos reales en vez de saltarlos.
+                if existing_is_historical and internal_status in {"closed", "hided"} and existing_has_snapshot:
                     skipped += 1
                     continue
 

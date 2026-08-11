@@ -43,6 +43,8 @@ DB_DSN = os.environ.get("DB_DSN", "postgresql://postgres:TU_PASSWORD@localhost:5
 
 GENERAL_INTERNAL_PROJECT_CODE = "AMPLIACIONES_VARIOS"
 
+REPORT_PROJECT_TYPES = ("otssoftware", "otsrobotic")
+
 MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 
@@ -67,7 +69,7 @@ def fetch_projects_state_asof(cur: psycopg.Cursor, cutoff_date: date | None) -> 
         """
         WITH snap AS (
             SELECT DISTINCT ON (s.project_id)
-                s.project_id, s.date_end, s.ordered_total, s.real_hours
+                s.project_id, s.date_end, s.ordered_total, s.real_hours, s.project_type
             FROM project_snapshot s
             WHERE %(cutoff)s::date IS NULL
                OR to_date(
@@ -93,11 +95,16 @@ def fetch_projects_state_asof(cur: psycopg.Cursor, cutoff_date: date | None) -> 
                 )
             ) AS is_closed
         FROM projects p
-        LEFT JOIN snap ON snap.project_id = p.id
+        JOIN snap ON snap.project_id = p.id
         LEFT JOIN projects_historical h ON h.project_code = p.project_code
         WHERE p.project_code <> %(excluded_code)s
+          AND lower(snap.project_type) = ANY(%(project_types)s)
         """,
-        {"excluded_code": GENERAL_INTERNAL_PROJECT_CODE, "cutoff": cutoff_date},
+        {
+            "excluded_code": GENERAL_INTERNAL_PROJECT_CODE,
+            "cutoff": cutoff_date,
+            "project_types": list(REPORT_PROJECT_TYPES),
+        },
     )
     columns = [desc[0] for desc in cur.description]
     return [dict(zip(columns, row)) for row in cur.fetchall()]
