@@ -32,6 +32,16 @@ MARGIN = 15.0
 CONTENT_X = MARGIN + 10
 CONTENT_W = PAGE_WIDTH - (2 * MARGIN) - 20
 
+FULL_MONTH_NAMES = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+]
+
+
+def _month_title(month_key: tuple[int, int]) -> str:
+    year, month = month_key
+    return f"{FULL_MONTH_NAMES[month - 1]} {year}"
+
 
 def _fmt_int(value: float) -> str:
     return f"{value:,.0f}".replace(",", ".")
@@ -67,13 +77,43 @@ def _kpi_card(page: list[str], x: float, y: float, w: float, h: float, label: st
     pdf_text(page, x + 10, y + 10, value, size=17, bold=True, color_rgb=INK)
 
 
+def _closures_table_page(
+    title: str,
+    subtitle: str,
+    year: int,
+    generated_at,
+    rows: list[list[str]],
+    headers: list[str],
+    col_widths: list[float],
+    total_label: str | None,
+    empty_message: str,
+    rows_per_page: int = 24,
+) -> list[list[str]]:
+    pages: list[list[str]] = []
+    chunks = [rows[i:i + rows_per_page] for i in range(0, len(rows), rows_per_page)] or [[]]
+    for chunk_idx, chunk in enumerate(chunks):
+        page: list[str] = []
+        _page_frame(page, subtitle, year, generated_at)
+        pdf_text(page, CONTENT_X, PAGE_HEIGHT - 78, title, size=11, bold=True, color_rgb=INK)
+        table_top = PAGE_HEIGHT - 96
+        if not chunk:
+            pdf_text(page, CONTENT_X, table_top - 20, empty_message, size=10)
+        else:
+            pdf_table(page, CONTENT_X, table_top, col_widths, headers, chunk, row_height=15)
+        if total_label and chunk_idx == len(chunks) - 1:
+            table_bottom = table_top - 15 - (len(chunk) * 15) - 16
+            pdf_text(page, CONTENT_X, max(MARGIN + 12, table_bottom), total_label, size=9, bold=True, color_rgb=INK)
+        pages.append(page)
+    return pages
+
+
 def build_closure_report_pages(data: dict) -> list[list[str]]:
     year = data["year"]
     generated_at = data["generated_at"]
     labels = data["month_labels"]
     actual = data["actual"]
     projections = data["projections"]
-    closed_projects = data["closed_projects"]
+    chart_w = (CONTENT_W - 15) / 2
     pages: list[list[str]] = []
 
     # --- Pagina 1: cierres reales ---
@@ -89,7 +129,6 @@ def build_closure_report_pages(data: dict) -> list[list[str]]:
 
     chart_h = 280
     chart_y = card_y - 20 - chart_h
-    chart_w = (CONTENT_W - 15) / 2
     pdf_grouped_bar_chart(
         page1, CONTENT_X, chart_y, chart_w, chart_h,
         "Proyectos cerrados por mes",
@@ -106,36 +145,10 @@ def build_closure_report_pages(data: dict) -> list[list[str]]:
     )
     pages.append(page1)
 
-    # --- Pagina(s): detalle de proyectos cerrados ---
-    headers = ["Codigo", "Proyecto", "Equipo", "PM", "Fecha cierre", "Horas totales", "Horas reales"]
-    col_widths = [85, 200, 140, 140, 75, 75, 75]
-    rows_per_page = 26
-    detail_rows = [
-        [
-            _clean_text(item.get("project_code")),
-            _clean_text(item.get("project_name")),
-            _clean_text(item.get("team")),
-            _clean_text(item.get("project_manager")),
-            _fmt_date(item.get("date_end")),
-            _fmt_hours(item.get("hours") or 0.0),
-            _fmt_hours(item.get("real_hours") or 0.0),
-        ]
-        for item in closed_projects
-    ]
-    chunks = [detail_rows[i:i + rows_per_page] for i in range(0, len(detail_rows), rows_per_page)] or [[]]
-    for chunk in chunks:
-        page: list[str] = []
-        _page_frame(page, "Detalle de proyectos cerrados", year, generated_at)
-        table_top = PAGE_HEIGHT - 80
-        if not chunk:
-            pdf_text(page, CONTENT_X, table_top - 20, f"No hay proyectos cerrados en {year}.", size=10)
-        else:
-            pdf_table(page, CONTENT_X, table_top, col_widths, headers, chunk, row_height=15)
-        pages.append(page)
-
-    # --- Pagina final: proyeccion ---
+    # --- Pagina: proyecciones (graficas) ---
     page_proj: list[str] = []
-    _page_frame(page_proj, "Proyeccion acumulada hasta fin de ano", year, generated_at)
+    _page_frame(page_proj, "Proyecciones", year, generated_at)
+    pdf_text(page_proj, CONTENT_X, PAGE_HEIGHT - 78, "Proyecciones", size=13, bold=True, color_rgb=INK)
 
     series_colors = {"now": NAVY, "w1": AMBER, "w4": GREEN}
     count_series = [
@@ -146,8 +159,8 @@ def build_closure_report_pages(data: dict) -> list[list[str]]:
         (projections[key]["label"], series_colors[key], projections[key]["cumulative_hours"])
         for key in ("now", "w1", "w4")
     ]
-    chart_h2 = 300
-    chart_y2 = PAGE_HEIGHT - 100 - chart_h2
+    chart_h2 = 260
+    chart_y2 = PAGE_HEIGHT - 108 - chart_h2
     pdf_multi_line_chart(
         page_proj, CONTENT_X, chart_y2, chart_w, chart_h2,
         "Proyeccion acumulada de proyectos cerrados",
@@ -161,14 +174,100 @@ def build_closure_report_pages(data: dict) -> list[list[str]]:
     note_lines = [
         "Metodologia: datos tomados directamente de la ultima importacion AllOrders completa (Internal Status, Project Type, Dates End)",
         "disponible en cada fecha de corte (hoy / hace 1 semana / hace 4 semanas). Cerrado = Internal Status Closed; planificado = Normal.",
-        "Solo se incluyen proyectos de tipo OTSSoftware u OTSRobotic. El mes es el de su fecha de fin (Dates End) y las horas son horas",
-        "totales (Ordered N + Ordered E). La proyeccion acumulada suma cerrado + planificado mes a mes. Se excluye AMPLIACIONES_VARIOS.",
+        "Solo se incluyen proyectos de tipo OTSSoftware u OTSRobotic. Las horas son horas totales (Ordered N + Ordered E).",
+        "Se excluye AMPLIACIONES_VARIOS.",
     ]
-    y = chart_y2 - 20
+    y = chart_y2 - 16
     for line in note_lines:
         pdf_text(page_proj, CONTENT_X, y, line, size=7, color_rgb=MUTED)
-        y -= 11
+        y -= 10
     pages.append(page_proj)
+
+    # --- Pagina: tabla de datos de la proyeccion, por snapshot ---
+    page_data: list[str] = []
+    _page_frame(page_data, "Proyecciones", year, generated_at)
+    pdf_text(page_data, CONTENT_X, PAGE_HEIGHT - 78, "Datos de la proyeccion por snapshot", size=11, bold=True, color_rgb=INK)
+
+    snap_headers = ["Mes", "Hoy", "Hace 1 sem.", "Hace 4 sem."]
+    count_rows = [
+        [
+            labels[i],
+            _fmt_int(projections["now"]["cumulative_count"][i]),
+            _fmt_int(projections["w1"]["cumulative_count"][i]),
+            _fmt_int(projections["w4"]["cumulative_count"][i]),
+        ]
+        for i in range(12)
+    ]
+    hours_rows = [
+        [
+            labels[i],
+            _fmt_hours(projections["now"]["cumulative_hours"][i]),
+            _fmt_hours(projections["w1"]["cumulative_hours"][i]),
+            _fmt_hours(projections["w4"]["cumulative_hours"][i]),
+        ]
+        for i in range(12)
+    ]
+    table_top = PAGE_HEIGHT - 100
+    snap_col_widths = [60, 100, 100, 100]
+    pdf_text(page_data, CONTENT_X, table_top + 6, "Proyectos cerrados acumulados (numero)", size=8.5, bold=True, color_rgb=MUTED)
+    pdf_table(page_data, CONTENT_X, table_top, snap_col_widths, snap_headers, count_rows, row_height=14)
+    pdf_text(page_data, CONTENT_X + chart_w + 15, table_top + 6, "Horas totales acumuladas", size=8.5, bold=True, color_rgb=MUTED)
+    pdf_table(page_data, CONTENT_X + chart_w + 15, table_top, snap_col_widths, snap_headers, hours_rows, row_height=14)
+    pages.append(page_data)
+
+    # --- Paginas: proximos cierres (mes actual + 2 siguientes) ---
+    upcoming_headers = ["Proyecto", "Codigo", "Horas totales", "Estado", "Fecha cierre", "Equipo"]
+    upcoming_col_widths = [260, 90, 90, 100, 80, 165]
+    for month_key, info in data["upcoming_closures"].items():
+        rows = [
+            [
+                _clean_text(item.get("project_name")),
+                _clean_text(item.get("project_code")),
+                _fmt_hours(item.get("hours") or 0.0),
+                _clean_text(item.get("phase")),
+                _fmt_date(item.get("date_end")),
+                _clean_text(item.get("team")),
+            ]
+            for item in info["rows"]
+        ]
+        total_label = f"Total horas planificadas a cerrar en {_month_title(month_key)}: {_fmt_hours(info['total_hours'])} h ({_fmt_int(len(info['rows']))} proyectos)"
+        pages.extend(
+            _closures_table_page(
+                f"Proximos cierres - {_month_title(month_key)}",
+                "Proximos cierres",
+                year, generated_at,
+                rows, upcoming_headers, upcoming_col_widths,
+                total_label,
+                f"No hay cierres planificados para {_month_title(month_key)}.",
+            )
+        )
+
+    # --- Paginas: cambios de fecha de cierre (mes actual + 2 siguientes) ---
+    changes_headers = ["Proyecto", "Codigo", "Horas totales", "Estado", "Equipo", "Mes anterior", "Mes nuevo"]
+    changes_col_widths = [220, 85, 85, 95, 140, 85, 85]
+    for month_key, changes in data["month_changes"].items():
+        rows = [
+            [
+                _clean_text(item.get("project_name")),
+                _clean_text(item.get("project_code")),
+                _fmt_hours(item.get("hours") or 0.0),
+                _clean_text(item.get("phase")),
+                _clean_text(item.get("team")),
+                _month_title((item["old_date_end"].year, item["old_date_end"].month)),
+                _month_title((item["new_date_end"].year, item["new_date_end"].month)),
+            ]
+            for item in changes
+        ]
+        pages.extend(
+            _closures_table_page(
+                f"Cambios de fecha de cierre - {_month_title(month_key)}",
+                "Cambios de fecha de cierre",
+                year, generated_at,
+                rows, changes_headers, changes_col_widths,
+                None,
+                f"No hay cambios de mes de cierre para {_month_title(month_key)} desde el snapshot anterior.",
+            )
+        )
 
     return pages
 

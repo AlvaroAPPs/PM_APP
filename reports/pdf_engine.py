@@ -80,6 +80,7 @@ def pdf_multi_line_chart(
     title: str,
     labels: list[str],
     series: list[tuple[str, tuple[float, float, float], list[float | None]]],
+    show_value_labels: bool = True,
 ) -> None:
     pdf_rect(stream, x, y, w, h, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.86, 0.88, 0.92), line_width=0.8)
     pdf_text(stream, x + 8, y + h - 14, title, size=9, bold=True)
@@ -124,29 +125,44 @@ def pdf_multi_line_chart(
     legend_slot = min(150, (w - 16) / max(1, len(series)))
     legend_x = max(chart_x, x + (w - (len(series) * legend_slot)) / 2)
     legend_y = y + h - 28
-    for name, color, values in series:
+    # Cuando varias series coinciden exactamente en un punto (muy habitual
+    # en meses ya cerrados, donde "hoy"/"hace 1 semana"/"hace 4 semanas"
+    # todavia no han divergido) solo se imprime el valor una vez por punto,
+    # para no apilar el mismo numero repetido.
+    printed_at_index: dict[int, set[float]] = {}
+    for series_idx, (name, color, values) in enumerate(series):
         stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
         stream.append(f"{legend_x:.2f} {legend_y:.2f} 8.00 3.00 re f")
         pdf_text(stream, legend_x + 11, legend_y - 1, name, size=7)
         legend_x += legend_slot
 
-        points: list[tuple[float, float]] = []
+        points: list[tuple[float, float, float, int]] = []
         for idx, value in enumerate(values):
             if value is None:
                 continue
             px = chart_x + (chart_w * idx / max(1, len(values) - 1))
             py = chart_y + ((value - vmin) / (vmax - vmin)) * chart_h
-            points.append((px, py))
+            points.append((px, py, value, idx))
         if len(points) >= 2:
             stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} RG 1.4 w")
-            p0x, p0y = points[0]
+            p0x, p0y, _p0v, _p0i = points[0]
             stream.append(f"{p0x:.2f} {p0y:.2f} m")
-            for px, py in points[1:]:
+            for px, py, _pv, _pi in points[1:]:
                 stream.append(f"{px:.2f} {py:.2f} l")
             stream.append("S")
-        for px, py in points:
+        for px, py, value, idx in points:
             stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
             stream.append(f"{px - 1.8:.2f} {py - 1.8:.2f} 3.60 3.60 re f")
+            if not show_value_labels:
+                continue
+            seen = printed_at_index.setdefault(idx, set())
+            if value in seen:
+                continue
+            # Desplaza la etiqueta hacia arriba segun cuantos valores
+            # distintos ya se han impreso en este mismo punto.
+            label_dy = 6 + (len(seen) * 9)
+            seen.add(value)
+            pdf_text(stream, px - 11, py + label_dy, f"{value:,.0f}".replace(",", "."), size=5.5, color_rgb=color)
 
 
 def pdf_grouped_bar_chart(
