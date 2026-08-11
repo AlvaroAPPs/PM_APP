@@ -1,35 +1,19 @@
 """Datos para el informe 'Cierre de proyectos durante el ano'.
 
-Reglas de negocio (validadas contra datos reales, ver conversacion con
-el usuario a partir del proyecto 2411024584):
+Fuente de datos: `all_orders_snapshot` (una fila por pedido en cada
+importacion ALL/AllOrders, foto completa sin mezclar con el seguimiento
+semanal incremental de OTS). Esta es la misma tabla que consulta el
+usuario a mano en Excel, replicada aqui:
 
-- Un proyecto cuenta como CERRADO cuando tiene fila en
-  `projects_historical` (equivalente a `projects.is_historical = TRUE`).
-  Esta es la senal fiable que usa el resto de la app -- el campo
-  `project_snapshot.internal_status = 'closed'` NO es fiable: el 23% de
-  los proyectos archivados nunca tuvieron una fila con ese valor
-  (confirmado con project_id 35591 / codigo 2411024584: is_historical,
-  pero su unico snapshot dice internal_status = 'Normal').
-- La fecha de cierre es `date_end` de la ultima fila conocida de
-  `project_snapshot` de ese proyecto (independientemente de que su
-  internal_status diga 'closed' o no).
-- Las horas cerradas/planificadas son `ordered_total` (horas totales),
-  no `real_hours`: real_hours falta en el 85% de los proyectos cerrados,
-  mientras que ordered_total solo falta en el 8%.
-- Un proyecto cuenta como PLANIFICADO (aun no cerrado) "a fecha de
-  corte" cuando no tiene fila en `projects_historical`, o la tiene pero
-  con `moved_to_historical_at` posterior a esa fecha de corte. Esto
-  permite reconstruir el estado "hace 1/4 semanas" usando el timestamp
-  real de archivado (fiable para cierres recientes; la migracion masiva
-  de proyectos legacy ocurrio en 2026-02-09/18, muy anterior a cualquier
-  corte de 1-4 semanas).
-- El proyecto paraguas interno AMPLIACIONES_VARIOS se excluye siempre.
+  Internal Status = Closed / Normal
+  Project Type = OTSSoftware u OTSRobotic
+  Dates End = mes del informe
 
-Nota: el pipeline de importacion (app.py: import_excel, rama ALL) se
-corrigio para que a partir de ahora las filas de AllOrders persistan su
-propio snapshot (fechas/horas) tanto al cerrar un proyecto como cuando
-sigue activo. Antes solo se usaba para mover ordenes a historico, por
-eso hay huecos de datos en importaciones anteriores a este cambio.
+Un "batch" es el conjunto de filas de una misma importacion ALL
+(mismo import_file_id) -- representa el AllOrders completo tal y como
+estaba en ese momento. Para "hoy" se usa el batch mas reciente; para
+"hace 1/4 semanas" se usa el batch mas reciente que exista hasta esa
+fecha de corte (requiere haber importado AllOrders con esa antiguedad).
 """
 
 from __future__ import annotations
@@ -57,52 +41,33 @@ def _to_float(value: object) -> float:
         return 0.0
 
 
-def fetch_projects_state_asof(cur: psycopg.Cursor, cutoff_date: date | None) -> list[dict]:
-    """Estado de cada proyecto (excluyendo AMPLIACIONES_VARIOS) 'as of' una fecha.
+def fetch_all_orders_batch_asof(cur: psycopg.Cursor, cutoff: datetime | None) -> list[dict]:
+    """Filas del AllOrders completo mas reciente a la fecha de corte indicada.
 
-    Devuelve, por proyecto: su snapshot mas reciente conocido hasta la
-    fecha de corte (date_end, ordered_total, real_hours) y si ya estaba
-    cerrado a esa fecha (is_closed), segun `projects_historical.moved_to_historical_at`.
-    Cuando cutoff_date es None se usa el estado actual (ahora mismo).
+    Cuando cutoff es None se usa la importacion ALL mas reciente que haya.
+    Todas las filas devueltas pertenecen a la MISMA importacion (mismo
+    import_file_id) -- no se mezclan datos de importaciones distintas.
     """
     cur.execute(
         """
-        WITH snap AS (
-            SELECT DISTINCT ON (s.project_id)
-                s.project_id, s.date_end, s.ordered_total, s.real_hours, s.project_type
-            FROM project_snapshot s
-            WHERE %(cutoff)s::date IS NULL
-               OR to_date(
-                      s.snapshot_year::text || to_char(s.snapshot_week, 'FM00') || '1',
-                      'IYYYIWID'
-                  ) <= %(cutoff)s::date
-            ORDER BY s.project_id, s.snapshot_year DESC, s.snapshot_week DESC
+        WITH batch AS (
+            SELECT import_file_id
+            FROM all_orders_snapshot
+            WHERE %(cutoff)s::timestamptz IS NULL OR imported_at <= %(cutoff)s::timestamptz
+            ORDER BY imported_at DESC
+            LIMIT 1
         )
         SELECT
-            p.id AS project_id,
-            p.project_code,
-            p.project_name,
-            p.team,
-            p.project_manager,
-            snap.date_end,
-            snap.ordered_total,
-            snap.real_hours,
-            (
-                h.project_code IS NOT NULL
-                AND (
-                    %(cutoff)s::timestamptz IS NULL
-                    OR h.moved_to_historical_at <= %(cutoff)s::timestamptz
-                )
-            ) AS is_closed
-        FROM projects p
-        JOIN snap ON snap.project_id = p.id
-        LEFT JOIN projects_historical h ON h.project_code = p.project_code
-        WHERE p.project_code <> %(excluded_code)s
-          AND lower(snap.project_type) = ANY(%(project_types)s)
+            s.project_code, s.project_name, s.team, s.project_manager,
+            s.project_type, s.internal_status, s.date_end, s.ordered_total, s.real_hours
+        FROM all_orders_snapshot s
+        JOIN batch b ON b.import_file_id = s.import_file_id
+        WHERE s.project_code <> %(excluded_code)s
+          AND lower(s.project_type) = ANY(%(project_types)s)
         """,
         {
+            "cutoff": cutoff,
             "excluded_code": GENERAL_INTERNAL_PROJECT_CODE,
-            "cutoff": cutoff_date,
             "project_types": list(REPORT_PROJECT_TYPES),
         },
     )
@@ -121,10 +86,13 @@ def build_monthly_buckets(rows: list[dict], year: int) -> dict:
         date_end = row.get("date_end")
         if not date_end or date_end.year != year:
             continue
+        status = (row.get("internal_status") or "").strip().lower()
+        if status not in ("closed", "normal"):
+            continue
         month_idx = date_end.month - 1
         hours = _to_float(row.get("ordered_total"))
 
-        if row.get("is_closed"):
+        if status == "closed":
             closed_count[month_idx] += 1
             closed_hours[month_idx] += hours
             closed_detail.append(
@@ -169,25 +137,25 @@ def build_monthly_buckets(rows: list[dict], year: int) -> dict:
 
 
 def fetch_closure_report_data(year: int) -> dict:
-    today = date.today()
+    now = datetime.now()
     cutoffs = [
         ("now", "Hoy", None),
-        ("w1", "Hace 1 semana", today - timedelta(days=7)),
-        ("w4", "Hace 4 semanas", today - timedelta(days=28)),
+        ("w1", "Hace 1 semana", now - timedelta(days=7)),
+        ("w4", "Hace 4 semanas", now - timedelta(days=28)),
     ]
 
     projections: dict[str, dict] = {}
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             for key, label, cutoff in cutoffs:
-                rows = fetch_projects_state_asof(cur, cutoff)
+                rows = fetch_all_orders_batch_asof(cur, cutoff)
                 buckets = build_monthly_buckets(rows, year)
                 projections[key] = {"label": label, **buckets}
 
     actual = projections["now"]
     return {
         "year": year,
-        "generated_at": datetime.now(),
+        "generated_at": now,
         "month_labels": MONTH_LABELS,
         "actual": actual,
         "projections": projections,

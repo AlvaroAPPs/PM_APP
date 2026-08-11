@@ -159,11 +159,10 @@ def build_closure_report_pages(data: dict) -> list[list[str]]:
         labels, hours_series,
     )
     note_lines = [
-        "Metodologia: un proyecto cuenta como cerrado cuando tiene fila en projects_historical (archivado); el mes de cierre es el mes",
-        "de su fecha de fin (date_end) mas reciente conocida. Un proyecto cuenta como planificado mientras no este archivado a la fecha",
-        "de corte indicada (hoy / hace 1 semana / hace 4 semanas), usando el momento real de archivado para reconstruir el estado pasado.",
-        "Las horas son siempre horas totales (ordered_total). La proyeccion acumulada suma cerrado + planificado mes a mes.",
-        "Se excluye AMPLIACIONES_VARIOS.",
+        "Metodologia: datos tomados directamente de la ultima importacion AllOrders completa (Internal Status, Project Type, Dates End)",
+        "disponible en cada fecha de corte (hoy / hace 1 semana / hace 4 semanas). Cerrado = Internal Status Closed; planificado = Normal.",
+        "Solo se incluyen proyectos de tipo OTSSoftware u OTSRobotic. El mes es el de su fecha de fin (Dates End) y las horas son horas",
+        "totales (Ordered N + Ordered E). La proyeccion acumulada suma cerrado + planificado mes a mes. Se excluye AMPLIACIONES_VARIOS.",
     ]
     y = chart_y2 - 20
     for line in note_lines:
