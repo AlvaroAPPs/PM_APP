@@ -41,20 +41,31 @@ def _to_float(value: object) -> float:
         return 0.0
 
 
-def fetch_all_orders_batch_asof(cur: psycopg.Cursor, cutoff: datetime | None) -> list[dict]:
+def fetch_all_orders_batch_asof(cur: psycopg.Cursor, cutoff: date | None) -> list[dict]:
     """Filas del AllOrders completo mas reciente a la fecha de corte indicada.
 
-    Cuando cutoff es None se usa la importacion ALL mas reciente que haya.
-    Todas las filas devueltas pertenecen a la MISMA importacion (mismo
-    import_file_id) -- no se mezclan datos de importaciones distintas.
+    "Mas reciente" se determina por la fecha que declara el propio fichero
+    (import_file.snapshot_year/snapshot_week, la que indica el usuario al
+    subirlo), NO por cuando se inserto en la base de datos -- los ficheros
+    antiguos se pueden cargar despues para completar el historico sin que
+    tapen al AllOrders mas reciente. Cuando cutoff es None se usa el
+    fichero mas reciente que haya. Todas las filas devueltas pertenecen a
+    la MISMA importacion (mismo import_file_id).
     """
     cur.execute(
         """
         WITH batch AS (
-            SELECT import_file_id
-            FROM all_orders_snapshot
-            WHERE %(cutoff)s::timestamptz IS NULL OR imported_at <= %(cutoff)s::timestamptz
-            ORDER BY imported_at DESC
+            SELECT f.id AS import_file_id
+            FROM import_file f
+            WHERE EXISTS (SELECT 1 FROM all_orders_snapshot s WHERE s.import_file_id = f.id)
+              AND (
+                  %(cutoff)s::date IS NULL
+                  OR to_date(
+                      f.snapshot_year::text || to_char(f.snapshot_week, 'FM00') || '1',
+                      'IYYYIWID'
+                  ) <= %(cutoff)s::date
+              )
+            ORDER BY f.snapshot_year DESC, f.snapshot_week DESC
             LIMIT 1
         )
         SELECT
@@ -138,10 +149,11 @@ def build_monthly_buckets(rows: list[dict], year: int) -> dict:
 
 def fetch_closure_report_data(year: int) -> dict:
     now = datetime.now()
+    today = now.date()
     cutoffs = [
         ("now", "Hoy", None),
-        ("w1", "Hace 1 semana", now - timedelta(days=7)),
-        ("w4", "Hace 4 semanas", now - timedelta(days=28)),
+        ("w1", "Hace 1 semana", today - timedelta(days=7)),
+        ("w4", "Hace 4 semanas", today - timedelta(days=28)),
     ]
 
     projections: dict[str, dict] = {}
