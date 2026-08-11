@@ -2543,6 +2543,8 @@ async def import_excel(
                 pid = upsert_project(cur, project_fields)
 
                 if internal_status in {"closed", "hided"}:
+                    snapshot_fields = compute_deltas(cur, pid, snapshot_year, snapshot_week, snapshot_fields)
+                    upsert_snapshot(cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields)
                     move_project_to_historical(
                         cur,
                         pid,
@@ -2566,12 +2568,10 @@ async def import_excel(
                     if historical_row:
                         restore_project_from_historical(cur, code)
                         restored += 1
-                        snapshot_fields = compute_deltas(cur, pid, snapshot_year, snapshot_week, snapshot_fields)
-                        upsert_snapshot(cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields)
-                        imported += 1
-                        continue
 
-                    skipped += 1
+                    snapshot_fields = compute_deltas(cur, pid, snapshot_year, snapshot_week, snapshot_fields)
+                    upsert_snapshot(cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields)
+                    imported += 1
                     continue
 
                 skipped += 1

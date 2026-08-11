@@ -223,6 +223,21 @@ def pdf_grouped_bar_chart(
         pdf_text(stream, x + 2, py - 2, f"{value:,.0f}".replace(",", "."), size=6.5)
 
 
+def _truncate_to_width(text: str, max_width: float, size: float) -> str:
+    """Recorta un texto para que quepa en max_width, evitando que se
+    solape con la columna siguiente (aproximacion por ancho medio de
+    caracter de Helvetica, suficiente para una tabla informativa)."""
+    if not text:
+        return text
+    avg_char_w = size * 0.55
+    max_chars = max(1, int(max_width / avg_char_w))
+    if len(text) <= max_chars:
+        return text
+    if max_chars <= 3:
+        return text[:max_chars]
+    return text[: max_chars - 3].rstrip() + "..."
+
+
 def pdf_table(
     stream: list[str],
     x: float,
@@ -231,6 +246,7 @@ def pdf_table(
     headers: list[str],
     rows: list[list[str]],
     row_height: float = 15.0,
+    font_size: float = 7.5,
 ) -> float:
     """Dibuja una tabla simple empezando en y_top y devuelve la y final."""
     total_w = sum(col_widths)
@@ -238,7 +254,7 @@ def pdf_table(
     pdf_rect(stream, x, y_top - header_h, total_w, header_h, fill_rgb=(0.88, 0.90, 0.93), stroke_rgb=(0.80, 0.83, 0.88))
     cx = x
     for header, cw in zip(headers, col_widths):
-        pdf_text(stream, cx + 5, y_top - header_h + 4.5, header, size=7.5, bold=True)
+        pdf_text(stream, cx + 5, y_top - header_h + 4.5, _truncate_to_width(header, cw - 8, font_size), size=font_size, bold=True)
         cx += cw
 
     y = y_top - header_h
@@ -248,7 +264,7 @@ def pdf_table(
             pdf_rect(stream, x, y, total_w, row_height, fill_rgb=(0.97, 0.97, 0.96), stroke_rgb=None)
         cx = x
         for value, cw in zip(row, col_widths):
-            pdf_text(stream, cx + 5, y + 4.5, value, size=7.5)
+            pdf_text(stream, cx + 5, y + 4.5, _truncate_to_width(value, cw - 8, font_size), size=font_size)
             cx += cw
     pdf_rect(stream, x, y, total_w, y_top - header_h - y, fill_rgb=None, stroke_rgb=(0.80, 0.83, 0.88), line_width=0.7)
     return y

@@ -45,6 +45,11 @@ def _fmt_date(value: date | None) -> str:
     return value.strftime("%d/%m/%Y") if value else "N/A"
 
 
+def _clean_text(value: object) -> str:
+    text = "" if value is None else str(value).strip()
+    return "" if text.lower() in ("", "nan", "none") else text
+
+
 def _page_frame(page: list[str], subtitle: str, year: int, generated_at) -> None:
     pdf_rect(page, MARGIN, MARGIN, PAGE_WIDTH - (2 * MARGIN), PAGE_HEIGHT - (2 * MARGIN),
              fill_rgb=(0.98, 0.98, 0.97), stroke_rgb=(0.90, 0.91, 0.93), line_width=0.8)
@@ -78,7 +83,7 @@ def build_closure_report_pages(data: dict) -> list[list[str]]:
     card_y = PAGE_HEIGHT - 110
     card_w = (CONTENT_W - 20) / 3
     _kpi_card(page1, CONTENT_X, card_y, card_w, 38, "Proyectos cerrados", _fmt_int(data["total_closed_count"]))
-    _kpi_card(page1, CONTENT_X + card_w + 10, card_y, card_w, 38, "Horas cerradas", f'{_fmt_hours(data["total_closed_hours"])} h')
+    _kpi_card(page1, CONTENT_X + card_w + 10, card_y, card_w, 38, "Horas totales cerradas", f'{_fmt_hours(data["total_closed_hours"])} h')
     _kpi_card(page1, CONTENT_X + 2 * (card_w + 10), card_y, card_w, 38, "Horas medias / proyecto",
               f'{_fmt_hours(data["avg_hours_per_project"])} h')
 
@@ -94,7 +99,7 @@ def build_closure_report_pages(data: dict) -> list[list[str]]:
     )
     pdf_grouped_bar_chart(
         page1, CONTENT_X + chart_w + 15, chart_y, chart_w, chart_h,
-        "Horas cerradas por mes",
+        "Horas totales cerradas por mes",
         labels,
         [("Horas", AMBER, actual["closed_hours"])],
         show_value_labels=True,
@@ -102,17 +107,18 @@ def build_closure_report_pages(data: dict) -> list[list[str]]:
     pages.append(page1)
 
     # --- Pagina(s): detalle de proyectos cerrados ---
-    headers = ["Codigo", "Proyecto", "Equipo", "PM", "Fecha cierre", "Horas"]
-    col_widths = [90, 240, 110, 130, 90, 80]
+    headers = ["Codigo", "Proyecto", "Equipo", "PM", "Fecha cierre", "Horas totales", "Horas reales"]
+    col_widths = [85, 200, 140, 140, 75, 75, 75]
     rows_per_page = 26
     detail_rows = [
         [
-            str(item.get("project_code") or ""),
-            str(item.get("project_name") or ""),
-            str(item.get("team") or ""),
-            str(item.get("project_manager") or ""),
+            _clean_text(item.get("project_code")),
+            _clean_text(item.get("project_name")),
+            _clean_text(item.get("team")),
+            _clean_text(item.get("project_manager")),
             _fmt_date(item.get("date_end")),
             _fmt_hours(item.get("hours") or 0.0),
+            _fmt_hours(item.get("real_hours") or 0.0),
         ]
         for item in closed_projects
     ]
@@ -153,10 +159,11 @@ def build_closure_report_pages(data: dict) -> list[list[str]]:
         labels, hours_series,
     )
     note_lines = [
-        "Metodologia: un proyecto cuenta como cerrado cuando su importacion trae internal_status = closed;",
-        "el mes de cierre es el mes de la fecha de fin (date_end) de esa importacion y las horas cerradas son las horas reales de ese momento.",
-        "Un proyecto cuenta como planificado cuando esta en estado normal con fecha de fin prevista dentro del ano; sus horas planificadas",
-        "son las horas totales encargadas. La proyeccion acumulada suma cerrado + planificado mes a mes. Se excluye AMPLIACIONES_VARIOS.",
+        "Metodologia: un proyecto cuenta como cerrado cuando tiene fila en projects_historical (archivado); el mes de cierre es el mes",
+        "de su fecha de fin (date_end) mas reciente conocida. Un proyecto cuenta como planificado mientras no este archivado a la fecha",
+        "de corte indicada (hoy / hace 1 semana / hace 4 semanas), usando el momento real de archivado para reconstruir el estado pasado.",
+        "Las horas son siempre horas totales (ordered_total). La proyeccion acumulada suma cerrado + planificado mes a mes.",
+        "Se excluye AMPLIACIONES_VARIOS.",
     ]
     y = chart_y2 - 20
     for line in note_lines:
