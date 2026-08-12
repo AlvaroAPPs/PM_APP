@@ -11,15 +11,16 @@ usuario a mano en Excel, replicada aqui:
 
 Un "batch" es el conjunto de filas de una misma importacion ALL
 (mismo import_file_id) -- representa el AllOrders completo tal y como
-estaba en ese momento. Para "hoy" se usa el batch mas reciente; para
-"hace 1/4 semanas" se usa el batch mas reciente que exista hasta esa
-fecha de corte (requiere haber importado AllOrders con esa antiguedad).
+estaba en ese momento. Para "hoy" se usa el ultimo batch disponible;
+para "hace 1/4 semanas" se usa el batch anterior y el que hace 4
+posiciones (no una fecha de calendario -7/-28 dias, que puede coincidir
+con "hoy" si no hay importaciones repartidas en esas fechas exactas).
 """
 
 from __future__ import annotations
 
 import os
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import psycopg
 
@@ -39,51 +40,6 @@ def _to_float(value: object) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
-
-
-def fetch_all_orders_batch_asof(cur: psycopg.Cursor, cutoff: date | None) -> list[dict]:
-    """Filas del AllOrders completo mas reciente a la fecha de corte indicada.
-
-    "Mas reciente" se determina por la fecha que declara el propio fichero
-    (import_file.snapshot_year/snapshot_week, la que indica el usuario al
-    subirlo), NO por cuando se inserto en la base de datos -- los ficheros
-    antiguos se pueden cargar despues para completar el historico sin que
-    tapen al AllOrders mas reciente. Cuando cutoff es None se usa el
-    fichero mas reciente que haya. Todas las filas devueltas pertenecen a
-    la MISMA importacion (mismo import_file_id).
-    """
-    cur.execute(
-        """
-        WITH batch AS (
-            SELECT f.id AS import_file_id
-            FROM import_file f
-            WHERE EXISTS (SELECT 1 FROM all_orders_snapshot s WHERE s.import_file_id = f.id)
-              AND (
-                  %(cutoff)s::date IS NULL
-                  OR to_date(
-                      f.snapshot_year::text || to_char(f.snapshot_week, 'FM00') || '1',
-                      'IYYYIWID'
-                  ) <= %(cutoff)s::date
-              )
-            ORDER BY f.snapshot_year DESC, f.snapshot_week DESC
-            LIMIT 1
-        )
-        SELECT
-            s.project_code, s.project_name, s.team, s.project_manager,
-            s.project_type, s.internal_status, s.date_end, s.ordered_total, s.real_hours
-        FROM all_orders_snapshot s
-        JOIN batch b ON b.import_file_id = s.import_file_id
-        WHERE s.project_code <> %(excluded_code)s
-          AND lower(s.project_type) = ANY(%(project_types)s)
-        """,
-        {
-            "cutoff": cutoff,
-            "excluded_code": GENERAL_INTERNAL_PROJECT_CODE,
-            "project_types": list(REPORT_PROJECT_TYPES),
-        },
-    )
-    columns = [desc[0] for desc in cur.description]
-    return [dict(zip(columns, row)) for row in cur.fetchall()]
 
 
 def build_monthly_buckets(rows: list[dict], year: int) -> dict:
@@ -194,6 +150,34 @@ def fetch_all_orders_rows_for_batch(cur: psycopg.Cursor, import_file_id: int) ->
     return [dict(zip(columns, row)) for row in cur.fetchall()]
 
 
+def fetch_snapshot_year_totals(cur: psycopg.Cursor, year: int) -> list[dict]:
+    """Evolucion del total del ano (cerrado + planificado) segun cada
+    importacion AllOrders disponible, ordenado de la mas antigua a la
+    mas reciente -- para ver como cambia la previsión con cada snapshot."""
+    cur.execute(
+        """
+        SELECT f.id, f.snapshot_year, f.snapshot_week
+        FROM import_file f
+        WHERE EXISTS (SELECT 1 FROM all_orders_snapshot s WHERE s.import_file_id = f.id)
+        ORDER BY f.snapshot_year ASC, f.snapshot_week ASC
+        """
+    )
+    batches = cur.fetchall()
+    result: list[dict] = []
+    for import_file_id, snapshot_year, snapshot_week in batches:
+        rows = fetch_all_orders_rows_for_batch(cur, import_file_id)
+        buckets = build_monthly_buckets(rows, year)
+        result.append(
+            {
+                "snapshot_year": snapshot_year,
+                "snapshot_week": snapshot_week,
+                "total_count": buckets["cumulative_count"][-1] if buckets["cumulative_count"] else 0.0,
+                "total_hours": buckets["cumulative_hours"][-1] if buckets["cumulative_hours"] else 0.0,
+            }
+        )
+    return result
+
+
 def fetch_upcoming_closures(cur: psycopg.Cursor, today: date) -> dict[tuple[int, int], dict]:
     """Cierres planificados (Internal Status = Normal) del mes actual y los 2 siguientes,
     segun la importacion AllOrders mas reciente."""
@@ -276,22 +260,29 @@ def fetch_month_changes(cur: psycopg.Cursor, today: date) -> dict[tuple[int, int
 def fetch_closure_report_data(year: int) -> dict:
     now = datetime.now()
     today = now.date()
-    cutoffs = [
-        ("now", "Hoy", None),
-        ("w1", "Hace 1 semana", today - timedelta(days=7)),
-        ("w4", "Hace 4 semanas", today - timedelta(days=28)),
+    # Posiciones ordinales entre los snapshots disponibles, no fechas de
+    # calendario: el snapshot mas reciente, el inmediatamente anterior y
+    # el que hace 4 importaciones. Con cadencia semanal de AllOrders esto
+    # equivale aproximadamente a hoy / hace 1 semana / hace 4 semanas,
+    # pero no depende de que existan importaciones justo en esos dias.
+    snapshot_specs = [
+        ("now", "Hoy", 0),
+        ("w1", "Snapshot anterior", 1),
+        ("w4", "Hace 4 snapshots", 4),
     ]
 
     projections: dict[str, dict] = {}
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
-            for key, label, cutoff in cutoffs:
-                rows = fetch_all_orders_batch_asof(cur, cutoff)
+            batch_ids = fetch_latest_batch_ids(cur, limit=5)
+            for key, label, offset in snapshot_specs:
+                rows = fetch_all_orders_rows_for_batch(cur, batch_ids[offset]) if offset < len(batch_ids) else []
                 buckets = build_monthly_buckets(rows, year)
                 projections[key] = {"label": label, **buckets}
 
             upcoming_closures = fetch_upcoming_closures(cur, today)
             month_changes = fetch_month_changes(cur, today)
+            snapshot_year_totals = fetch_snapshot_year_totals(cur, year)
 
     actual = projections["now"]
     return {
@@ -311,4 +302,5 @@ def fetch_closure_report_data(year: int) -> dict:
         ),
         "upcoming_closures": upcoming_closures,
         "month_changes": month_changes,
+        "snapshot_year_totals": snapshot_year_totals,
     }

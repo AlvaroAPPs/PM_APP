@@ -27,6 +27,8 @@ AMBER = (0.725, 0.459, 0.047)
 GREEN = (0.082, 0.451, 0.278)
 INK = (0.125, 0.122, 0.110)
 MUTED = (0.42, 0.42, 0.39)
+BRIGHT_BLUE = (0.20, 0.55, 0.95)
+BRIGHT_GOLD = (1.00, 0.72, 0.15)
 
 MARGIN = 15.0
 CONTENT_X = MARGIN + 10
@@ -131,17 +133,25 @@ def build_closure_report_pages(data: dict) -> list[list[str]]:
     chart_y = card_y - 20 - chart_h
     pdf_grouped_bar_chart(
         page1, CONTENT_X, chart_y, chart_w, chart_h,
-        "Proyectos cerrados por mes",
+        "Proyectos cerrados y planificados por mes",
         labels,
-        [("Proyectos", NAVY, [float(v) for v in actual["closed_count"]])],
+        [
+            ("Cerrados", NAVY, [float(v) for v in actual["closed_count"]]),
+            ("Planificados", BRIGHT_BLUE, [float(v) for v in actual["planned_count"]]),
+        ],
         show_value_labels=True,
+        stacked=True,
     )
     pdf_grouped_bar_chart(
         page1, CONTENT_X + chart_w + 15, chart_y, chart_w, chart_h,
-        "Horas totales cerradas por mes",
+        "Horas totales cerradas y planificadas por mes",
         labels,
-        [("Horas", AMBER, actual["closed_hours"])],
+        [
+            ("Horas cerradas", AMBER, actual["closed_hours"]),
+            ("Horas planificadas", BRIGHT_GOLD, actual["planned_hours"]),
+        ],
         show_value_labels=True,
+        stacked=True,
     )
     pages.append(page1)
 
@@ -183,36 +193,31 @@ def build_closure_report_pages(data: dict) -> list[list[str]]:
         y -= 10
     pages.append(page_proj)
 
-    # --- Pagina: tabla de datos de la proyeccion, por snapshot ---
+    # --- Pagina: evolucion del total del ano por snapshot ---
     page_data: list[str] = []
     _page_frame(page_data, "Proyecciones", year, generated_at)
-    pdf_text(page_data, CONTENT_X, PAGE_HEIGHT - 78, "Datos de la proyeccion por snapshot", size=11, bold=True, color_rgb=INK)
+    pdf_text(page_data, CONTENT_X, PAGE_HEIGHT - 78, f"Evolucion del total {year} por snapshot", size=11, bold=True, color_rgb=INK)
+    pdf_text(
+        page_data, CONTENT_X, PAGE_HEIGHT - 92,
+        "Total de proyectos y horas del ano (cerrados + planificados) tal y como se veian en cada importacion AllOrders.",
+        size=8, color_rgb=MUTED,
+    )
 
-    snap_headers = ["Mes", "Hoy", "Hace 1 sem.", "Hace 4 sem."]
-    count_rows = [
+    snapshot_headers = ["Nº semana", "N Proyectos", "Horas proyectos"]
+    snapshot_col_widths = [110, 120, 130]
+    snapshot_rows = [
         [
-            labels[i],
-            _fmt_int(projections["now"]["cumulative_count"][i]),
-            _fmt_int(projections["w1"]["cumulative_count"][i]),
-            _fmt_int(projections["w4"]["cumulative_count"][i]),
+            f"{item['snapshot_year']}-W{item['snapshot_week']:02d}",
+            _fmt_int(item["total_count"]),
+            f'{_fmt_hours(item["total_hours"])} h',
         ]
-        for i in range(12)
+        for item in data["snapshot_year_totals"]
     ]
-    hours_rows = [
-        [
-            labels[i],
-            _fmt_hours(projections["now"]["cumulative_hours"][i]),
-            _fmt_hours(projections["w1"]["cumulative_hours"][i]),
-            _fmt_hours(projections["w4"]["cumulative_hours"][i]),
-        ]
-        for i in range(12)
-    ]
-    table_top = PAGE_HEIGHT - 100
-    snap_col_widths = [60, 100, 100, 100]
-    pdf_text(page_data, CONTENT_X, table_top + 6, "Proyectos cerrados acumulados (numero)", size=8.5, bold=True, color_rgb=MUTED)
-    pdf_table(page_data, CONTENT_X, table_top, snap_col_widths, snap_headers, count_rows, row_height=14)
-    pdf_text(page_data, CONTENT_X + chart_w + 15, table_top + 6, "Horas totales acumuladas", size=8.5, bold=True, color_rgb=MUTED)
-    pdf_table(page_data, CONTENT_X + chart_w + 15, table_top, snap_col_widths, snap_headers, hours_rows, row_height=14)
+    table_top = PAGE_HEIGHT - 112
+    if not snapshot_rows:
+        pdf_text(page_data, CONTENT_X, table_top - 20, "No hay importaciones AllOrders disponibles.", size=10)
+    else:
+        pdf_table(page_data, CONTENT_X, table_top, snapshot_col_widths, snapshot_headers, snapshot_rows, row_height=15)
     pages.append(page_data)
 
     # --- Paginas: proximos cierres (mes actual + 2 siguientes) ---

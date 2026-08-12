@@ -175,6 +175,7 @@ def pdf_grouped_bar_chart(
     labels: list[str],
     series: list[tuple[str, tuple[float, float, float], list[float | None]]],
     show_value_labels: bool = False,
+    stacked: bool = False,
 ) -> None:
     pdf_rect(stream, x, y, w, h, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.86, 0.88, 0.92), line_width=0.8)
     pdf_text(stream, x + 8, y + h - 14, title, size=9, bold=True)
@@ -189,8 +190,16 @@ def pdf_grouped_bar_chart(
         pdf_text(stream, x + 8, y + 8, "Sin datos", size=8)
         return
 
-    vmin = min(0.0, min(numeric))
-    vmax = max(numeric)
+    if stacked:
+        group_totals = [
+            sum((values[i] or 0) for _name, _color, values in series if i < len(values))
+            for i in range(len(labels))
+        ]
+        vmin = 0.0
+        vmax = max(group_totals) if group_totals else 1.0
+    else:
+        vmin = min(0.0, min(numeric))
+        vmax = max(numeric)
     if vmax <= vmin:
         vmax = vmin + 1.0
     pad = (vmax - vmin) * 0.08
@@ -207,7 +216,7 @@ def pdf_grouped_bar_chart(
 
     group_count = max(1, len(labels))
     group_w = chart_w / group_count
-    bar_w = max(4.0, min(16.0, group_w / max(2, len(series) + 1)))
+    bar_w = max(8.0, min(26.0, group_w - 10)) if stacked else max(4.0, min(16.0, group_w / max(2, len(series) + 1)))
 
     legend_slot = min(150, (w - 16) / max(1, len(series)))
     legend_x = max(chart_x, x + (w - (len(series) * legend_slot)) / 2)
@@ -222,16 +231,34 @@ def pdf_grouped_bar_chart(
         gx = chart_x + group_w * group_idx
         center = gx + (group_w / 2)
         pdf_text(stream, center - 9, chart_y - 12, label, size=6.5)
-        for series_idx, (_name, color, values) in enumerate(series):
-            if group_idx >= len(values) or values[group_idx] is None:
-                continue
-            value = values[group_idx] or 0
-            bar_h = ((value - vmin) / (vmax - vmin)) * chart_h
-            bx = gx + 4 + (series_idx * (bar_w + 2))
-            stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
-            stream.append(f"{bx:.2f} {chart_y:.2f} {bar_w:.2f} {bar_h:.2f} re f")
-            if show_value_labels and value:
-                pdf_text(stream, bx + (bar_w / 2) - 6, chart_y + bar_h + 3, f"{value:,.0f}".replace(",", "."), size=6)
+
+        if stacked:
+            base = chart_y
+            for _name, color, values in series:
+                if group_idx >= len(values) or values[group_idx] is None:
+                    continue
+                value = values[group_idx] or 0
+                seg_h = ((value - vmin) / (vmax - vmin)) * chart_h
+                bx = gx + (group_w - bar_w) / 2
+                stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
+                stream.append(f"{bx:.2f} {base:.2f} {bar_w:.2f} {seg_h:.2f} re f")
+                if show_value_labels and value:
+                    pdf_text(stream, bx + (bar_w / 2) - 8, base + seg_h + 2, f"{value:,.0f}".replace(",", "."), size=5.5, color_rgb=color)
+                base += seg_h
+            if show_value_labels and base > chart_y:
+                total = sum((values[group_idx] or 0) for _name, _color, values in series if group_idx < len(values))
+                pdf_text(stream, gx + (group_w / 2) - 10, base + 9, f"{total:,.0f}".replace(",", "."), size=6, bold=True)
+        else:
+            for series_idx, (_name, color, values) in enumerate(series):
+                if group_idx >= len(values) or values[group_idx] is None:
+                    continue
+                value = values[group_idx] or 0
+                bar_h = ((value - vmin) / (vmax - vmin)) * chart_h
+                bx = gx + 4 + (series_idx * (bar_w + 2))
+                stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
+                stream.append(f"{bx:.2f} {chart_y:.2f} {bar_w:.2f} {bar_h:.2f} re f")
+                if show_value_labels and value:
+                    pdf_text(stream, bx + (bar_w / 2) - 6, chart_y + bar_h + 3, f"{value:,.0f}".replace(",", "."), size=6)
 
     for tick in range(5):
         value = vmin + ((vmax - vmin) * tick / 4)
