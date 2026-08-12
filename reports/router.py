@@ -53,6 +53,11 @@ def _fmt_hours(value: float) -> str:
     return f"{value:,.1f}".replace(",", "_").replace(".", ",").replace("_", ".")
 
 
+def _fmt_hours_signed(value: float) -> str:
+    sign = "+" if value >= 0 else "-"
+    return f"{sign}{_fmt_hours(abs(value))}"
+
+
 def _fmt_date(value: date | None) -> str:
     return value.strftime("%d/%m/%Y") if value else "N/A"
 
@@ -77,36 +82,6 @@ def _kpi_card(page: list[str], x: float, y: float, w: float, h: float, label: st
     pdf_rect(page, x, y, w, h, fill_rgb=(0.92, 0.93, 0.95), stroke_rgb=(0.83, 0.85, 0.89))
     pdf_text(page, x + 10, y + h - 15, label, size=7.5, bold=True, color_rgb=MUTED)
     pdf_text(page, x + 10, y + 11, value, size=15, bold=True, color_rgb=INK)
-
-
-def _closures_table_page(
-    title: str,
-    subtitle: str,
-    year: int,
-    generated_at,
-    rows: list[list[str]],
-    headers: list[str],
-    col_widths: list[float],
-    total_label: str | None,
-    empty_message: str,
-    rows_per_page: int = 24,
-) -> list[list[str]]:
-    pages: list[list[str]] = []
-    chunks = [rows[i:i + rows_per_page] for i in range(0, len(rows), rows_per_page)] or [[]]
-    for chunk_idx, chunk in enumerate(chunks):
-        page: list[str] = []
-        _page_frame(page, subtitle, year, generated_at)
-        pdf_text(page, CONTENT_X, PAGE_HEIGHT - 78, title, size=11, bold=True, color_rgb=INK)
-        table_top = PAGE_HEIGHT - 96
-        if not chunk:
-            pdf_text(page, CONTENT_X, table_top - 20, empty_message, size=10)
-        else:
-            pdf_table(page, CONTENT_X, table_top, col_widths, headers, chunk, row_height=15)
-        if total_label and chunk_idx == len(chunks) - 1:
-            table_bottom = table_top - 15 - (len(chunk) * 15) - 16
-            pdf_text(page, CONTENT_X, max(MARGIN + 12, table_bottom), total_label, size=9, bold=True, color_rgb=INK)
-        pages.append(page)
-    return pages
 
 
 UPCOMING_HEADERS = ["Proyecto", "Codigo", "Horas totales", "Estado", "Fecha cierre"]
@@ -194,6 +169,106 @@ def _upcoming_closures_pages(month_key: tuple[int, int], info: dict, year: int, 
         pdf_text(page, CONTENT_X, max(MARGIN + 12, y - 4),
                   f"Total horas a cerrar en {_month_title(month_key)}: {_fmt_hours(info['total_hours'])} h ({_fmt_int(len(info['rows']))} proyectos)",
                   size=9, bold=True, color_rgb=INK)
+
+    return pages
+
+
+CHANGES_HEADERS = ["Proyecto", "Codigo", "Horas totales", "Estado", "Mes anterior", "Mes nuevo"]
+CHANGES_COL_WIDTHS = [300.0, 90.0, 90.0, 100.0, 100.0, 100.0]
+
+
+def _change_direction(item: dict, month_key: tuple[int, int]) -> str | None:
+    new_month = (item["new_date_end"].year, item["new_date_end"].month)
+    old_month = (item["old_date_end"].year, item["old_date_end"].month)
+    if new_month == month_key:
+        return "in"
+    if old_month == month_key:
+        return "out"
+    return None
+
+
+def _month_changes_pages(month_key: tuple[int, int], changes: list[dict], year: int, generated_at) -> list[list[str]]:
+    """Una tabla independiente por equipo, igual que en Proximos cierres,
+    con el gradiente de horas (entran - salen) por equipo y en el titulo."""
+    entries = []
+    for item in changes:
+        direction = _change_direction(item, month_key)
+        if direction is None:
+            continue
+        entries.append((item, direction))
+
+    total_gradient = sum(item["hours"] if d == "in" else -item["hours"] for item, d in entries)
+    title = f"Cambios de fecha de cierre - {_month_title(month_key)} (gradiente total: {_fmt_hours_signed(total_gradient)} h)"
+    subtitle = "Cambios de fecha de cierre"
+
+    teams: dict[str, list[tuple[dict, str]]] = {}
+    for item, direction in entries:
+        team = _clean_text(item.get("team")) or "Sin equipo"
+        teams.setdefault(team, []).append((item, direction))
+    for rows in teams.values():
+        rows.sort(key=lambda pair: pair[0]["hours"], reverse=True)
+
+    pages: list[list[str]] = []
+    page: list[str] = []
+    top = PAGE_HEIGHT - 100
+
+    def new_page() -> float:
+        nonlocal page
+        page = []
+        _page_frame(page, subtitle, year, generated_at)
+        pdf_text(page, CONTENT_X, PAGE_HEIGHT - 78, title, size=11, bold=True, color_rgb=INK)
+        pages.append(page)
+        return top
+
+    y = new_page()
+
+    if not teams:
+        pdf_text(page, CONTENT_X, y - 20, f"No hay cambios de mes de cierre para {_month_title(month_key)} desde el snapshot anterior.", size=10)
+
+    total_w = sum(CHANGES_COL_WIDTHS)
+    row_h = 14.0
+    header_h = 18.0
+    subtotal_h = 16.0
+    gap_h = 10.0
+
+    for team_name in sorted(teams):
+        rows = teams[team_name]
+        block_h = header_h + (len(rows) * row_h) + subtotal_h + gap_h
+        if y - block_h < MARGIN + 25 and y != top:
+            y = new_page()
+
+        pdf_rect(page, CONTENT_X, y - header_h, total_w, header_h, fill_rgb=(0.90, 0.91, 0.94), stroke_rgb=(0.82, 0.84, 0.88))
+        pdf_text(page, CONTENT_X + 6, y - header_h + 5, f"Equipo: {team_name}", size=8.5, bold=True, color_rgb=INK)
+        cx = CONTENT_X
+        for header, cw in zip(CHANGES_HEADERS, CHANGES_COL_WIDTHS):
+            if header != "Proyecto":
+                pdf_text(page, cx + 5, y - header_h + 5, header, size=7, bold=True, color_rgb=MUTED)
+            cx += cw
+        y -= header_h
+
+        team_gradient = 0.0
+        for row_idx, (item, direction) in enumerate(rows):
+            if row_idx % 2 == 1:
+                pdf_rect(page, CONTENT_X, y - row_h, total_w, row_h, fill_rgb=(0.97, 0.97, 0.96), stroke_rgb=None)
+            hours = item.get("hours") or 0.0
+            team_gradient += hours if direction == "in" else -hours
+            cells = [
+                _clean_text(item.get("project_name")),
+                _clean_text(item.get("project_code")),
+                _fmt_hours(hours),
+                _clean_text(item.get("phase")),
+                _month_title((item["old_date_end"].year, item["old_date_end"].month)),
+                _month_title((item["new_date_end"].year, item["new_date_end"].month)),
+            ]
+            cx = CONTENT_X
+            for value, cw in zip(cells, CHANGES_COL_WIDTHS):
+                pdf_text(page, cx + 5, y - row_h + 4.5, value, size=7.5, color_rgb=INK)
+                cx += cw
+            y -= row_h
+
+        pdf_text(page, CONTENT_X, y - 11, f"Gradiente {team_name}: {_fmt_hours_signed(team_gradient)} h ({_fmt_int(len(rows))} cambios)",
+                  size=7.5, bold=True, color_rgb=INK)
+        y -= subtotal_h + gap_h
 
     return pages
 
@@ -314,32 +389,9 @@ def build_closure_report_pages(data: dict) -> list[list[str]]:
     for month_key, info in data["upcoming_closures"].items():
         pages.extend(_upcoming_closures_pages(month_key, info, year, generated_at))
 
-    # --- Paginas: cambios de fecha de cierre (mes actual + 2 siguientes) ---
-    changes_headers = ["Proyecto", "Codigo", "Horas totales", "Estado", "Equipo", "Mes anterior", "Mes nuevo"]
-    changes_col_widths = [220, 85, 85, 95, 140, 85, 85]
+    # --- Paginas: cambios de fecha de cierre (mes actual + 2 siguientes), por equipo ---
     for month_key, changes in data["month_changes"].items():
-        rows = [
-            [
-                _clean_text(item.get("project_name")),
-                _clean_text(item.get("project_code")),
-                _fmt_hours(item.get("hours") or 0.0),
-                _clean_text(item.get("phase")),
-                _clean_text(item.get("team")),
-                _month_title((item["old_date_end"].year, item["old_date_end"].month)),
-                _month_title((item["new_date_end"].year, item["new_date_end"].month)),
-            ]
-            for item in changes
-        ]
-        pages.extend(
-            _closures_table_page(
-                f"Cambios de fecha de cierre - {_month_title(month_key)}",
-                "Cambios de fecha de cierre",
-                year, generated_at,
-                rows, changes_headers, changes_col_widths,
-                None,
-                f"No hay cambios de mes de cierre para {_month_title(month_key)} desde el snapshot anterior.",
-            )
-        )
+        pages.extend(_month_changes_pages(month_key, changes, year, generated_at))
 
     return pages
 
