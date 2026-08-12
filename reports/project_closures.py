@@ -173,14 +173,17 @@ def fetch_snapshot_year_totals(cur: psycopg.Cursor, year: int) -> list[dict]:
                 "snapshot_week": snapshot_week,
                 "total_count": buckets["cumulative_count"][-1] if buckets["cumulative_count"] else 0.0,
                 "total_hours": buckets["cumulative_hours"][-1] if buckets["cumulative_hours"] else 0.0,
+                "closed_count": buckets["total_closed_count"],
+                "closed_hours": buckets["total_closed_hours"],
             }
         )
     return result
 
 
 def fetch_upcoming_closures(cur: psycopg.Cursor, today: date) -> dict[tuple[int, int], dict]:
-    """Cierres planificados (Internal Status = Normal) del mes actual y los 2 siguientes,
-    segun la importacion AllOrders mas reciente."""
+    """Cierres (cerrados y pendientes) del mes actual y los 2 siguientes,
+    segun la importacion AllOrders mas reciente. `status` indica si ese
+    pedido ya esta Cerrado o sigue Pendiente."""
     months = _month_window(date(today.year, today.month, 1), 3)
     result: dict[tuple[int, int], dict] = {m: {"rows": [], "total_hours": 0.0} for m in months}
 
@@ -189,7 +192,8 @@ def fetch_upcoming_closures(cur: psycopg.Cursor, today: date) -> dict[tuple[int,
         return result
 
     for row in fetch_all_orders_rows_for_batch(cur, batch_ids[0]):
-        if (row.get("internal_status") or "").strip().lower() != "normal":
+        status_raw = (row.get("internal_status") or "").strip().lower()
+        if status_raw not in ("closed", "normal"):
             continue
         date_end = row.get("date_end")
         if not date_end:
@@ -203,7 +207,7 @@ def fetch_upcoming_closures(cur: psycopg.Cursor, today: date) -> dict[tuple[int,
                 "project_code": row.get("project_code"),
                 "project_name": row.get("project_name"),
                 "team": row.get("team"),
-                "phase": row.get("order_phase"),
+                "status": "Cerrado" if status_raw == "closed" else "Pendiente",
                 "date_end": date_end,
                 "hours": hours,
             }
@@ -266,9 +270,9 @@ def fetch_closure_report_data(year: int) -> dict:
     # equivale aproximadamente a hoy / hace 1 semana / hace 4 semanas,
     # pero no depende de que existan importaciones justo en esos dias.
     snapshot_specs = [
-        ("now", "Hoy", 0),
-        ("w1", "Snapshot anterior", 1),
-        ("w4", "Hace 4 snapshots", 4),
+        ("now", "Semana actual", 0),
+        ("w1", "Semana Anterior", 1),
+        ("w4", "Mes anterior", 4),
     ]
 
     projections: dict[str, dict] = {}

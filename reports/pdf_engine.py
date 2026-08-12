@@ -126,10 +126,13 @@ def pdf_multi_line_chart(
     legend_x = max(chart_x, x + (w - (len(series) * legend_slot)) / 2)
     legend_y = y + h - 28
     # Cuando varias series coinciden exactamente en un punto (muy habitual
-    # en meses ya cerrados, donde "hoy"/"hace 1 semana"/"hace 4 semanas"
-    # todavia no han divergido) solo se imprime el valor una vez por punto,
-    # para no apilar el mismo numero repetido.
-    printed_at_index: dict[int, set[float]] = {}
+    # en meses ya cerrados, donde las series todavia no han divergido)
+    # solo se imprime el valor una vez por punto. Para valores distintos
+    # pero con puntos muy cercanos, cada etiqueta se coloca lo mas cerca
+    # posible de su propio punto y solo se empuja hacia arriba lo justo
+    # para no solaparse con la etiqueta ya colocada en ese mismo mes.
+    seen_values_at_index: dict[int, set[float]] = {}
+    label_top_at_index: dict[int, float] = {}
     for series_idx, (name, color, values) in enumerate(series):
         stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
         stream.append(f"{legend_x:.2f} {legend_y:.2f} 8.00 3.00 re f")
@@ -155,14 +158,15 @@ def pdf_multi_line_chart(
             stream.append(f"{px - 1.8:.2f} {py - 1.8:.2f} 3.60 3.60 re f")
             if not show_value_labels:
                 continue
-            seen = printed_at_index.setdefault(idx, set())
+            seen = seen_values_at_index.setdefault(idx, set())
             if value in seen:
                 continue
-            # Desplaza la etiqueta hacia arriba segun cuantos valores
-            # distintos ya se han impreso en este mismo punto.
-            label_dy = 6 + (len(seen) * 9)
             seen.add(value)
-            pdf_text(stream, px - 11, py + label_dy, f"{value:,.0f}".replace(",", "."), size=5.5, color_rgb=color)
+            desired_y = py + 4
+            prev_top = label_top_at_index.get(idx)
+            label_y = desired_y if prev_top is None else max(desired_y, prev_top + 7.5)
+            label_top_at_index[idx] = label_y
+            pdf_text(stream, px - 11, label_y, f"{value:,.0f}".replace(",", "."), size=5.5, color_rgb=color)
 
 
 def pdf_grouped_bar_chart(
