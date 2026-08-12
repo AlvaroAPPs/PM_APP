@@ -1,0 +1,140 @@
+/* Programa PM — tema visual compartido por todas las páginas. */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --pm-bg: #f5f5f2;
+  --pm-surface: #ffffff;
+  --pm-border: #e3e2dc;
+  --pm-border-strong: #d3d2ca;
+  --pm-text: #201f1c;
+  --pm-text-muted: #6b6a62;
+  --pm-accent: #1f3a5f;
+  --pm-accent-hover: #16293f;
+  --pm-accent-soft: #e9edf2;
+  --pm-red: #b3392f;
+  --pm-amber: #b9750c;
+  --pm-green: #157347;
+  --pm-shadow: 0 4px 16px rgba(32, 31, 28, .06);
+}
+
+body {
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--pm-bg);
+  color: var(--pm-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  letter-spacing: -.01em;
+}
+
+a {
+  color: var(--pm-accent);
+}
+a:hover {
+  color: var(--pm-accent-hover);
+}
+
+.muted,
+.text-muted {
+  color: var(--pm-text-muted) !important;
+}
+
+.card {
+  background: var(--pm-surface);
+  border: 1px solid var(--pm-border);
+  border-radius: 10px;
+}
+
+.shadow-soft {
+  box-shadow: var(--pm-shadow);
+}
+
+.table-wrapper thead th,
+thead th {
+  background: var(--pm-surface);
+  color: var(--pm-text);
+  border-bottom: 1px solid var(--pm-border-strong);
+}
+
+.btn {
+  border-radius: 7px;
+  font-weight: 500;
+}
+
+.btn-primary {
+  --bs-btn-bg: var(--pm-accent);
+  --bs-btn-border-color: var(--pm-accent);
+  --bs-btn-hover-bg: var(--pm-accent-hover);
+  --bs-btn-hover-border-color: var(--pm-accent-hover);
+  --bs-btn-active-bg: var(--pm-accent-hover);
+  --bs-btn-active-border-color: var(--pm-accent-hover);
+  --bs-btn-disabled-bg: var(--pm-accent);
+  --bs-btn-disabled-border-color: var(--pm-accent);
+  --bs-btn-focus-shadow-rgb: 31, 58, 95;
+}
+
+.btn-outline-primary {
+  --bs-btn-color: var(--pm-accent);
+  --bs-btn-border-color: var(--pm-accent);
+  --bs-btn-hover-bg: var(--pm-accent);
+  --bs-btn-hover-border-color: var(--pm-accent);
+  --bs-btn-active-bg: var(--pm-accent);
+  --bs-btn-active-border-color: var(--pm-accent);
+  --bs-btn-focus-shadow-rgb: 31, 58, 95;
+}
+
+.btn-link {
+  color: var(--pm-accent);
+}
+
+.text-primary { color: var(--pm-accent) !important; }
+.bg-primary { background-color: var(--pm-accent) !important; }
+.border-primary { border-color: var(--pm-accent) !important; }
+
+.form-check-input:checked {
+  background-color: var(--pm-accent);
+  border-color: var(--pm-accent);
+}
+.form-check-input:focus,
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--pm-accent);
+  box-shadow: 0 0 0 .2rem rgba(31, 58, 95, .15);
+}
+
+.nav-link.active,
+.nav-pills .nav-link.active {
+  background-color: var(--pm-accent) !important;
+}
+
+.status-dot.status-red { background: var(--pm-red); }
+.status-dot.status-orange,
+.status-dot.status-amber { background: var(--pm-amber); }
+.status-dot.status-green { background: var(--pm-green); }
+
+.indicator-card.status-red { border-left-color: var(--pm-red); }
+.indicator-card.status-orange,
+.indicator-card.status-amber { border-left-color: var(--pm-amber); }
+.indicator-card.status-green { border-left-color: var(--pm-green); }
+
+.table-wrapper tbody tr.row-stopped td { color: var(--pm-red) !important; }
+.table-wrapper tbody tr.row-unplanned td { color: var(--pm-accent) !important; }
+
+.project-row:hover { background: var(--pm-accent-soft) !important; }
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--pm-border-strong);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--pm-text-muted);
+}

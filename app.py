@@ -21,9 +21,11 @@ from openpyxl.utils import get_column_letter
 from importer import read_and_normalize_excel, map_row, upsert_project, upsert_snapshot, compute_deltas
 from meeting_minutes.router import router as meeting_minutes_router
 from meeting_minutes.storage import ensure_meeting_minutes_storage
+from reports.router import router as reports_router
 
 app = FastAPI()
 app.include_router(meeting_minutes_router)
+app.include_router(reports_router)
 
 # Static + templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -42,6 +44,7 @@ def startup_init() -> None:
             ensure_project_notes_storage(cur)
             ensure_project_checklist_storage(cur)
             ensure_meeting_minutes_storage(cur)
+            ensure_all_orders_snapshot_storage(cur)
             ensure_general_internal_project(cur)
         conn.commit()
 
@@ -1537,6 +1540,63 @@ def _compose_description_subtasks(description: str, subtasks: list[dict[str, obj
     lines = [f"[{'x' if bool(item.get('done')) else ' '}] {(item.get('text') or '').strip()}" for item in clean_subtasks]
     return clean_description + SUBTASKS_MARKER + '\n'.join(lines)
 
+def ensure_all_orders_snapshot_storage(cur: psycopg.Cursor) -> None:
+    """Foto completa e independiente de cada importacion ALL (AllOrders).
+
+    A diferencia de project_snapshot (pensado para el seguimiento semanal
+    incremental de OTS, con COALESCE entre importaciones), aqui cada fila
+    de cada AllOrders se guarda tal cual viene, sin mezclarse con datos de
+    otras importaciones. Los informes que necesiten "que dice el AllOrders
+    ahora mismo" o "que decia hace N semanas" consultan esta tabla en vez
+    de reconstruir el estado desde project_snapshot.
+    """
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS all_orders_snapshot (
+            id BIGSERIAL PRIMARY KEY,
+            import_file_id BIGINT REFERENCES import_file(id) ON DELETE CASCADE,
+            imported_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            project_code TEXT NOT NULL,
+            project_name TEXT,
+            client TEXT,
+            company TEXT,
+            team TEXT,
+            project_manager TEXT,
+            consultant TEXT,
+            project_type TEXT,
+            service_type TEXT,
+            internal_status TEXT,
+            order_phase TEXT,
+            offer_code TEXT,
+            date_kickoff DATE,
+            date_design DATE,
+            date_validation DATE,
+            date_golive DATE,
+            date_reception DATE,
+            date_end DATE,
+            ordered_n NUMERIC,
+            ordered_e NUMERIC,
+            ordered_total NUMERIC,
+            real_hours NUMERIC,
+            progress_w NUMERIC,
+            comments TEXT
+        );
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_all_orders_snapshot_import
+        ON all_orders_snapshot (import_file_id);
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_all_orders_snapshot_code_time
+        ON all_orders_snapshot (project_code, imported_at DESC);
+        """
+    )
+
+
 def ensure_general_internal_project(cur: psycopg.Cursor) -> None:
     cur.execute(
         """
@@ -2491,6 +2551,7 @@ async def import_excel(
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             ensure_historical_storage(cur)
+            ensure_all_orders_snapshot_storage(cur)
             cur.execute(
                 """
                 INSERT INTO import_file (filename, snapshot_year, snapshot_week, mapping_version)
@@ -2521,26 +2582,68 @@ async def import_excel(
                     imported += 1
                     continue
 
+                # Foto completa e incondicional de esta fila del AllOrders, tal cual
+                # viene, independiente de si el proyecto se archiva/restaura o no.
+                cur.execute(
+                    """
+                    INSERT INTO all_orders_snapshot (
+                        import_file_id, project_code, project_name, client, company, team,
+                        project_manager, consultant, project_type, service_type, internal_status,
+                        order_phase, offer_code,
+                        date_kickoff, date_design, date_validation, date_golive, date_reception, date_end,
+                        ordered_n, ordered_e, ordered_total, real_hours, progress_w, comments
+                    ) VALUES (
+                        %(import_file_id)s, %(project_code)s, %(project_name)s, %(client)s, %(company)s, %(team)s,
+                        %(project_manager)s, %(consultant)s, %(project_type)s, %(service_type)s, %(internal_status)s,
+                        %(order_phase)s, %(offer_code)s,
+                        %(date_kickoff)s, %(date_design)s, %(date_validation)s, %(date_golive)s, %(date_reception)s, %(date_end)s,
+                        %(ordered_n)s, %(ordered_e)s, %(ordered_total)s, %(real_hours)s, %(progress_w)s, %(comments)s
+                    )
+                    """,
+                    {
+                        **snapshot_fields,
+                        "import_file_id": import_file_id,
+                        "project_code": code,
+                        "project_name": project_fields.get("project_name"),
+                        "client": project_fields.get("client"),
+                        "company": project_fields.get("company"),
+                    },
+                )
+
                 internal_status = str(snapshot_fields.get("internal_status") or "").strip().lower()
                 moved_to_historical_week = historical_week_label(snapshot_year, snapshot_week)
                 cur.execute(
                     """
-                    SELECT COALESCE(is_historical, FALSE)
+                    SELECT id, COALESCE(is_historical, FALSE)
                     FROM projects
                     WHERE project_code = %s
                     """,
                     (code,),
                 )
                 existing_project = cur.fetchone()
-                existing_is_historical = bool(existing_project[0]) if existing_project else False
+                existing_project_id = existing_project[0] if existing_project else None
+                existing_is_historical = bool(existing_project[1]) if existing_project else False
 
-                if existing_is_historical and internal_status in {"closed", "hided"}:
+                existing_has_snapshot = False
+                if existing_project_id is not None:
+                    cur.execute(
+                        "SELECT 1 FROM project_snapshot WHERE project_id = %s LIMIT 1",
+                        (existing_project_id,),
+                    )
+                    existing_has_snapshot = cur.fetchone() is not None
+
+                # Los proyectos ya archivados y sin ninguna fila de snapshot (huecos
+                # de datos de importaciones ALL antiguas, antes de este fix) se
+                # reprocesan para rellenar sus datos reales en vez de saltarlos.
+                if existing_is_historical and internal_status in {"closed", "hided"} and existing_has_snapshot:
                     skipped += 1
                     continue
 
                 pid = upsert_project(cur, project_fields)
 
                 if internal_status in {"closed", "hided"}:
+                    snapshot_fields = compute_deltas(cur, pid, snapshot_year, snapshot_week, snapshot_fields)
+                    upsert_snapshot(cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields)
                     move_project_to_historical(
                         cur,
                         pid,
@@ -2564,12 +2667,10 @@ async def import_excel(
                     if historical_row:
                         restore_project_from_historical(cur, code)
                         restored += 1
-                        snapshot_fields = compute_deltas(cur, pid, snapshot_year, snapshot_week, snapshot_fields)
-                        upsert_snapshot(cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields)
-                        imported += 1
-                        continue
 
-                    skipped += 1
+                    snapshot_fields = compute_deltas(cur, pid, snapshot_year, snapshot_week, snapshot_fields)
+                    upsert_snapshot(cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields)
+                    imported += 1
                     continue
 
                 skipped += 1
