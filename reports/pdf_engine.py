@@ -10,9 +10,55 @@ espanol se rendericen correctamente.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 PAGE_WIDTH = 842.0
 PAGE_HEIGHT = 595.0
+
+
+@dataclass
+class PdfImage:
+    data: bytes
+    width: int
+    height: int
+    components: int
+
+
+def _jpeg_dimensions(data: bytes) -> tuple[int, int, int]:
+    """Lee ancho/alto/nº de componentes de un JPEG a partir de su marcador
+    SOF, sin depender de ninguna libreria de imagenes."""
+    if data[0:2] != b"\xff\xd8":
+        raise ValueError("El fichero no es un JPEG valido")
+    sof_markers = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
+    i = 2
+    n = len(data)
+    while i + 9 < n:
+        if data[i] != 0xFF:
+            i += 1
+            continue
+        marker = data[i + 1]
+        if marker in (0xD8, 0xD9, 0x01) or 0xD0 <= marker <= 0xD7:
+            i += 2
+            continue
+        seg_len = (data[i + 2] << 8) | data[i + 3]
+        if marker in sof_markers:
+            height = (data[i + 5] << 8) | data[i + 6]
+            width = (data[i + 7] << 8) | data[i + 8]
+            components = data[i + 9]
+            return width, height, components
+        i += 2 + seg_len
+    raise ValueError("No se encontro el marcador SOF del JPEG")
+
+
+def load_jpeg_image(path: str) -> PdfImage:
+    with open(path, "rb") as f:
+        data = f.read()
+    width, height, components = _jpeg_dimensions(data)
+    return PdfImage(data=data, width=width, height=height, components=components)
+
+
+def pdf_image(stream: list[str], x: float, y: float, w: float, h: float, name: str) -> None:
+    stream.append(f"q {w:.2f} 0 0 {h:.2f} {x:.2f} {y:.2f} cm /{name} Do Q")
 
 
 def _pdf_escape(value: object) -> str:
@@ -317,15 +363,31 @@ def pdf_table(
     return y
 
 
-def assemble_pdf(pages: list[list[str]], page_size: tuple[float, float] = (PAGE_WIDTH, PAGE_HEIGHT)) -> bytes:
-    """Ensambla N paginas (cada una una lista de operadores de content stream) en un PDF valido."""
+def assemble_pdf(
+    pages: list[list[str]],
+    page_size: tuple[float, float] = (PAGE_WIDTH, PAGE_HEIGHT),
+    images: dict[str, PdfImage] | None = None,
+) -> bytes:
+    """Ensambla N paginas (cada una una lista de operadores de content stream) en un PDF valido.
+
+    `images` (opcional) mapea un nombre de XObject (p.ej. "Im1", referenciado
+    en el content stream via pdf_image(..., name="Im1")) a un PdfImage ya
+    cargado con load_jpeg_image(). Las imagenes se comparten en el
+    /Resources de todas las paginas (pensado para cabeceras con logo).
+    """
     if not pages:
         pages = [[]]
     pw, ph = page_size
+    images = images or {}
 
     font_regular_obj = 3
     font_bold_obj = 4
-    first_page_obj = 5  # cada pagina ocupa 2 objetos: Page + Contents
+    image_obj_ids: dict[str, int] = {}
+    next_obj = 5
+    for name in images:
+        image_obj_ids[name] = next_obj
+        next_obj += 1
+    first_page_obj = next_obj  # cada pagina ocupa 2 objetos: Page + Contents
 
     page_obj_ids = [first_page_obj + (2 * i) for i in range(len(pages))]
     kids = " ".join(f"{pid} 0 R" for pid in page_obj_ids)
@@ -337,13 +399,31 @@ def assemble_pdf(pages: list[list[str]], page_size: tuple[float, float] = (PAGE_
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
     ]
 
+    colorspace_by_components = {1: "/DeviceGray", 3: "/DeviceRGB", 4: "/DeviceCMYK"}
+    for name, image in images.items():
+        colorspace = colorspace_by_components.get(image.components, "/DeviceRGB")
+        objects.append(
+            (
+                f"<< /Type /XObject /Subtype /Image /Width {image.width} /Height {image.height} "
+                f"/ColorSpace {colorspace} /BitsPerComponent 8 /Filter /DCTDecode /Length {len(image.data)} >>\n"
+                "stream\n"
+            ).encode("ascii")
+            + image.data
+            + b"\nendstream"
+        )
+
+    xobject_resource = ""
+    if images:
+        entries = " ".join(f"/{name} {image_obj_ids[name]} 0 R" for name in images)
+        xobject_resource = f" /XObject << {entries} >>"
+
     for idx, page_ops in enumerate(pages):
         content_obj_id = first_page_obj + (2 * idx) + 1
         stream_bytes = "\n".join(page_ops).encode("latin-1", errors="replace")
         objects.append(
             (
                 f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {pw:.0f} {ph:.0f}] "
-                f"/Resources << /Font << /F1 {font_regular_obj} 0 R /F2 {font_bold_obj} 0 R >> >> "
+                f"/Resources << /Font << /F1 {font_regular_obj} 0 R /F2 {font_bold_obj} 0 R >>{xobject_resource} >> "
                 f"/Contents {content_obj_id} 0 R >>"
             ).encode("ascii")
         )

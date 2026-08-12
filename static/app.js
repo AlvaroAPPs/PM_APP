@@ -106,6 +106,8 @@ function setActionsEnabled(isEnabled) {
   const btnOpenChart = $("btnOpenChart");
   const btnOpenChecklist = $("btnOpenChecklist");
   const actChecklist = $("actChecklist");
+  const btnOpenGantt = $("btnOpenGantt");
+  const actGantt = $("actGantt");
   const reportFormat = $("reportFormat");
   if (actTasks) actTasks.disabled = !isEnabled;
   if (actCharts) actCharts.disabled = !isEnabled;
@@ -114,6 +116,8 @@ function setActionsEnabled(isEnabled) {
   if (btnOpenChart) btnOpenChart.disabled = !isEnabled;
   if (btnOpenChecklist) btnOpenChecklist.disabled = !isEnabled;
   if (actChecklist) actChecklist.disabled = !isEnabled;
+  if (btnOpenGantt) btnOpenGantt.disabled = !isEnabled;
+  if (actGantt) actGantt.disabled = !isEnabled;
   if (reportFormat) reportFormat.disabled = !isEnabled;
 }
 
@@ -683,6 +687,19 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnOpenChecklist) btnOpenChecklist.addEventListener("click", openProjectChecklist);
   const actChecklist = $("actChecklist");
   if (actChecklist) actChecklist.addEventListener("click", openProjectChecklist);
+
+  function openProjectGantt() {
+    if (!currentProjectCode) {
+      alert("Carga un proyecto antes de continuar.");
+      return;
+    }
+    window.location.href = `/projects/${encodeURIComponent(currentProjectCode)}/planning`;
+  }
+
+  const btnOpenGantt = $("btnOpenGantt");
+  if (btnOpenGantt) btnOpenGantt.addEventListener("click", openProjectGantt);
+  const actGantt = $("actGantt");
+  if (actGantt) actGantt.addEventListener("click", openProjectGantt);
 
   const actReport = $("actReport");
   if (actReport) {

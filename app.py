@@ -22,10 +22,13 @@ from importer import read_and_normalize_excel, map_row, upsert_project, upsert_s
 from meeting_minutes.router import router as meeting_minutes_router
 from meeting_minutes.storage import ensure_meeting_minutes_storage
 from reports.router import router as reports_router
+from planning.router import router as planning_router
+from planning.storage import ensure_project_gantt_storage, sync_checklist_milestone
 
 app = FastAPI()
 app.include_router(meeting_minutes_router)
 app.include_router(reports_router)
+app.include_router(planning_router)
 
 # Static + templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -43,6 +46,7 @@ def startup_init() -> None:
             ensure_project_tasks_storage(cur)
             ensure_project_notes_storage(cur)
             ensure_project_checklist_storage(cur)
+            ensure_project_gantt_storage(cur)
             ensure_meeting_minutes_storage(cur)
             ensure_all_orders_snapshot_storage(cur)
             ensure_general_internal_project(cur)
@@ -177,6 +181,7 @@ class ProjectChecklistItemUpdateIn(BaseModel):
     task: str | None = None
     comments: str | None = None
     completed: bool | None = None
+    is_milestone: bool | None = None
 
 
 class ChecklistTemplateItemIn(BaseModel):
@@ -4080,6 +4085,12 @@ def ensure_project_checklist_storage(cur: psycopg.Cursor) -> None:
         );
         """
     )
+    cur.execute(
+        """
+        ALTER TABLE project_checklist_items
+        ADD COLUMN IF NOT EXISTS is_milestone BOOLEAN NOT NULL DEFAULT FALSE;
+        """
+    )
     cur.execute("SELECT COUNT(*) FROM checklist_template_items")
     if cur.fetchone()[0] == 0:
         cur.executemany(
@@ -4146,7 +4157,8 @@ def get_project_checklist(project_code: str):
             cur.execute(
                 """
                 SELECT pci.id, pci.template_item_id, pci.phase, pci.role, pci.warehouse_type, pci.task,
-                       pci.comments, pci.completed, pci.is_custom, COALESCE(cti.position, 1000000 + pci.id) AS position
+                       pci.comments, pci.completed, pci.is_custom, COALESCE(cti.position, 1000000 + pci.id) AS position,
+                       pci.is_milestone
                 FROM project_checklist_items pci
                 LEFT JOIN checklist_template_items cti ON cti.id = pci.template_item_id AND cti.active = TRUE
                 WHERE pci.project_id = %s
@@ -4159,7 +4171,7 @@ def get_project_checklist(project_code: str):
             rows = cur.fetchall()
         conn.commit()
     return {"project": {"id": project_id, "project_code": project_code, "project_name": project_name}, "items": [
-        {"id": r[0], "template_item_id": r[1], "phase": r[2], "role": r[3], "warehouse_type": r[4], "task": r[5], "comments": r[6], "completed": r[7], "is_custom": r[8]} for r in rows
+        {"id": r[0], "template_item_id": r[1], "phase": r[2], "role": r[3], "warehouse_type": r[4], "task": r[5], "comments": r[6], "completed": r[7], "is_custom": r[8], "is_milestone": r[10]} for r in rows
     ]}
 
 
@@ -4180,7 +4192,7 @@ def add_project_checklist_item(project_code: str, payload: ProjectChecklistItemI
 @app.patch("/api/project-checklist-items/{item_id}")
 def update_project_checklist_item(item_id: int, payload: ProjectChecklistItemUpdateIn):
     fields, values = [], []
-    for name in ("phase", "role", "warehouse_type", "task", "comments", "completed"):
+    for name in ("phase", "role", "warehouse_type", "task", "comments", "completed", "is_milestone"):
         value = getattr(payload, name)
         if value is not None:
             fields.append(f"{name} = %s")
@@ -4191,6 +4203,14 @@ def update_project_checklist_item(item_id: int, payload: ProjectChecklistItemUpd
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             cur.execute(f"UPDATE project_checklist_items SET {', '.join(fields)}, updated_at = now() WHERE id = %s", values)
+            if payload.is_milestone is not None:
+                cur.execute(
+                    "SELECT project_id, task FROM project_checklist_items WHERE id = %s",
+                    (item_id,),
+                )
+                row = cur.fetchone()
+                if row:
+                    sync_checklist_milestone(cur, item_id, payload.is_milestone, row[0], row[1])
         conn.commit()
     return {"ok": True}
 
