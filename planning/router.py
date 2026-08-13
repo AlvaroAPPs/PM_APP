@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from planning.pdf import build_gantt_pdf
-from planning.storage import seed_phase_items, sync_checklist_milestone
+from planning.storage import fetch_project_progress, seed_phase_items, sync_checklist_milestone
 
 router = APIRouter(tags=["planning"])
 templates = Jinja2Templates(directory="templates")
@@ -25,6 +25,7 @@ class GanttItemIn(BaseModel):
     end_date: str
     is_milestone: bool = False
     parent_id: int | None = None
+    progress: int = 0
 
 
 class GanttItemUpdateIn(BaseModel):
@@ -34,6 +35,7 @@ class GanttItemUpdateIn(BaseModel):
     is_milestone: bool | None = None
     parent_id: int | None = None
     position: int | None = None
+    progress: int | None = None
 
 
 def fetch_project_by_code(cur: psycopg.Cursor, project_code: str) -> tuple[int, str | None]:
@@ -59,6 +61,7 @@ def _row_to_item(row: tuple) -> dict:
         "source": row[7],
         "checklist_item_id": row[8],
         "touched": row[9],
+        "progress": row[10],
     }
 
 
@@ -68,7 +71,7 @@ def _fetch_or_seed_items(cur: psycopg.Cursor, project_id: int) -> list[tuple]:
         seed_phase_items(cur, project_id)
     cur.execute(
         """
-        SELECT id, parent_id, title, start_date, end_date, is_milestone, position, source, checklist_item_id, touched
+        SELECT id, parent_id, title, start_date, end_date, is_milestone, position, source, checklist_item_id, touched, progress
         FROM project_gantt_items
         WHERE project_id = %s
         ORDER BY position, id
@@ -76,6 +79,10 @@ def _fetch_or_seed_items(cur: psycopg.Cursor, project_id: int) -> list[tuple]:
         (project_id,),
     )
     return cur.fetchall()
+
+
+def _clamp_progress(value: int) -> int:
+    return max(0, min(100, value))
 
 
 @router.get("/projects/{project_code}/planning", response_class=HTMLResponse)
@@ -89,9 +96,10 @@ def get_project_gantt(project_code: str):
         with conn.cursor() as cur:
             project_id, project_name = fetch_project_by_code(cur, project_code)
             rows = _fetch_or_seed_items(cur, project_id)
+            progress_w = fetch_project_progress(cur, project_id)
         conn.commit()
     return {
-        "project": {"id": project_id, "project_code": project_code, "project_name": project_name},
+        "project": {"id": project_id, "project_code": project_code, "project_name": project_name, "progress_w": progress_w},
         "items": [_row_to_item(r) for r in rows],
     }
 
@@ -127,11 +135,11 @@ def create_gantt_item(project_code: str, payload: GanttItemIn):
             cur.execute(
                 """
                 INSERT INTO project_gantt_items
-                    (project_id, parent_id, title, start_date, end_date, is_milestone, position, source, touched)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, 'manual', TRUE)
+                    (project_id, parent_id, title, start_date, end_date, is_milestone, position, source, touched, progress)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'manual', TRUE, %s)
                 RETURNING id
                 """,
-                (project_id, payload.parent_id, title, start, end, payload.is_milestone, position),
+                (project_id, payload.parent_id, title, start, end, payload.is_milestone, position, _clamp_progress(payload.progress)),
             )
             item_id = cur.fetchone()[0]
         conn.commit()
@@ -174,6 +182,9 @@ def update_gantt_item(item_id: int, payload: GanttItemUpdateIn):
     if payload.position is not None:
         fields.append("position = %s")
         values.append(payload.position)
+    if payload.progress is not None:
+        fields.append("progress = %s")
+        values.append(_clamp_progress(payload.progress))
 
     if not fields:
         return {"ok": True}
@@ -207,10 +218,11 @@ def project_planning_pdf(project_code: str):
         with conn.cursor() as cur:
             project_id, project_name = fetch_project_by_code(cur, project_code)
             rows = _fetch_or_seed_items(cur, project_id)
+            progress_w = fetch_project_progress(cur, project_id)
         conn.commit()
 
     items = [_row_to_item(r) for r in rows]
-    pdf_bytes = build_gantt_pdf(project_name or project_code, project_code, items)
+    pdf_bytes = build_gantt_pdf(project_name or project_code, project_code, items, progress_w=progress_w)
     filename = f"gantt_{project_code}.pdf"
     return StreamingResponse(
         io.BytesIO(pdf_bytes),

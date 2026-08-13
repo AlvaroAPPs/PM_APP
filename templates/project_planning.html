@@ -26,7 +26,10 @@
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
       <div>
         <h1 class="fw-bold mb-0">Planning Gantt</h1>
-        <div class="text-muted">Proyecto <span id="projectCode">{{ project_code }}</span> <span id="projectName"></span></div>
+        <div class="text-muted">
+          Proyecto <span id="projectCode">{{ project_code }}</span> <span id="projectName"></span>
+          <span id="projectProgressBadge" class="badge text-bg-primary ms-2 d-none"></span>
+        </div>
       </div>
       <div class="d-flex flex-wrap gap-2">
         <a href="/" class="btn btn-outline-secondary"><i class="bi bi-house me-1"></i>Menú principal</a>
@@ -84,6 +87,10 @@
               <option value="">Ninguna (tarea de primer nivel)</option>
             </select>
           </div>
+          <div class="mb-2">
+            <label class="form-label">Progreso (<span id="taskProgressValue">0</span>%)</label>
+            <input id="taskProgress" type="range" min="0" max="100" step="5" value="0" class="form-range">
+          </div>
           <div class="form-check">
             <input class="form-check-input" type="checkbox" id="taskMilestone">
             <label class="form-check-label" for="taskMilestone">Es un hito (fecha única, sin duración)</label>
@@ -99,7 +106,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.min.js"></script>
   <script>window.PROJECT_CODE={{ project_code|tojson }};</script>
   <script src="/static/planning.js"></script>
 </body>

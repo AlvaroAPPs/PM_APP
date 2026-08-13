@@ -51,7 +51,7 @@ function buildTasks(list) {
     name: (item.parent_id !== null ? "↳ " : "") + item.title,
     start: item.start_date,
     end: item.is_milestone ? item.start_date : item.end_date,
-    progress: 0,
+    progress: item.progress || 0,
     custom_class: itemClass(item),
   }));
 }
@@ -82,6 +82,19 @@ function renderGantt() {
         await load(false);
       }
     },
+    on_progress_change: async (task, progress) => {
+      try {
+        await request(`${API}/api/gantt-items/${task.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ progress: Math.round(progress) }),
+        });
+        await load(false);
+      } catch (err) {
+        alert(err.message);
+        await load(false);
+      }
+    },
   });
 }
 
@@ -98,6 +111,11 @@ function populateParentSelect(excludeId) {
   }
 }
 
+function setProgressField(value) {
+  $("taskProgress").value = value;
+  $("taskProgressValue").textContent = value;
+}
+
 function openModalForCreate() {
   populateParentSelect(null);
   $("taskId").value = "";
@@ -107,6 +125,7 @@ function openModalForCreate() {
   $("taskEnd").value = today;
   $("taskMilestone").checked = false;
   $("taskParent").value = "";
+  setProgressField(0);
   $("taskModalTitle").textContent = "Añadir tarea / hito";
   $("taskDeleteBtn").classList.add("d-none");
   bootstrap.Modal.getOrCreateInstance($("taskModal")).show();
@@ -122,6 +141,7 @@ function openModalForEdit(itemId) {
   $("taskEnd").value = item.end_date;
   $("taskMilestone").checked = item.is_milestone;
   $("taskParent").value = item.parent_id ?? "";
+  setProgressField(item.progress || 0);
   $("taskModalTitle").textContent = "Editar tarea";
   $("taskDeleteBtn").classList.remove("d-none");
   bootstrap.Modal.getOrCreateInstance($("taskModal")).show();
@@ -144,6 +164,7 @@ async function saveTask() {
     end_date: end,
     is_milestone: isMilestone,
     parent_id: parentValue ? Number(parentValue) : null,
+    progress: Number($("taskProgress").value) || 0,
   };
 
   try {
@@ -185,6 +206,13 @@ async function load(showErrors = true) {
     const data = await request(`${API}/api/projects/${encodeURIComponent(window.PROJECT_CODE)}/gantt`);
     items = data.items;
     $("projectName").textContent = data.project.project_name ? `· ${data.project.project_name}` : "";
+    const badge = $("projectProgressBadge");
+    if (data.project.progress_w !== null && data.project.progress_w !== undefined) {
+      badge.textContent = `Avance del proyecto: ${data.project.progress_w}%`;
+      badge.classList.remove("d-none");
+    } else {
+      badge.classList.add("d-none");
+    }
     renderGantt();
   } catch (err) {
     if (showErrors) alert(err.message);
@@ -198,6 +226,9 @@ document.addEventListener("DOMContentLoaded", () => {
   $("taskDeleteBtn").addEventListener("click", deleteTask);
   $("taskMilestone").addEventListener("change", () => {
     $("taskEnd").disabled = $("taskMilestone").checked;
+  });
+  $("taskProgress").addEventListener("input", () => {
+    $("taskProgressValue").textContent = $("taskProgress").value;
   });
   document.querySelectorAll(".view-mode-btn").forEach(btn => {
     btn.addEventListener("click", () => {

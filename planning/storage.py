@@ -31,9 +31,16 @@ def ensure_project_gantt_storage(cur: psycopg.Cursor) -> None:
             source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'phase', 'checklist')),
             checklist_item_id BIGINT REFERENCES project_checklist_items(id) ON DELETE SET NULL,
             touched BOOLEAN NOT NULL DEFAULT FALSE,
+            progress INTEGER NOT NULL DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
+        """
+    )
+    cur.execute(
+        """
+        ALTER TABLE project_gantt_items
+        ADD COLUMN IF NOT EXISTS progress INTEGER NOT NULL DEFAULT 0;
         """
     )
     cur.execute(
@@ -46,6 +53,26 @@ def ensure_project_gantt_storage(cur: psycopg.Cursor) -> None:
         WHERE checklist_item_id IS NOT NULL;
         """
     )
+
+
+def fetch_project_progress(cur: psycopg.Cursor, project_id: int) -> float:
+    """Porcentaje de avance del proyecto (progress_w del ultimo snapshot),
+    la misma fuente que usa la pantalla de Estado proyecto -- para que el
+    Gantt muestre siempre el mismo numero."""
+    cur.execute(
+        """
+        SELECT progress_w
+        FROM project_snapshot
+        WHERE project_id = %s
+        ORDER BY snapshot_year DESC, snapshot_week DESC
+        LIMIT 1
+        """,
+        (project_id,),
+    )
+    row = cur.fetchone()
+    if not row or row[0] is None:
+        return 0.0
+    return round(float(row[0]), 2)
 
 
 def fetch_latest_phase_dates(cur: psycopg.Cursor, project_id: int) -> dict[str, date | None] | None:
