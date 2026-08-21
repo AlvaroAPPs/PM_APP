@@ -7,6 +7,7 @@ reports/pdf_engine.py (sin dependencias externas).
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from itertools import groupby
 from pathlib import Path
 
 from reports.pdf_engine import (
@@ -29,6 +30,9 @@ GREEN = (0.082, 0.451, 0.278)
 ORANGE = (0.910, 0.349, 0.047)
 INK = (0.125, 0.122, 0.110)
 MUTED = (0.42, 0.42, 0.39)
+YEAR_COLOR = (0.122, 0.227, 0.373)
+MONTH_LABEL_COLOR = (0.29, 0.37, 0.50)
+WEEK_LABEL_COLOR = (0.60, 0.62, 0.68)
 
 MARGIN = 15.0
 CONTENT_X = MARGIN + 10
@@ -55,18 +59,6 @@ def _load_logo() -> PdfImage | None:
         return None
 
 
-def _month_starts(min_date: date, max_date: date) -> list[date]:
-    months = []
-    cursor = date(min_date.year, min_date.month, 1)
-    while cursor <= max_date:
-        months.append(cursor)
-        if cursor.month == 12:
-            cursor = date(cursor.year + 1, 1, 1)
-        else:
-            cursor = date(cursor.year, cursor.month + 1, 1)
-    return months
-
-
 def _week_starts(min_date: date, max_date: date) -> list[date]:
     """Lunes de cada semana ISO cubierta por el rango, para la fila de
     semanas de la cabecera (agrupadas visualmente bajo cada mes)."""
@@ -81,6 +73,30 @@ def _week_starts(min_date: date, max_date: date) -> list[date]:
 def _date_x(d: date, min_date: date, span_days: int, chart_x: float, chart_w: float) -> float:
     offset = (d - min_date).days
     return chart_x + (offset / span_days) * chart_w
+
+
+def _text_width(text: str, size: float, bold: bool = False) -> float:
+    return len(text) * size * (0.56 if bold else 0.50)
+
+
+def _week_groups(week_starts, min_date, span_days, chart_x, chart_w, key_fn):
+    """Agrupa semanas consecutivas por key_fn (p.ej. mes o año) del lunes
+    de cada semana. Los limites de cada grupo caen siempre justo en el
+    borde de una semana, para que la linea de mes/año nunca corte por la
+    mitad un numero de semana."""
+    groups = []
+    idx = 0
+    for key, grp in groupby(week_starts, key=key_fn):
+        count = sum(1 for _ in grp)
+        end_idx = idx + count
+        x0 = max(chart_x, _date_x(week_starts[idx], min_date, span_days, chart_x, chart_w))
+        x1 = (
+            _date_x(week_starts[end_idx], min_date, span_days, chart_x, chart_w)
+            if end_idx < len(week_starts) else chart_x + chart_w
+        )
+        groups.append((key, x0, x1))
+        idx = end_idx
+    return groups
 
 
 def _order_items(items: list[dict]) -> list[tuple[dict, int]]:
@@ -182,51 +198,66 @@ def build_gantt_pdf(project_name: str, project_code: str, items: list[dict], pro
 
         table_top = PAGE_HEIGHT - 90
         header_y = table_top
-        month_starts = _month_starts(min_date, max_date)
         week_starts = _week_starts(min_date, max_date)
         grid_bottom = MARGIN + 40
 
-        month_bounds: list[tuple[date, float, float]] = []
-        for idx, m_start in enumerate(month_starts):
-            mx = max(chart_x, _date_x(m_start, min_date, span_days, chart_x, chart_w))
-            next_x = (
-                _date_x(month_starts[idx + 1], min_date, span_days, chart_x, chart_w)
-                if idx + 1 < len(month_starts) else chart_x + chart_w
-            )
-            month_bounds.append((m_start, mx, next_x))
+        # Los grupos de mes/año se derivan de las semanas (no de la fecha
+        # exacta del dia 1) para que sus lineas divisorias caigan siempre
+        # en un borde de semana y nunca corten un numero de semana a la mitad.
+        month_groups = _week_groups(week_starts, min_date, span_days, chart_x, chart_w, lambda d: (d.year, d.month))
+        year_groups = _week_groups(week_starts, min_date, span_days, chart_x, chart_w, lambda d: d.year)
 
-        for m_start, mx, next_x in month_bounds:
-            label = f"{MONTH_NAMES[m_start.month - 1]} {m_start.year}"
-            if (next_x - mx) < len(label) * 3.9:
-                label = MONTH_NAMES[m_start.month - 1]
-            if (next_x - mx) >= len(label) * 3.9:
-                pdf_text(page, mx + 2, header_y - 8, label, size=7, bold=True, color_rgb=MUTED)
+        week_bounds: list[tuple[date, float, float]] = []
+        for idx, w_start in enumerate(week_starts):
+            wx = _date_x(w_start, min_date, span_days, chart_x, chart_w)
+            next_wx = (
+                _date_x(week_starts[idx + 1], min_date, span_days, chart_x, chart_w)
+                if idx + 1 < len(week_starts) else chart_x + chart_w
+            )
+            week_bounds.append((w_start, wx, next_wx))
+
+        # --- Fase 1: todas las lineas primero, para que el texto se dibuje
+        # siempre encima y nunca quede cortado por una rejilla ---
+        page.append("0.80 0.82 0.87 RG 0.5 w")
+        page.append(f"{chart_x:.2f} {header_y - 12:.2f} m {chart_x + chart_w:.2f} {header_y - 12:.2f} l S")
+        page.append("0.82 0.84 0.88 RG 0.5 w")
+        page.append(f"{CONTENT_X:.2f} {header_y - 24:.2f} m {chart_x + chart_w:.2f} {header_y - 24:.2f} l S")
+
+        for w_start, wx, _next_wx in week_bounds:
+            if wx < chart_x - 0.5:
+                continue
+            page.append("0.90 0.91 0.94 RG 0.25 w")
+            page.append(f"{wx:.2f} {header_y - 24:.2f} m {wx:.2f} {grid_bottom:.2f} l S")
+
+        for _key, mx, _x1 in month_groups:
+            page.append("0.68 0.70 0.76 RG 0.8 w")
+            page.append(f"{mx:.2f} {header_y - 12:.2f} m {mx:.2f} {grid_bottom:.2f} l S")
+
+        # --- Fase 2: texto encima de todas las lineas ---
+        for yr, yx0, yx1 in year_groups:
+            label = str(yr)
+            label_x = max(yx0 + 2, (yx0 + yx1) / 2 - _text_width(label, 8, bold=True) / 2)
+            pdf_text(page, label_x, header_y - 8, label, size=8, bold=True, color_rgb=YEAR_COLOR)
 
         pdf_text(page, CONTENT_X, header_y - 8, "Tarea", size=6.5, bold=True, color_rgb=MUTED)
         pdf_text(page, CONTENT_X + TITLE_W, header_y - 8, "Inicio", size=6.5, bold=True, color_rgb=MUTED)
         pdf_text(page, CONTENT_X + TITLE_W + START_W, header_y - 8, "Fin", size=6.5, bold=True, color_rgb=MUTED)
         pdf_text(page, CONTENT_X + TITLE_W + START_W + END_W, header_y - 8, "%", size=6.5, bold=True, color_rgb=MUTED)
 
-        page.append("0.80 0.82 0.87 RG 0.5 w")
-        page.append(f"{chart_x:.2f} {header_y - 12:.2f} m {chart_x + chart_w:.2f} {header_y - 12:.2f} l S")
+        for (yr, mo), mx, next_x in month_groups:
+            label = MONTH_NAMES[mo - 1]
+            if (next_x - mx) >= _text_width(label, 6.8, bold=True) + 2:
+                label_x = max(mx + 2, (mx + next_x) / 2 - _text_width(label, 6.8, bold=True) / 2)
+                pdf_text(page, label_x, header_y - 20, label, size=6.8, bold=True, color_rgb=MONTH_LABEL_COLOR)
 
-        for w_start in week_starts:
-            wx = _date_x(w_start, min_date, span_days, chart_x, chart_w)
+        for w_start, wx, next_wx in week_bounds:
             if wx < chart_x - 0.5:
                 continue
-            pdf_text(page, wx + 0.8, header_y - 19, f"{w_start.day:02d}", size=4.8, color_rgb=MUTED)
-            page.append("0.90 0.91 0.94 RG 0.25 w")
-            page.append(f"{wx:.2f} {header_y - 22:.2f} m {wx:.2f} {grid_bottom:.2f} l S")
+            label = f"{w_start.day:02d}"
+            label_x = (wx + next_wx) / 2 - _text_width(label, 4.6) / 2
+            pdf_text(page, label_x, header_y - 31, label, size=4.6, color_rgb=WEEK_LABEL_COLOR)
 
-        page.append("0.80 0.82 0.87 RG 0.5 w")
-        page.append(f"{CONTENT_X:.2f} {header_y - 24:.2f} m {chart_x + chart_w:.2f} {header_y - 24:.2f} l S")
-
-        for m_start in month_starts:
-            mx = max(chart_x, _date_x(m_start, min_date, span_days, chart_x, chart_w))
-            page.append("0.70 0.72 0.78 RG 0.7 w")
-            page.append(f"{mx:.2f} {header_y - 12:.2f} m {mx:.2f} {grid_bottom:.2f} l S")
-
-        y = header_y - 34
+        y = header_y - 42
         for item, depth in chunk:
             title = ("    " if depth else "") + item["title"]
             pdf_text(page, CONTENT_X, y - 11, title[:22], size=7.5, color_rgb=INK, bold=(depth == 0 and item["source"] != "manual"))
