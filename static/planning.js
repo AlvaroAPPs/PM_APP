@@ -71,10 +71,13 @@ function renderGantt() {
     on_click: task => openModalForEdit(task.id),
     on_date_change: async (task, start, end) => {
       try {
+        const item = items.find(it => String(it.id) === String(task.id));
+        const startIso = toIsoDate(start);
+        const endIso = (item && item.is_milestone) ? startIso : toIsoDate(end);
         await request(`${API}/api/gantt-items/${task.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ start_date: toIsoDate(start), end_date: toIsoDate(end) }),
+          body: JSON.stringify({ start_date: startIso, end_date: endIso }),
         });
         await load(false);
       } catch (err) {

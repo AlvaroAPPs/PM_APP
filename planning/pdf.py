@@ -67,6 +67,17 @@ def _month_starts(min_date: date, max_date: date) -> list[date]:
     return months
 
 
+def _week_starts(min_date: date, max_date: date) -> list[date]:
+    """Lunes de cada semana ISO cubierta por el rango, para la fila de
+    semanas de la cabecera (agrupadas visualmente bajo cada mes)."""
+    cursor = min_date - timedelta(days=min_date.weekday())
+    weeks = []
+    while cursor <= max_date:
+        weeks.append(cursor)
+        cursor += timedelta(days=7)
+    return weeks
+
+
 def _date_x(d: date, min_date: date, span_days: int, chart_x: float, chart_w: float) -> float:
     offset = (d - min_date).days
     return chart_x + (offset / span_days) * chart_w
@@ -123,7 +134,7 @@ def _page_header(
 
 
 def _legend(page: list[str], y: float) -> None:
-    entries = [("Fase", NAVY), ("Tarea", BRIGHT_BLUE), ("Del checklist", GREEN), ("Hito", GOLD), ("Avance", ORANGE)]
+    entries = [("Hito", GOLD), ("Avance", ORANGE)]
     x = CONTENT_X
     for label, color in entries:
         pdf_rect(page, x, y, 10, 8, fill_rgb=color, stroke_rgb=None)
@@ -172,28 +183,55 @@ def build_gantt_pdf(project_name: str, project_code: str, items: list[dict], pro
         table_top = PAGE_HEIGHT - 90
         header_y = table_top
         month_starts = _month_starts(min_date, max_date)
-        for m_start in month_starts:
-            mx = max(chart_x, _date_x(m_start, min_date, span_days, chart_x, chart_w))
-            pdf_text(page, mx + 2, header_y - 9, f"{MONTH_NAMES[m_start.month - 1]} {m_start.year}", size=6.5, bold=True, color_rgb=MUTED)
-
-        pdf_text(page, CONTENT_X, header_y - 9, "Tarea", size=6.5, bold=True, color_rgb=MUTED)
-        pdf_text(page, CONTENT_X + TITLE_W, header_y - 9, "Inicio", size=6.5, bold=True, color_rgb=MUTED)
-        pdf_text(page, CONTENT_X + TITLE_W + START_W, header_y - 9, "Fin", size=6.5, bold=True, color_rgb=MUTED)
-        pdf_text(page, CONTENT_X + TITLE_W + START_W + END_W, header_y - 9, "%", size=6.5, bold=True, color_rgb=MUTED)
-
+        week_starts = _week_starts(min_date, max_date)
         grid_bottom = MARGIN + 40
+
+        month_bounds: list[tuple[date, float, float]] = []
+        for idx, m_start in enumerate(month_starts):
+            mx = max(chart_x, _date_x(m_start, min_date, span_days, chart_x, chart_w))
+            next_x = (
+                _date_x(month_starts[idx + 1], min_date, span_days, chart_x, chart_w)
+                if idx + 1 < len(month_starts) else chart_x + chart_w
+            )
+            month_bounds.append((m_start, mx, next_x))
+
+        for m_start, mx, next_x in month_bounds:
+            label = f"{MONTH_NAMES[m_start.month - 1]} {m_start.year}"
+            if (next_x - mx) < len(label) * 3.9:
+                label = MONTH_NAMES[m_start.month - 1]
+            if (next_x - mx) >= len(label) * 3.9:
+                pdf_text(page, mx + 2, header_y - 8, label, size=7, bold=True, color_rgb=MUTED)
+
+        pdf_text(page, CONTENT_X, header_y - 8, "Tarea", size=6.5, bold=True, color_rgb=MUTED)
+        pdf_text(page, CONTENT_X + TITLE_W, header_y - 8, "Inicio", size=6.5, bold=True, color_rgb=MUTED)
+        pdf_text(page, CONTENT_X + TITLE_W + START_W, header_y - 8, "Fin", size=6.5, bold=True, color_rgb=MUTED)
+        pdf_text(page, CONTENT_X + TITLE_W + START_W + END_W, header_y - 8, "%", size=6.5, bold=True, color_rgb=MUTED)
+
+        page.append("0.80 0.82 0.87 RG 0.5 w")
+        page.append(f"{chart_x:.2f} {header_y - 12:.2f} m {chart_x + chart_w:.2f} {header_y - 12:.2f} l S")
+
+        for w_start in week_starts:
+            wx = _date_x(w_start, min_date, span_days, chart_x, chart_w)
+            if wx < chart_x - 0.5:
+                continue
+            pdf_text(page, wx + 0.8, header_y - 19, f"{w_start.day:02d}", size=4.8, color_rgb=MUTED)
+            page.append("0.90 0.91 0.94 RG 0.25 w")
+            page.append(f"{wx:.2f} {header_y - 22:.2f} m {wx:.2f} {grid_bottom:.2f} l S")
+
+        page.append("0.80 0.82 0.87 RG 0.5 w")
+        page.append(f"{CONTENT_X:.2f} {header_y - 24:.2f} m {chart_x + chart_w:.2f} {header_y - 24:.2f} l S")
+
         for m_start in month_starts:
             mx = max(chart_x, _date_x(m_start, min_date, span_days, chart_x, chart_w))
-            page.append("0.88 0.89 0.92 RG 0.4 w")
+            page.append("0.70 0.72 0.78 RG 0.7 w")
             page.append(f"{mx:.2f} {header_y - 12:.2f} m {mx:.2f} {grid_bottom:.2f} l S")
 
-        y = header_y - 22
+        y = header_y - 34
         for item, depth in chunk:
             title = ("    " if depth else "") + item["title"]
             pdf_text(page, CONTENT_X, y - 11, title[:22], size=7.5, color_rgb=INK, bold=(depth == 0 and item["source"] != "manual"))
             pdf_text(page, CONTENT_X + TITLE_W, y - 11, item["start_date"].strftime("%d/%m/%y"), size=6.5, color_rgb=MUTED)
-            if not item["is_milestone"]:
-                pdf_text(page, CONTENT_X + TITLE_W + START_W, y - 11, item["end_date"].strftime("%d/%m/%y"), size=6.5, color_rgb=MUTED)
+            pdf_text(page, CONTENT_X + TITLE_W + START_W, y - 11, item["end_date"].strftime("%d/%m/%y"), size=6.5, color_rgb=MUTED)
             pdf_text(page, CONTENT_X + TITLE_W + START_W + END_W, y - 11, f'{item.get("progress", 0)}%', size=6.5, color_rgb=MUTED)
 
             color = SOURCE_COLORS.get(item["source"], BRIGHT_BLUE)

@@ -116,6 +116,8 @@ def create_gantt_item(project_code: str, payload: GanttItemIn):
         raise HTTPException(status_code=400, detail="Fecha invalida")
     if end < start:
         raise HTTPException(status_code=400, detail="La fecha de fin no puede ser anterior a la de inicio")
+    if payload.is_milestone:
+        end = start
 
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
@@ -159,17 +161,19 @@ def update_gantt_item(item_id: int, payload: GanttItemUpdateIn):
         fields.append("title = %s")
         values.append(title)
         touched = True
+
+    new_start: date | None = None
     if payload.start_date is not None:
         try:
-            fields.append("start_date = %s")
-            values.append(date.fromisoformat(payload.start_date))
+            new_start = date.fromisoformat(payload.start_date)
         except ValueError:
             raise HTTPException(status_code=400, detail="Fecha invalida")
+        fields.append("start_date = %s")
+        values.append(new_start)
         touched = True
     if payload.end_date is not None:
         try:
-            fields.append("end_date = %s")
-            values.append(date.fromisoformat(payload.end_date))
+            date.fromisoformat(payload.end_date)
         except ValueError:
             raise HTTPException(status_code=400, detail="Fecha invalida")
         touched = True
@@ -186,15 +190,35 @@ def update_gantt_item(item_id: int, payload: GanttItemUpdateIn):
         fields.append("progress = %s")
         values.append(_clamp_progress(payload.progress))
 
-    if not fields:
+    if not fields and payload.end_date is None:
         return {"ok": True}
-    if touched:
-        fields.append("touched = TRUE")
-    fields.append("updated_at = now()")
-    values.append(item_id)
 
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
+            cur.execute(
+                "SELECT is_milestone, start_date FROM project_gantt_items WHERE id = %s",
+                (item_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Tarea no encontrada")
+            current_is_milestone, current_start = row
+            effective_is_milestone = payload.is_milestone if payload.is_milestone is not None else current_is_milestone
+            effective_start = new_start if new_start is not None else current_start
+
+            end_date_value = date.fromisoformat(payload.end_date) if payload.end_date is not None else None
+            if effective_is_milestone:
+                end_date_value = effective_start
+            if end_date_value is not None:
+                fields.append("end_date = %s")
+                values.append(end_date_value)
+
+            if not fields:
+                return {"ok": True}
+            if touched:
+                fields.append("touched = TRUE")
+            fields.append("updated_at = now()")
+            values.append(item_id)
             cur.execute(
                 f"UPDATE project_gantt_items SET {', '.join(fields)} WHERE id = %s",
                 values,
