@@ -128,6 +128,7 @@ function openModalForCreate() {
   setProgressField(0);
   $("taskModalTitle").textContent = "Añadir tarea / hito";
   $("taskDeleteBtn").classList.add("d-none");
+  $("taskReorderBtns").classList.add("d-none");
   bootstrap.Modal.getOrCreateInstance($("taskModal")).show();
 }
 
@@ -144,7 +145,37 @@ function openModalForEdit(itemId) {
   setProgressField(item.progress || 0);
   $("taskModalTitle").textContent = "Editar tarea";
   $("taskDeleteBtn").classList.remove("d-none");
+  $("taskReorderBtns").classList.remove("d-none");
   bootstrap.Modal.getOrCreateInstance($("taskModal")).show();
+}
+
+async function moveTask(direction) {
+  const id = Number($("taskId").value);
+  const item = items.find(it => it.id === id);
+  if (!item) return;
+  const siblings = items
+    .filter(it => it.parent_id === item.parent_id)
+    .sort((a, b) => a.position - b.position || a.id - b.id);
+  const idx = siblings.findIndex(it => it.id === id);
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= siblings.length) return;
+  const other = siblings[swapIdx];
+  try {
+    await request(`${API}/api/gantt-items/${item.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ position: other.position }),
+    });
+    await request(`${API}/api/gantt-items/${other.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ position: item.position }),
+    });
+    bootstrap.Modal.getInstance($("taskModal"))?.hide();
+    await load(false);
+  } catch (err) {
+    alert(err.message);
+  }
 }
 
 async function saveTask() {
@@ -224,6 +255,8 @@ document.addEventListener("DOMContentLoaded", () => {
   $("addTaskBtn").addEventListener("click", openModalForCreate);
   $("taskSaveBtn").addEventListener("click", saveTask);
   $("taskDeleteBtn").addEventListener("click", deleteTask);
+  $("taskMoveUpBtn").addEventListener("click", () => moveTask("up"));
+  $("taskMoveDownBtn").addEventListener("click", () => moveTask("down"));
   $("taskMilestone").addEventListener("change", () => {
     $("taskEnd").disabled = $("taskMilestone").checked;
   });

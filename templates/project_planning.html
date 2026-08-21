@@ -16,8 +16,8 @@
     .bar-wrapper.gantt-phase .bar { fill: #1f3a5f; }
     .bar-wrapper.gantt-manual .bar { fill: #3388f2; }
     .bar-wrapper.gantt-checklist .bar { fill: #157347; }
-    .bar-wrapper.gantt-milestone .bar,
-    .bar-wrapper.gantt-milestone .bar-progress { fill: #dc9f0f; }
+    .bar-wrapper.gantt-milestone .bar { fill: #dc9f0f; }
+    .gantt .bar-wrapper .bar-progress { fill: #E8590C; }
   </style>
   <link rel="stylesheet" href="/static/theme.css">
 </head>
@@ -97,7 +97,11 @@
           </div>
         </div>
         <div class="modal-footer">
-          <button id="taskDeleteBtn" class="btn btn-outline-danger me-auto d-none"><i class="bi bi-trash me-1"></i>Eliminar</button>
+          <div id="taskReorderBtns" class="me-auto d-none btn-group">
+            <button id="taskMoveUpBtn" type="button" class="btn btn-outline-secondary" title="Subir"><i class="bi bi-arrow-up"></i></button>
+            <button id="taskMoveDownBtn" type="button" class="btn btn-outline-secondary" title="Bajar"><i class="bi bi-arrow-down"></i></button>
+          </div>
+          <button id="taskDeleteBtn" class="btn btn-outline-danger d-none"><i class="bi bi-trash me-1"></i>Eliminar</button>
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
           <button id="taskSaveBtn" class="btn btn-dark">Guardar</button>
         </div>

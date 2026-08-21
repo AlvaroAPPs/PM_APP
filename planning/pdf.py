@@ -26,6 +26,7 @@ NAVY = (0.122, 0.227, 0.373)
 BRIGHT_BLUE = (0.20, 0.55, 0.95)
 GOLD = (0.86, 0.62, 0.06)
 GREEN = (0.082, 0.451, 0.278)
+ORANGE = (0.910, 0.349, 0.047)
 INK = (0.125, 0.122, 0.110)
 MUTED = (0.42, 0.42, 0.39)
 
@@ -122,7 +123,7 @@ def _page_header(
 
 
 def _legend(page: list[str], y: float) -> None:
-    entries = [("Fase", NAVY), ("Tarea", BRIGHT_BLUE), ("Del checklist", GREEN), ("Hito", GOLD)]
+    entries = [("Fase", NAVY), ("Tarea", BRIGHT_BLUE), ("Del checklist", GREEN), ("Hito", GOLD), ("Avance", ORANGE)]
     x = CONTENT_X
     for label, color in entries:
         pdf_rect(page, x, y, 10, 8, fill_rgb=color, stroke_rgb=None)
@@ -208,10 +209,10 @@ def build_gantt_pdf(project_name: str, project_code: str, items: list[dict], pro
                 bar_h = 9.0 if depth == 0 else 6.5
                 bar_w = max(3.0, bx_end - bx)
                 bar_y = y - ROW_H / 2 - bar_h / 2
-                pdf_rect(page, bx, bar_y, bar_w, bar_h, fill_rgb=_lighten(color), stroke_rgb=None)
+                pdf_rect(page, bx, bar_y, bar_w, bar_h, fill_rgb=_lighten(color), stroke_rgb=color, line_width=0.6)
                 progress = max(0, min(100, item.get("progress", 0) or 0))
                 if progress:
-                    pdf_rect(page, bx, bar_y, bar_w * (progress / 100.0), bar_h, fill_rgb=color, stroke_rgb=None)
+                    pdf_rect(page, bx, bar_y, bar_w * (progress / 100.0), bar_h, fill_rgb=ORANGE, stroke_rgb=None)
             y -= ROW_H
 
         _legend(page, MARGIN + 20)
