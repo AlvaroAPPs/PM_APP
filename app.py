@@ -1391,6 +1391,13 @@ def ensure_historical_storage(cur: psycopg.Cursor) -> None:
 
     cur.execute(
         """
+        ALTER TABLE projects_historical
+        ADD COLUMN IF NOT EXISTS closed_hours_override NUMERIC;
+        """
+    )
+
+    cur.execute(
+        """
         UPDATE projects_historical h
         SET ordered_total = s.ordered_total,
             real_hours = s.real_hours,
@@ -2494,7 +2501,8 @@ def historicals(request: Request, q: str = Query("")):
                        h.progress_w,
                        h.ordered_total,
                        h.real_hours,
-                       h.desviacion_pct
+                       h.desviacion_pct,
+                       h.closed_hours_override
                 FROM projects_historical h
                 WHERE (%s = '' OR h.project_code ILIKE %s OR h.project_name ILIKE %s)
                 ORDER BY h.moved_to_historical_week DESC, h.project_name ASC
@@ -2515,6 +2523,7 @@ def historicals(request: Request, q: str = Query("")):
             "ordered_total": float(r[7]) if r[7] is not None else None,
             "real_hours": float(r[8]) if r[8] is not None else None,
             "desviacion_pct": float(r[9]) if r[9] is not None else None,
+            "closed_hours_override": float(r[10]) if r[10] is not None else None,
         }
         for r in rows
     ]
@@ -2522,6 +2531,33 @@ def historicals(request: Request, q: str = Query("")):
         "historicals.html",
         {"request": request, "projects": projects, "q": query},
     )
+
+
+class HistoricalClosedHoursIn(BaseModel):
+    closed_hours_override: float | None = None
+
+
+@app.patch("/historicals/{project_code}")
+def update_historical_closed_hours(project_code: str, payload: HistoricalClosedHoursIn):
+    if payload.closed_hours_override is not None and payload.closed_hours_override < 0:
+        raise HTTPException(status_code=400, detail="Las horas no pueden ser negativas")
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_historical_storage(cur)
+            cur.execute(
+                """
+                UPDATE projects_historical
+                SET closed_hours_override = %s
+                WHERE project_code = %s
+                RETURNING id
+                """,
+                (payload.closed_hours_override, project_code),
+            )
+            updated = cur.fetchone()
+        conn.commit()
+    if not updated:
+        raise HTTPException(status_code=404, detail="Proyecto histórico no encontrado")
+    return {"ok": True, "closed_hours_override": payload.closed_hours_override}
 
 
 # ---------- API: Import ----------

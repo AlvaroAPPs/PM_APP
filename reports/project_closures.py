@@ -42,6 +42,18 @@ def _to_float(value: object) -> float:
         return 0.0
 
 
+def _effective_hours(row: dict) -> float:
+    """Horas a usar en calculos/informe: la correccion manual guardada en
+    projects_historical.closed_hours_override si existe, si no las horas
+    totales del pedido (ordered_total). Solo los proyectos ya archivados
+    tienen override, asi que para pendientes/planificados esto equivale
+    siempre a ordered_total."""
+    override = row.get("closed_hours_override")
+    if override is not None:
+        return _to_float(override)
+    return _to_float(row.get("ordered_total"))
+
+
 def build_monthly_buckets(rows: list[dict], year: int) -> dict:
     closed_count = [0] * 12
     closed_hours = [0.0] * 12
@@ -57,7 +69,7 @@ def build_monthly_buckets(rows: list[dict], year: int) -> dict:
         if status not in ("closed", "normal"):
             continue
         month_idx = date_end.month - 1
-        hours = _to_float(row.get("ordered_total"))
+        hours = _effective_hours(row)
 
         if status == "closed":
             closed_count[month_idx] += 1
@@ -133,12 +145,15 @@ def fetch_latest_batch_ids(cur: psycopg.Cursor, limit: int = 2) -> list[int]:
 def fetch_all_orders_rows_for_batch(cur: psycopg.Cursor, import_file_id: int) -> list[dict]:
     cur.execute(
         """
-        SELECT project_code, project_name, team, project_manager, project_type,
-               internal_status, order_phase, date_end, ordered_total, real_hours
-        FROM all_orders_snapshot
-        WHERE import_file_id = %(import_file_id)s
-          AND project_code <> %(excluded_code)s
-          AND lower(project_type) = ANY(%(project_types)s)
+        SELECT s.project_code, s.project_name, s.team, s.project_manager, s.project_type,
+               s.internal_status, s.order_phase, s.date_end, s.ordered_total, s.real_hours,
+               h.closed_hours_override
+        FROM all_orders_snapshot s
+        LEFT JOIN projects_historical h
+          ON UPPER(BTRIM(h.project_code)) = UPPER(BTRIM(s.project_code))
+        WHERE s.import_file_id = %(import_file_id)s
+          AND s.project_code <> %(excluded_code)s
+          AND lower(s.project_type) = ANY(%(project_types)s)
         """,
         {
             "import_file_id": import_file_id,
@@ -201,7 +216,7 @@ def fetch_upcoming_closures(cur: psycopg.Cursor, today: date) -> dict[tuple[int,
         key = (date_end.year, date_end.month)
         if key not in result:
             continue
-        hours = _to_float(row.get("ordered_total"))
+        hours = _effective_hours(row)
         result[key]["rows"].append(
             {
                 "project_code": row.get("project_code"),
@@ -250,7 +265,7 @@ def fetch_month_changes(cur: psycopg.Cursor, today: date) -> dict[tuple[int, int
             "phase": new_row.get("order_phase"),
             "old_date_end": old_end,
             "new_date_end": new_end,
-            "hours": _to_float(new_row.get("ordered_total")),
+            "hours": _effective_hours(new_row),
         }
         for month_key in months:
             if (old_end.year, old_end.month) == month_key or (new_end.year, new_end.month) == month_key:
