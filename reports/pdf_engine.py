@@ -311,17 +311,33 @@ def pdf_grouped_bar_chart(
             # propia altura desde la base, en el orden dado por el llamador
             # (mayor primero, para que quede visible detras de la menor).
             bx = gx + (group_w - bar_w) / 2
+            bar_heights: list[float] = []
             for series_idx, (_name, color, values) in enumerate(series):
                 if group_idx >= len(values) or values[group_idx] is None:
+                    bar_heights.append(0.0)
                     continue
                 value = values[group_idx] or 0
                 bar_h = ((value - vmin) / (vmax - vmin)) * chart_h
+                bar_heights.append(bar_h)
                 stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
                 stream.append(f"{bx:.2f} {chart_y:.2f} {bar_w:.2f} {bar_h:.2f} re f")
-                if show_value_labels and value:
-                    spread = (series_idx - (len(series) - 1) / 2) * 9
+
+            if show_value_labels:
+                # Las etiquetas se apilan verticalmente encima de la barra
+                # mas alta (primera serie arriba, siguiente justo debajo),
+                # en vez de a la altura real de cada serie, para que no se
+                # solapen cuando las barras tienen alturas parecidas.
+                top_h = max(bar_heights) if bar_heights else 0.0
+                line_h = 7.0
+                for series_idx, (_name, color, values) in enumerate(series):
+                    if group_idx >= len(values) or values[group_idx] is None:
+                        continue
+                    value = values[group_idx] or 0
+                    if not value:
+                        continue
+                    label_y = chart_y + top_h + 2 + (len(series) - 1 - series_idx) * line_h
                     pdf_text(
-                        stream, bx + (bar_w / 2) - 8 + spread, chart_y + bar_h + 2,
+                        stream, bx + (bar_w / 2) - 10, label_y,
                         f"{value:,.0f}".replace(",", "."), size=6, bold=(series_idx == 0), color_rgb=color,
                     )
         else:
