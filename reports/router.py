@@ -284,7 +284,7 @@ def build_closure_report_pages(data: dict) -> list[list[str]]:
 
     # --- Pagina 1: cierres reales ---
     page1: list[str] = []
-    _page_frame(page1, "Resumen de cierres reales del ano", year, generated_at)
+    _page_frame(page1, "Resumen de cierres reales del año", year, generated_at)
 
     card_y = PAGE_HEIGHT - 120
     card_h = 48
@@ -309,22 +309,22 @@ def build_closure_report_pages(data: dict) -> list[list[str]]:
         "Proyectos cerrados y planificados por mes",
         labels,
         [
+            ("Planificados", BRIGHT_BLUE, [float(v) for v in actual["combined_count"]]),
             ("Cerrados", NAVY, [float(v) for v in actual["closed_count"]]),
-            ("Planificados", BRIGHT_BLUE, [float(v) for v in actual["planned_count"]]),
         ],
         show_value_labels=True,
-        stacked=True,
+        overlay=True,
     )
     pdf_grouped_bar_chart(
         page1, CONTENT_X + chart_w + 15, chart_y, chart_w, chart_h,
         "Horas totales cerradas y planificadas por mes",
         labels,
         [
+            ("Horas planificadas", BRIGHT_GOLD, actual["combined_hours"]),
             ("Horas cerradas", AMBER, actual["closed_hours"]),
-            ("Horas planificadas", BRIGHT_GOLD, actual["planned_hours"]),
         ],
         show_value_labels=True,
-        stacked=True,
+        overlay=True,
     )
     pages.append(page1)
 

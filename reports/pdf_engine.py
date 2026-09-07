@@ -226,6 +226,7 @@ def pdf_grouped_bar_chart(
     series: list[tuple[str, tuple[float, float, float], list[float | None]]],
     show_value_labels: bool = False,
     stacked: bool = False,
+    overlay: bool = False,
 ) -> None:
     pdf_rect(stream, x, y, w, h, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.86, 0.88, 0.92), line_width=0.8)
     pdf_text(stream, x + 8, y + h - 14, title, size=9, bold=True)
@@ -247,6 +248,9 @@ def pdf_grouped_bar_chart(
         ]
         vmin = 0.0
         vmax = max(group_totals) if group_totals else 1.0
+    elif overlay:
+        vmin = 0.0
+        vmax = max(numeric)
     else:
         vmin = min(0.0, min(numeric))
         vmax = max(numeric)
@@ -266,7 +270,11 @@ def pdf_grouped_bar_chart(
 
     group_count = max(1, len(labels))
     group_w = chart_w / group_count
-    bar_w = max(8.0, min(26.0, group_w - 10)) if stacked else max(4.0, min(16.0, group_w / max(2, len(series) + 1)))
+    bar_w = (
+        max(8.0, min(26.0, group_w - 10))
+        if stacked or overlay
+        else max(4.0, min(16.0, group_w / max(2, len(series) + 1)))
+    )
 
     legend_slot = min(150, (w - 16) / max(1, len(series)))
     legend_x = max(chart_x, x + (w - (len(series) * legend_slot)) / 2)
@@ -298,6 +306,24 @@ def pdf_grouped_bar_chart(
             if show_value_labels and base > chart_y:
                 total = sum((values[group_idx] or 0) for _name, _color, values in series if group_idx < len(values))
                 pdf_text(stream, gx + (group_w / 2) - 10, base + 9, f"{total:,.0f}".replace(",", "."), size=6, bold=True)
+        elif overlay:
+            # Barras superpuestas (no aditivas): cada serie ocupa toda su
+            # propia altura desde la base, en el orden dado por el llamador
+            # (mayor primero, para que quede visible detras de la menor).
+            bx = gx + (group_w - bar_w) / 2
+            for series_idx, (_name, color, values) in enumerate(series):
+                if group_idx >= len(values) or values[group_idx] is None:
+                    continue
+                value = values[group_idx] or 0
+                bar_h = ((value - vmin) / (vmax - vmin)) * chart_h
+                stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
+                stream.append(f"{bx:.2f} {chart_y:.2f} {bar_w:.2f} {bar_h:.2f} re f")
+                if show_value_labels and value:
+                    spread = (series_idx - (len(series) - 1) / 2) * 9
+                    pdf_text(
+                        stream, bx + (bar_w / 2) - 8 + spread, chart_y + bar_h + 2,
+                        f"{value:,.0f}".replace(",", "."), size=6, bold=(series_idx == 0), color_rgb=color,
+                    )
         else:
             for series_idx, (_name, color, values) in enumerate(series):
                 if group_idx >= len(values) or values[group_idx] is None:

@@ -107,6 +107,8 @@ def build_monthly_buckets(rows: list[dict], year: int) -> dict:
         "closed_hours": closed_hours,
         "planned_count": planned_count,
         "planned_hours": planned_hours,
+        "combined_count": combined_count,
+        "combined_hours": combined_hours,
         "cumulative_count": cumulative(combined_count),
         "cumulative_hours": cumulative(combined_hours),
         "closed_detail": closed_detail,
