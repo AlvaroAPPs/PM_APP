@@ -129,14 +129,29 @@ def _month_window(start: date, count: int) -> list[tuple[int, int]]:
     return result
 
 
-def fetch_latest_batch_ids(cur: psycopg.Cursor, limit: int = 2) -> list[int]:
-    """import_file_id de las importaciones ALL mas recientes, por fecha real del fichero."""
-    cur.execute(
-        """
-        SELECT f.id
+# Si la misma semana (snapshot_year, snapshot_week) se importa varias veces
+# (p.ej. una recarga tras un problema), un "batch" debe contar una sola vez:
+# nos quedamos con el import_file mas reciente (uploaded_at, con el id como
+# desempate) de cada semana, y descartamos el resto para todo el informe.
+_LATEST_PER_WEEK_SQL = """
+    SELECT id, snapshot_year, snapshot_week
+    FROM (
+        SELECT DISTINCT ON (f.snapshot_year, f.snapshot_week)
+               f.id, f.snapshot_year, f.snapshot_week
         FROM import_file f
         WHERE EXISTS (SELECT 1 FROM all_orders_snapshot s WHERE s.import_file_id = f.id)
-        ORDER BY f.snapshot_year DESC, f.snapshot_week DESC
+        ORDER BY f.snapshot_year, f.snapshot_week, f.uploaded_at DESC, f.id DESC
+    ) dedup
+"""
+
+
+def fetch_latest_batch_ids(cur: psycopg.Cursor, limit: int = 2) -> list[int]:
+    """import_file_id de las semanas ALL mas recientes (una por semana, la
+    ultima subida de cada una si se repitio), por fecha real del fichero."""
+    cur.execute(
+        f"""
+        {_LATEST_PER_WEEK_SQL}
+        ORDER BY snapshot_year DESC, snapshot_week DESC
         LIMIT %(limit)s
         """,
         {"limit": limit},
@@ -169,14 +184,13 @@ def fetch_all_orders_rows_for_batch(cur: psycopg.Cursor, import_file_id: int) ->
 
 def fetch_snapshot_year_totals(cur: psycopg.Cursor, year: int) -> list[dict]:
     """Evolucion del total del ano (cerrado + planificado) segun cada
-    importacion AllOrders disponible, ordenado de la mas antigua a la
-    mas reciente -- para ver como cambia la previsión con cada snapshot."""
+    semana AllOrders disponible (una por semana, la ultima subida de cada
+    una si se repitio), ordenado de la mas antigua a la mas reciente --
+    para ver como cambia la previsión con cada snapshot."""
     cur.execute(
-        """
-        SELECT f.id, f.snapshot_year, f.snapshot_week
-        FROM import_file f
-        WHERE EXISTS (SELECT 1 FROM all_orders_snapshot s WHERE s.import_file_id = f.id)
-        ORDER BY f.snapshot_year ASC, f.snapshot_week ASC
+        f"""
+        {_LATEST_PER_WEEK_SQL}
+        ORDER BY snapshot_year ASC, snapshot_week ASC
         """
     )
     batches = cur.fetchall()
