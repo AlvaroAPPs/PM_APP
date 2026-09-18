@@ -2097,8 +2097,9 @@ def fetch_project_list(
     else:
         where_clauses.append("COALESCE(p.is_historical, FALSE) = FALSE")
     if pm_name:
-        where_clauses.append("p.project_manager = %s")
+        where_clauses.append("(p.project_manager = %s OR p.project_code = %s)")
         params.append(pm_name)
+        params.append(GENERAL_INTERNAL_PROJECT_CODE)
     selected_team_patterns = [value for value in (team_filters or []) if value]
     if selected_team_patterns:
         where_clauses.append("BTRIM(p.team) ILIKE ANY(%s::text[])")
