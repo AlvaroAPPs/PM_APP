@@ -21,6 +21,11 @@ from openpyxl.utils import get_column_letter
 from importer import read_and_normalize_excel, map_row, upsert_project, upsert_snapshot, compute_deltas
 from meeting_minutes.router import router as meeting_minutes_router
 from meeting_minutes.storage import ensure_meeting_minutes_storage
+from reports.project_closures import (
+    ensure_closed_hours_review_storage,
+    fetch_closed_hours_tracking,
+    save_closed_hours_review,
+)
 from reports.router import router as reports_router
 from planning.router import router as planning_router
 from planning.storage import ensure_project_gantt_storage, sync_checklist_milestone
@@ -49,6 +54,7 @@ def startup_init() -> None:
             ensure_project_gantt_storage(cur)
             ensure_meeting_minutes_storage(cur)
             ensure_all_orders_snapshot_storage(cur)
+            ensure_closed_hours_review_storage(cur)
             ensure_general_internal_project(cur)
         conn.commit()
 
@@ -2511,6 +2517,13 @@ def historicals(request: Request, q: str = Query("")):
                 (query, query_like, query_like),
             )
             rows = cur.fetchall()
+            tracking = fetch_closed_hours_tracking(cur)
+
+    pending_reviews = sorted(
+        (entry for entry in tracking.values() if entry["pending_review"]),
+        key=lambda entry: abs(_hours_diff(entry)),
+        reverse=True,
+    )
 
     projects = [
         {
@@ -2525,13 +2538,34 @@ def historicals(request: Request, q: str = Query("")):
             "real_hours": float(r[8]) if r[8] is not None else None,
             "desviacion_pct": float(r[9]) if r[9] is not None else None,
             "closed_hours_override": float(r[10]) if r[10] is not None else None,
+            "frozen_hours": (tracking.get(r[0]) or {}).get("frozen_hours"),
         }
         for r in rows
     ]
     return templates.TemplateResponse(
         "historicals.html",
-        {"request": request, "projects": projects, "q": query},
+        {"request": request, "projects": projects, "q": query, "pending_reviews": pending_reviews},
     )
+
+
+def _hours_diff(entry: dict) -> float:
+    return (entry["latest_hours"] or 0.0) - (entry["frozen_hours"] or 0.0)
+
+
+class HistoricalHoursReviewIn(BaseModel):
+    action: str
+    source_hours: float
+
+
+@app.post("/historicals/{project_code}/hours-review")
+def review_historical_closed_hours(project_code: str, payload: HistoricalHoursReviewIn):
+    if payload.action not in ("keep", "accept"):
+        raise HTTPException(status_code=400, detail="Accion no valida")
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            save_closed_hours_review(cur, project_code, payload.action, payload.source_hours)
+        conn.commit()
+    return {"ok": True}
 
 
 class HistoricalClosedHoursIn(BaseModel):

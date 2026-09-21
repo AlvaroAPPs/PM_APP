@@ -23,6 +23,66 @@
       </div>
     </div>
 
+    <div class="card shadow-soft mb-3" id="revision-horas" style="border-left: 4px solid {% if pending_reviews %}#b5760a{% else %}#2f7d4f{% endif %};">
+      <div class="card-body">
+        <h2 class="h5 fw-bold mb-1">
+          Horas de cierre a revisar
+          {% if pending_reviews %}<span class="badge text-bg-warning ms-1">{{ pending_reviews|length }}</span>{% endif %}
+        </h2>
+        <div class="muted mb-2">
+          El informe de cierre usa las horas que tenía el proyecto cuando se cerró. Estos proyectos cerrados
+          traen ahora en el Excel de AllOrders un valor distinto: decide si se queda el valor congelado o el nuevo.
+        </div>
+        {% if pending_reviews %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0" id="reviewTable">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Proyecto</th>
+                <th>Equipo</th>
+                <th class="text-end">Horas congeladas</th>
+                <th class="text-end">Horas en Excel</th>
+                <th class="text-end">Diferencia</th>
+                <th>Cambio detectado</th>
+                <th>Qué hacer</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in pending_reviews %}
+              {% set diff = (item.latest_hours or 0) - (item.frozen_hours or 0) %}
+              <tr data-project-code="{{ item.project_code }}" data-source-hours="{{ item.latest_hours or 0 }}">
+                <td class="text-nowrap">{{ item.project_code }}</td>
+                <td>{{ item.project_name }}</td>
+                <td>{{ item.team or '—' }}</td>
+                <td class="text-end">{{ "%.2f"|format(item.frozen_hours) }}</td>
+                <td class="text-end">{{ "%.2f"|format(item.latest_hours or 0) }}</td>
+                <td class="text-end fw-semibold {% if diff < 0 %}text-danger{% else %}text-success{% endif %}">
+                  {{ "%+.2f"|format(diff) }}
+                </td>
+                <td class="text-nowrap">
+                  {% if item.changed_week %}Sem. {{ item.changed_week }}/{{ item.changed_year }}{% else %}—{% endif %}
+                  <span class="muted">(cierre: sem. {{ item.baseline_week }})</span>
+                </td>
+                <td>
+                  <div class="btn-group btn-group-sm">
+                    <button type="button" class="btn btn-outline-secondary review-keep" title="Seguir usando las horas congeladas y no avisar mientras el Excel siga con este valor">Mantener {{ "%g"|format(item.frozen_hours) }}</button>
+                    <button type="button" class="btn btn-outline-primary review-accept" title="Usar el valor actual del Excel como nuevas horas de cierre">Usar {{ "%g"|format(item.latest_hours or 0) }}</button>
+                    <button type="button" class="btn btn-outline-dark review-manual" title="Poner otro valor a mano">Otro valor…</button>
+                  </div>
+                  <div class="form-text review-status"></div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-success">Sin cambios pendientes de revisión.</div>
+        {% endif %}
+      </div>
+    </div>
+
     <div class="card shadow-soft mb-3">
       <div class="card-body">
         <form method="get" action="/historicals" class="row g-2 align-items-end">
@@ -109,7 +169,7 @@
                       step="0.01"
                       min="0"
                       class="form-control closed-hours-input"
-                      placeholder="Horas totales"
+                      placeholder="{% if project.frozen_hours is not none %}{{ '%g'|format(project.frozen_hours) }} (congeladas){% else %}Horas totales{% endif %}"
                       value="{{ project.closed_hours_override if project.closed_hours_override is not none else '' }}"
                     >
                     <button type="button" class="btn btn-outline-primary closed-hours-save" title="Guardar corrección">Guardar</button>
@@ -127,7 +187,7 @@
           </table>
         </div>
         <div class="form-text mt-2">
-          "Horas cerradas (informe)" corrige, solo para el informe de Cierre de proyectos, el número de horas cerradas de ese proyecto cuando las horas totales no reflejan lo realmente cerrado. Déjalo en blanco para usar las horas totales.
+          "Horas cerradas (informe)" fija a mano las horas de ese proyecto en el informe de Cierre de proyectos y tiene prioridad sobre todo lo demás. Déjalo en blanco para usar las horas congeladas del cierre (se muestran en gris dentro del campo).
         </div>
       </div>
     </div>
