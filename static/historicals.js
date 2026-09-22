@@ -19,8 +19,8 @@ async function saveClosedHours(row, value) {
   }
 }
 
-async function sendReview(row, request) {
-  const status = row.querySelector(".review-status");
+async function sendReview(row, request, statusSelector = ".review-status") {
+  const status = row.querySelector(statusSelector);
   status.textContent = "Guardando...";
   status.classList.remove("text-danger");
   try {
@@ -35,6 +35,26 @@ async function sendReview(row, request) {
     status.textContent = "Error al guardar: " + err.message;
     status.classList.add("text-danger");
   }
+}
+
+function setupVanishedRow(row) {
+  const code = encodeURIComponent(row.dataset.projectCode);
+
+  row.querySelector(".vanished-keep").addEventListener("click", () => {
+    sendReview(
+      row,
+      { url: `${API}/historicals/${code}/vanished-review`, method: "POST", body: { action: "keep" } },
+      ".vanished-status",
+    );
+  });
+
+  row.querySelector(".vanished-exclude").addEventListener("click", () => {
+    sendReview(
+      row,
+      { url: `${API}/historicals/${code}/vanished-review`, method: "POST", body: { action: "exclude" } },
+      ".vanished-status",
+    );
+  });
 }
 
 function setupReviewRow(row) {
@@ -104,6 +124,7 @@ function setupOverrideRow(row) {
 
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("#reviewTable tr[data-project-code]").forEach(setupReviewRow);
+  document.querySelectorAll("#vanishedTable tr[data-project-code]").forEach(setupVanishedRow);
   document.querySelectorAll("tr[data-project-code]").forEach(row => {
     if (row.querySelector(".closed-hours-input")) setupOverrideRow(row);
   });

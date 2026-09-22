@@ -17,7 +17,11 @@ from reports.pdf_engine import (
     pdf_table,
     pdf_text,
 )
-from reports.project_closures import count_pending_hours_reviews, fetch_closure_report_data
+from reports.project_closures import (
+    count_pending_hours_reviews,
+    count_pending_vanished_reviews,
+    fetch_closure_report_data,
+)
 
 router = APIRouter(tags=["reports"])
 templates = Jinja2Templates(directory="templates")
@@ -407,6 +411,7 @@ def reports_home(request: Request):
             "years": years,
             "current_year": current_year,
             "pending_hours_reviews": count_pending_hours_reviews(),
+            "pending_vanished_reviews": count_pending_vanished_reviews(),
         },
     )
 

@@ -175,28 +175,30 @@ CLOSED_HOURS_REVIEW_DDL = """
     );
 """
 
+VANISHED_CLOSURE_REVIEW_DDL = """
+    CREATE TABLE IF NOT EXISTS vanished_closure_review (
+        project_code TEXT PRIMARY KEY,
+        action TEXT NOT NULL CHECK (action IN ('keep', 'exclude')),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+"""
+
 
 def ensure_closed_hours_review_storage(cur: psycopg.Cursor) -> None:
     cur.execute(CLOSED_HOURS_REVIEW_DDL)
+    cur.execute(VANISHED_CLOSURE_REVIEW_DDL)
 
 
-def fetch_closed_hours_tracking(cur: psycopg.Cursor) -> dict[str, dict]:
-    """Horas de cierre 'congeladas' de cada proyecto que en el ultimo AllOrders
-    esta Closed, y si el Excel las ha cambiado desde entonces.
-
-    Horas congeladas = ordered_total de la primera semana de la racha actual
-    de Closed (si el proyecto se reabrio y volvio a cerrar, cuenta la ultima
-    racha), salvo que el usuario haya aceptado un nuevo valor al revisarlo.
-    Una semana subida varias veces cuenta una sola vez (la ultima carga).
-
-    Cada entrada trae `pending_review`: el Excel actual difiere de lo
-    congelado, no hay correccion manual y el usuario no ha descartado ya
-    ese mismo valor. Es lo que se avisa para revisar."""
-    ensure_closed_hours_review_storage(cur)
+def _build_closure_streaks(cur: psycopg.Cursor) -> dict[str, dict]:
+    """Escanea todo el historico de all_orders_snapshot (una fila por semana,
+    deduplicada) y devuelve, por project_code, el estado de la ULTIMA vez que
+    aparecio Closed -- se borra si en algun momento posterior volvio a
+    'normal' (se reabrio de verdad). Es la base tanto para detectar cambios
+    de horas como proyectos que desaparecen del Excel."""
     cur.execute(
         f"""
-        SELECT s.project_code, s.project_name, s.team, lower(s.internal_status),
-               s.ordered_total, b.snapshot_year, b.snapshot_week
+        SELECT s.project_code, s.project_name, s.team, s.project_manager, lower(s.internal_status),
+               s.ordered_total, s.date_end, b.snapshot_year, b.snapshot_week
         FROM all_orders_snapshot s
         JOIN ({_LATEST_PER_WEEK_SQL}) b ON b.id = s.import_file_id
         WHERE s.project_code <> %(excluded_code)s
@@ -207,7 +209,7 @@ def fetch_closed_hours_tracking(cur: psycopg.Cursor) -> dict[str, dict]:
     )
 
     streaks: dict[str, dict] = {}
-    for code, name, team, status, hours, year, week in cur.fetchall():
+    for code, name, team, pm, status, hours, date_end, year, week in cur.fetchall():
         if status == "normal":
             streaks.pop(code, None)
             continue
@@ -225,22 +227,52 @@ def fetch_closed_hours_tracking(cur: psycopg.Cursor) -> dict[str, dict]:
             }
             streaks[code] = entry
         latest_hours = None if hours is None else float(hours)
-        entry.update(project_name=name, team=team, latest_hours=latest_hours, latest_year=year, latest_week=week)
+        entry.update(
+            project_name=name, team=team, project_manager=pm,
+            latest_hours=latest_hours, latest_year=year, latest_week=week, date_end=date_end,
+        )
         if (
             entry["changed_week"] is None
             and abs(_to_float(latest_hours) - _to_float(entry["baseline_hours"])) > HOURS_TOLERANCE
         ):
             entry["changed_year"], entry["changed_week"] = year, week
+    return streaks
 
-    # Solo cuentan los que siguen Closed en el ultimo AllOrders cargado.
+
+def _latest_batch_codes(cur: psycopg.Cursor) -> tuple[int | None, set[str], set[str]]:
+    """(id del ultimo batch, todos los project_code que trae, los que estan Closed)."""
     latest_batch = fetch_latest_batch_ids(cur, 1)
-    if latest_batch:
-        cur.execute(
-            "SELECT project_code FROM all_orders_snapshot WHERE import_file_id = %s AND lower(internal_status) = 'closed'",
-            (latest_batch[0],),
-        )
-        closed_now = {row[0] for row in cur.fetchall()}
-        streaks = {code: entry for code, entry in streaks.items() if code in closed_now}
+    if not latest_batch:
+        return None, set(), set()
+    cur.execute(
+        "SELECT project_code, lower(internal_status) FROM all_orders_snapshot WHERE import_file_id = %s",
+        (latest_batch[0],),
+    )
+    rows = cur.fetchall()
+    all_codes = {code for code, _status in rows}
+    closed_codes = {code for code, status in rows if status == "closed"}
+    return latest_batch[0], all_codes, closed_codes
+
+
+def fetch_closed_hours_tracking(cur: psycopg.Cursor) -> dict[str, dict]:
+    """Horas de cierre 'congeladas' de cada proyecto que en el ultimo AllOrders
+    esta Closed, y si el Excel las ha cambiado desde entonces.
+
+    Horas congeladas = ordered_total de la primera semana de la racha actual
+    de Closed (si el proyecto se reabrio y volvio a cerrar, cuenta la ultima
+    racha), salvo que el usuario haya aceptado un nuevo valor al revisarlo.
+    Una semana subida varias veces cuenta una sola vez (la ultima carga).
+
+    Cada entrada trae `pending_review`: el Excel actual difiere de lo
+    congelado, no hay correccion manual y el usuario no ha descartado ya
+    ese mismo valor. Es lo que se avisa para revisar."""
+    ensure_closed_hours_review_storage(cur)
+    streaks = _build_closure_streaks(cur)
+
+    # Solo cuentan los que siguen Closed en el ultimo AllOrders cargado; los
+    # que ya no aparecen en absoluto los trata fetch_vanished_closures.
+    _latest_id, _all_codes, closed_codes = _latest_batch_codes(cur)
+    streaks = {code: entry for code, entry in streaks.items() if code in closed_codes}
 
     cur.execute("SELECT project_code, accepted_hours, dismissed_source_hours FROM closed_hours_review")
     reviews = {row[0]: row for row in cur.fetchall()}
@@ -261,6 +293,80 @@ def fetch_closed_hours_tracking(cur: psycopg.Cursor) -> dict[str, dict]:
     return streaks
 
 
+def fetch_vanished_closures(cur: psycopg.Cursor) -> dict[str, dict]:
+    """Proyectos cuyo ultimo estado conocido era Closed pero que ya no
+    aparecen en absoluto en el ultimo AllOrders cargado (el origen dejo de
+    listarlos, no es que se hayan reabierto). Si el usuario no ha decidido
+    nada todavia (`pending_review`), por defecto se siguen contando en el
+    informe con sus ultimos datos conocidos (`keep_hours`); si decide
+    'excluir', dejan de contarse."""
+    ensure_closed_hours_review_storage(cur)
+    streaks = _build_closure_streaks(cur)
+    _latest_id, all_codes, _closed_codes = _latest_batch_codes(cur)
+    # Solo interesan cierres recientes: el AllOrders de origen deja de listar
+    # por su cuenta cierres antiguos con el paso del tiempo, y avisar de esos
+    # seria solo ruido (no una desaparicion real que haya que revisar).
+    relevance_cutoff_year = date.today().year - 1
+    vanished = {
+        code: entry
+        for code, entry in streaks.items()
+        if code not in all_codes and entry.get("date_end") and entry["date_end"].year >= relevance_cutoff_year
+    }
+
+    cur.execute("SELECT project_code, closed_hours_override FROM projects_historical WHERE closed_hours_override IS NOT NULL")
+    overrides = {row[0]: float(row[1]) for row in cur.fetchall()}
+
+    cur.execute("SELECT project_code, action FROM vanished_closure_review")
+    reviews = dict(cur.fetchall())
+    # Si un proyecto reaparecio en el Excel, la decision anterior ya no aplica.
+    stale = [code for code in reviews if code in all_codes]
+    if stale:
+        cur.execute("DELETE FROM vanished_closure_review WHERE project_code = ANY(%s)", (stale,))
+        for code in stale:
+            reviews.pop(code, None)
+
+    for code, entry in vanished.items():
+        action = reviews.get(code)
+        entry["manual_override"] = overrides.get(code)
+        entry["frozen_hours"] = entry["latest_hours"]
+        entry["review_action"] = action
+        entry["keep_hours"] = action != "exclude"
+        entry["pending_review"] = action is None
+    return vanished
+
+
+def build_vanished_rows(vanished: dict[str, dict], year: int) -> list[dict]:
+    """Filas sinteticas (con la misma forma que las de all_orders_snapshot)
+    para los proyectos cerrados que desaparecieron del Excel, a partir de su
+    ultimo estado conocido -- para que el informe no pierda sus horas solo
+    porque el origen dejo de listarlos. Se excluyen los que el usuario ya
+    descarto explicitamente."""
+    rows = []
+    for entry in vanished.values():
+        if not entry["keep_hours"]:
+            continue
+        date_end = entry.get("date_end")
+        if not date_end or date_end.year != year:
+            continue
+        rows.append(
+            {
+                "project_code": entry["project_code"],
+                "project_name": entry.get("project_name"),
+                "team": entry.get("team"),
+                "project_manager": entry.get("project_manager"),
+                "project_type": None,
+                "internal_status": "closed",
+                "order_phase": "Ended",
+                "date_end": date_end,
+                "ordered_total": entry.get("latest_hours"),
+                "real_hours": None,
+                "closed_hours_override": entry.get("manual_override"),
+                "frozen_hours": entry.get("frozen_hours"),
+            }
+        )
+    return rows
+
+
 def count_pending_hours_reviews() -> int:
     """Numero de proyectos cerrados con horas cambiadas en origen pendientes de
     revisar (para avisar en la pantalla de Informes). Si la base de datos no
@@ -273,6 +379,19 @@ def count_pending_hours_reviews() -> int:
     except psycopg.Error:
         return 0
     return sum(1 for entry in tracking.values() if entry["pending_review"])
+
+
+def count_pending_vanished_reviews() -> int:
+    """Numero de proyectos cerrados que desaparecieron del Excel pendientes de
+    revisar (para avisar en la pantalla de Informes)."""
+    try:
+        with psycopg.connect(DB_DSN) as conn:
+            with conn.cursor() as cur:
+                vanished = fetch_vanished_closures(cur)
+            conn.commit()
+    except psycopg.Error:
+        return 0
+    return sum(1 for entry in vanished.values() if entry["pending_review"])
 
 
 def frozen_hours_map(tracking: dict[str, dict]) -> dict[str, float]:
@@ -308,8 +427,29 @@ def save_closed_hours_review(cur: psycopg.Cursor, project_code: str, action: str
         raise ValueError(f"accion desconocida: {action}")
 
 
+def save_vanished_review(cur: psycopg.Cursor, project_code: str, action: str) -> None:
+    """action='keep': seguir contando el proyecto con sus ultimos datos
+    conocidos aunque el Excel ya no lo traiga. action='exclude': dejar de
+    contarlo en el informe."""
+    if action not in ("keep", "exclude"):
+        raise ValueError(f"accion desconocida: {action}")
+    ensure_closed_hours_review_storage(cur)
+    cur.execute(
+        """
+        INSERT INTO vanished_closure_review (project_code, action, updated_at)
+        VALUES (%s, %s, now())
+        ON CONFLICT (project_code) DO UPDATE
+        SET action = EXCLUDED.action, updated_at = now()
+        """,
+        (project_code, action),
+    )
+
+
 def fetch_all_orders_rows_for_batch(
-    cur: psycopg.Cursor, import_file_id: int, frozen: dict[str, float] | None = None
+    cur: psycopg.Cursor,
+    import_file_id: int,
+    frozen: dict[str, float] | None = None,
+    extra_rows: list[dict] | None = None,
 ) -> list[dict]:
     cur.execute(
         """
@@ -335,14 +475,25 @@ def fetch_all_orders_rows_for_batch(
         for row in rows:
             if (row.get("internal_status") or "").strip().lower() == "closed" and row["project_code"] in frozen:
                 row["frozen_hours"] = frozen[row["project_code"]]
+    if extra_rows:
+        rows = rows + extra_rows
     return rows
 
 
-def fetch_snapshot_year_totals(cur: psycopg.Cursor, year: int, frozen: dict[str, float] | None = None) -> list[dict]:
+def fetch_snapshot_year_totals(
+    cur: psycopg.Cursor,
+    year: int,
+    frozen: dict[str, float] | None = None,
+    vanished_rows: list[dict] | None = None,
+) -> list[dict]:
     """Evolucion del total del ano (cerrado + planificado) segun cada
     semana AllOrders disponible (una por semana, la ultima subida de cada
     una si se repitio), ordenado de la mas antigua a la mas reciente --
-    para ver como cambia la previsión con cada snapshot."""
+    para ver como cambia la previsión con cada snapshot. Las filas de
+    proyectos desaparecidos solo se añaden en la semana mas reciente: en
+    semanas anteriores ya tenian su propia fila real, y añadirlas tambien
+    ahi contaria de mas semanas en las que el proyecto ni siquiera se habia
+    cerrado todavia."""
     cur.execute(
         f"""
         {_LATEST_PER_WEEK_SQL}
@@ -350,9 +501,11 @@ def fetch_snapshot_year_totals(cur: psycopg.Cursor, year: int, frozen: dict[str,
         """
     )
     batches = cur.fetchall()
+    latest_batch_id = batches[-1][0] if batches else None
     result: list[dict] = []
     for import_file_id, snapshot_year, snapshot_week in batches:
-        rows = fetch_all_orders_rows_for_batch(cur, import_file_id, frozen)
+        extra = vanished_rows if (vanished_rows and import_file_id == latest_batch_id) else None
+        rows = fetch_all_orders_rows_for_batch(cur, import_file_id, frozen, extra)
         buckets = build_monthly_buckets(rows, year)
         result.append(
             {
@@ -368,7 +521,10 @@ def fetch_snapshot_year_totals(cur: psycopg.Cursor, year: int, frozen: dict[str,
 
 
 def fetch_upcoming_closures(
-    cur: psycopg.Cursor, today: date, frozen: dict[str, float] | None = None
+    cur: psycopg.Cursor,
+    today: date,
+    frozen: dict[str, float] | None = None,
+    vanished_rows: list[dict] | None = None,
 ) -> dict[tuple[int, int], dict]:
     """Cierres (cerrados y pendientes) del mes actual y los 2 siguientes,
     segun la importacion AllOrders mas reciente. `status` indica si ese
@@ -380,7 +536,7 @@ def fetch_upcoming_closures(
     if not batch_ids:
         return result
 
-    for row in fetch_all_orders_rows_for_batch(cur, batch_ids[0], frozen):
+    for row in fetch_all_orders_rows_for_batch(cur, batch_ids[0], frozen, vanished_rows):
         status_raw = (row.get("internal_status") or "").strip().lower()
         if status_raw not in ("closed", "normal"):
             continue
@@ -473,15 +629,22 @@ def fetch_closure_report_data(year: int) -> dict:
             frozen = frozen_hours_map(tracking)
             pending_review_count = sum(1 for entry in tracking.values() if entry["pending_review"])
 
+            vanished = fetch_vanished_closures(cur)
+            vanished_rows = build_vanished_rows(vanished, year)
+            pending_vanished_count = sum(1 for entry in vanished.values() if entry["pending_review"])
+
             batch_ids = fetch_latest_batch_ids(cur, limit=5)
             for key, label, offset in snapshot_specs:
-                rows = fetch_all_orders_rows_for_batch(cur, batch_ids[offset], frozen) if offset < len(batch_ids) else []
+                # Los proyectos desaparecidos solo se añaden a la semana actual
+                # (offset 0): en semanas anteriores ya tenian su propia fila real.
+                extra = vanished_rows if offset == 0 else None
+                rows = fetch_all_orders_rows_for_batch(cur, batch_ids[offset], frozen, extra) if offset < len(batch_ids) else []
                 buckets = build_monthly_buckets(rows, year)
                 projections[key] = {"label": label, **buckets}
 
-            upcoming_closures = fetch_upcoming_closures(cur, today, frozen)
+            upcoming_closures = fetch_upcoming_closures(cur, today, frozen, vanished_rows)
             month_changes = fetch_month_changes(cur, today, frozen)
-            snapshot_year_totals = fetch_snapshot_year_totals(cur, year, frozen)
+            snapshot_year_totals = fetch_snapshot_year_totals(cur, year, frozen, vanished_rows)
 
     actual = projections["now"]
     return {
@@ -503,4 +666,5 @@ def fetch_closure_report_data(year: int) -> dict:
         "month_changes": month_changes,
         "snapshot_year_totals": snapshot_year_totals,
         "pending_review_count": pending_review_count,
+        "pending_vanished_count": pending_vanished_count,
     }

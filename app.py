@@ -24,7 +24,9 @@ from meeting_minutes.storage import ensure_meeting_minutes_storage
 from reports.project_closures import (
     ensure_closed_hours_review_storage,
     fetch_closed_hours_tracking,
+    fetch_vanished_closures,
     save_closed_hours_review,
+    save_vanished_review,
 )
 from reports.router import router as reports_router
 from planning.router import router as planning_router
@@ -2518,10 +2520,16 @@ def historicals(request: Request, q: str = Query("")):
             )
             rows = cur.fetchall()
             tracking = fetch_closed_hours_tracking(cur)
+            vanished = fetch_vanished_closures(cur)
 
     pending_reviews = sorted(
         (entry for entry in tracking.values() if entry["pending_review"]),
         key=lambda entry: abs(_hours_diff(entry)),
+        reverse=True,
+    )
+    pending_vanished = sorted(
+        (entry for entry in vanished.values() if entry["pending_review"]),
+        key=lambda entry: entry["latest_hours"] or 0.0,
         reverse=True,
     )
 
@@ -2544,12 +2552,33 @@ def historicals(request: Request, q: str = Query("")):
     ]
     return templates.TemplateResponse(
         "historicals.html",
-        {"request": request, "projects": projects, "q": query, "pending_reviews": pending_reviews},
+        {
+            "request": request,
+            "projects": projects,
+            "q": query,
+            "pending_reviews": pending_reviews,
+            "pending_vanished": pending_vanished,
+        },
     )
 
 
 def _hours_diff(entry: dict) -> float:
     return (entry["latest_hours"] or 0.0) - (entry["frozen_hours"] or 0.0)
+
+
+class VanishedReviewIn(BaseModel):
+    action: str
+
+
+@app.post("/historicals/{project_code}/vanished-review")
+def review_vanished_closure(project_code: str, payload: VanishedReviewIn):
+    if payload.action not in ("keep", "exclude"):
+        raise HTTPException(status_code=400, detail="Accion no valida")
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            save_vanished_review(cur, project_code, payload.action)
+        conn.commit()
+    return {"ok": True}
 
 
 class HistoricalHoursReviewIn(BaseModel):

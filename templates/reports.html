@@ -38,6 +38,18 @@
     </div>
     {% endif %}
 
+    {% if pending_vanished_reviews %}
+    <div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2" role="alert">
+      <div>
+        <strong>{{ pending_vanished_reviews }}</strong>
+        proyecto{{ 's' if pending_vanished_reviews != 1 else '' }} cerrado{{ 's' if pending_vanished_reviews != 1 else '' }}
+        que ya no aparece{{ 'n' if pending_vanished_reviews != 1 else '' }} en el Excel de AllOrders pendiente{{ 's' if pending_vanished_reviews != 1 else '' }} de revisar.
+        Mientras tanto el informe los sigue contando con sus últimos datos conocidos.
+      </div>
+      <a href="/historicals#revision-desaparecidos" class="btn btn-sm btn-warning">Revisar</a>
+    </div>
+    {% endif %}
+
     <div class="card shadow-soft">
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">

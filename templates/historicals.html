@@ -83,6 +83,57 @@
       </div>
     </div>
 
+    <div class="card shadow-soft mb-3" id="revision-desaparecidos" style="border-left: 4px solid {% if pending_vanished %}#b5760a{% else %}#2f7d4f{% endif %};">
+      <div class="card-body">
+        <h2 class="h5 fw-bold mb-1">
+          Proyectos cerrados desaparecidos del Excel
+          {% if pending_vanished %}<span class="badge text-bg-warning ms-1">{{ pending_vanished|length }}</span>{% endif %}
+        </h2>
+        <div class="muted mb-2">
+          Estos proyectos estaban cerrados y ya no aparecen en absoluto en el último Excel de AllOrders (no es que
+          se hayan reabierto). Mientras no lo decidas, el informe los sigue contando con sus últimos datos conocidos.
+        </div>
+        {% if pending_vanished %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0" id="vanishedTable">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Proyecto</th>
+                <th>Equipo</th>
+                <th class="text-end">Horas</th>
+                <th>Fecha de cierre</th>
+                <th>Visto por última vez</th>
+                <th>Qué hacer</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in pending_vanished %}
+              <tr data-project-code="{{ item.project_code }}">
+                <td class="text-nowrap">{{ item.project_code }}</td>
+                <td>{{ item.project_name }}</td>
+                <td>{{ item.team or '—' }}</td>
+                <td class="text-end">{{ "%.2f"|format(item.latest_hours or 0) }}</td>
+                <td class="text-nowrap">{{ item.date_end.strftime("%d/%m/%Y") if item.date_end else '—' }}</td>
+                <td class="text-nowrap">Sem. {{ item.latest_week }}/{{ item.latest_year }}</td>
+                <td>
+                  <div class="btn-group btn-group-sm">
+                    <button type="button" class="btn btn-outline-secondary vanished-keep" title="Seguir contando este proyecto con sus últimos datos conocidos">Mantener</button>
+                    <button type="button" class="btn btn-outline-danger vanished-exclude" title="Dejar de contar este proyecto en el informe">Excluir</button>
+                  </div>
+                  <div class="form-text vanished-status"></div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-success">Sin desapariciones pendientes de revisión.</div>
+        {% endif %}
+      </div>
+    </div>
+
     <div class="card shadow-soft mb-3">
       <div class="card-body">
         <form method="get" action="/historicals" class="row g-2 align-items-end">
