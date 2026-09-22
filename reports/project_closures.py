@@ -164,6 +164,20 @@ def fetch_latest_batch_ids(cur: psycopg.Cursor, limit: int = 2) -> list[int]:
     return [row[0] for row in cur.fetchall()]
 
 
+def fetch_latest_batches(cur: psycopg.Cursor, limit: int = 2) -> list[tuple[int, int, int]]:
+    """Como fetch_latest_batch_ids pero devolviendo tambien año/semana de
+    cada batch (mas recientes primero): (id, snapshot_year, snapshot_week)."""
+    cur.execute(
+        f"""
+        {_LATEST_PER_WEEK_SQL}
+        ORDER BY snapshot_year DESC, snapshot_week DESC
+        LIMIT %(limit)s
+        """,
+        {"limit": limit},
+    )
+    return cur.fetchall()
+
+
 HOURS_TOLERANCE = 0.005
 
 CLOSED_HOURS_REVIEW_DDL = """
@@ -362,9 +376,22 @@ def build_vanished_rows(vanished: dict[str, dict], year: int) -> list[dict]:
                 "real_hours": None,
                 "closed_hours_override": entry.get("manual_override"),
                 "frozen_hours": entry.get("frozen_hours"),
+                "_last_seen_year": entry.get("latest_year"),
+                "_last_seen_week": entry.get("latest_week"),
             }
         )
     return rows
+
+
+def _select_vanished_rows(vanished_rows: list[dict], snapshot_year: int, snapshot_week: int) -> list[dict]:
+    """De las filas sinteticas de proyectos desaparecidos, las que aplican a
+    esta semana en concreto: solo desde la semana SIGUIENTE a la que se
+    dejaron de ver (esa semana ya tenia su propia fila real en el batch, no
+    hace falta -- y no habria que -- duplicarla)."""
+    return [
+        row for row in vanished_rows
+        if (snapshot_year, snapshot_week) > (row["_last_seen_year"], row["_last_seen_week"])
+    ]
 
 
 def count_pending_hours_reviews() -> int:
@@ -490,10 +517,9 @@ def fetch_snapshot_year_totals(
     semana AllOrders disponible (una por semana, la ultima subida de cada
     una si se repitio), ordenado de la mas antigua a la mas reciente --
     para ver como cambia la previsión con cada snapshot. Las filas de
-    proyectos desaparecidos solo se añaden en la semana mas reciente: en
-    semanas anteriores ya tenian su propia fila real, y añadirlas tambien
-    ahi contaria de mas semanas en las que el proyecto ni siquiera se habia
-    cerrado todavia."""
+    proyectos desaparecidos se añaden a partir de la semana siguiente a la
+    que se dejaron de ver: en semanas anteriores ya tenian su propia fila
+    real, y en semanas previas a esa ni siquiera se habian cerrado todavia."""
     cur.execute(
         f"""
         {_LATEST_PER_WEEK_SQL}
@@ -501,10 +527,9 @@ def fetch_snapshot_year_totals(
         """
     )
     batches = cur.fetchall()
-    latest_batch_id = batches[-1][0] if batches else None
     result: list[dict] = []
     for import_file_id, snapshot_year, snapshot_week in batches:
-        extra = vanished_rows if (vanished_rows and import_file_id == latest_batch_id) else None
+        extra = _select_vanished_rows(vanished_rows, snapshot_year, snapshot_week) if vanished_rows else None
         rows = fetch_all_orders_rows_for_batch(cur, import_file_id, frozen, extra)
         buckets = build_monthly_buckets(rows, year)
         result.append(
@@ -633,12 +658,14 @@ def fetch_closure_report_data(year: int) -> dict:
             vanished_rows = build_vanished_rows(vanished, year)
             pending_vanished_count = sum(1 for entry in vanished.values() if entry["pending_review"])
 
-            batch_ids = fetch_latest_batch_ids(cur, limit=5)
+            batches = fetch_latest_batches(cur, limit=5)
             for key, label, offset in snapshot_specs:
-                # Los proyectos desaparecidos solo se añaden a la semana actual
-                # (offset 0): en semanas anteriores ya tenian su propia fila real.
-                extra = vanished_rows if offset == 0 else None
-                rows = fetch_all_orders_rows_for_batch(cur, batch_ids[offset], frozen, extra) if offset < len(batch_ids) else []
+                if offset >= len(batches):
+                    rows = []
+                else:
+                    batch_id, batch_year, batch_week = batches[offset]
+                    extra = _select_vanished_rows(vanished_rows, batch_year, batch_week) if vanished_rows else None
+                    rows = fetch_all_orders_rows_for_batch(cur, batch_id, frozen, extra)
                 buckets = build_monthly_buckets(rows, year)
                 projections[key] = {"label": label, **buckets}
 
