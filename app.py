@@ -502,6 +502,7 @@ def _pdf_multi_line_chart(
     title: str,
     week_labels: list[str],
     series: list[tuple[str, tuple[float, float, float], list[float | None]]],
+    show_value_labels: bool = False,
 ) -> None:
     _pdf_rect(stream, x, y, w, h, fill_rgb=(1.0, 1.0, 1.0), stroke_rgb=(0.86, 0.88, 0.92), line_width=0.8)
     _pdf_text(stream, x + 8, y + h - 14, title, size=9, bold=True)
@@ -555,23 +556,25 @@ def _pdf_multi_line_chart(
         _pdf_text(stream, legend_x + 11, legend_y - 1, name, size=7)
         legend_x += legend_slot
 
-        points: list[tuple[float, float]] = []
+        points: list[tuple[float, float, float]] = []
         for idx, value in enumerate(values):
             if value is None:
                 continue
             px = chart_x + (chart_w * idx / max(1, len(values) - 1))
             py = chart_y + ((value - vmin) / (vmax - vmin)) * chart_h
-            points.append((px, py))
+            points.append((px, py, value))
         if len(points) >= 2:
             stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} RG 1.2 w")
-            p0x, p0y = points[0]
+            p0x, p0y, _p0v = points[0]
             stream.append(f"{p0x:.2f} {p0y:.2f} m")
-            for px, py in points[1:]:
+            for px, py, _v in points[1:]:
                 stream.append(f"{px:.2f} {py:.2f} l")
             stream.append("S")
-        for px, py in points:
+        for px, py, value in points:
             stream.append(f"{color[0]:.2f} {color[1]:.2f} {color[2]:.2f} rg")
             stream.append(f"{px - 1.8:.2f} {py - 1.8:.2f} 3.60 3.60 re f")
+            if show_value_labels:
+                _pdf_text(stream, px - 8, py + 4, f"{value:,.0f}".replace(",", "."), size=6, color_rgb=color)
 
 
 def _pdf_grouped_bar_chart(
@@ -809,17 +812,8 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         _pdf_text(content, cx + 6, 592, label, size=7, bold=True)
         _pdf_text(content, cx + 6, 572, value, size=14, bold=True)
 
-    comment = normalize_comment(payload.get("comment")) or ""
-    _pdf_rect(content, 32, 498, 531, 54, fill_rgb=(0.89, 0.90, 0.92), stroke_rgb=(0.82, 0.84, 0.88))
-    _pdf_text(content, 40, 538, "Comentarios", size=10, bold=True)
-    comment_lines = [line.strip() for line in comment.splitlines() if line.strip()] or ["N/A"]
-    y = 522
-    for line in comment_lines[:3]:
-        _pdf_text(content, 40, y, line[:118], size=9)
-        y -= 12
-
     indicators = payload.get("indicators") or {}
-    _pdf_text(content, 32, 486, "Indicadores", size=10, bold=True)
+    _pdf_text(content, 32, 552, "Indicadores", size=10, bold=True)
     indicator_cards = [
         ("Productividad", indicators.get("productivity") or "N/A"),
         ("Desviacion", indicators.get("deviation") or "N/A"),
@@ -828,9 +822,9 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
     for idx, (label, value) in enumerate(indicator_cards):
         cx = 32 + (idx * 180)
         color = _pdf_status_color(value)
-        _pdf_rect(content, cx, 448, 171, 34, fill_rgb=(0.89, 0.90, 0.92), stroke_rgb=(0.82, 0.84, 0.88))
-        _pdf_rect(content, cx + 6, 460, 8, 8, fill_rgb=color, stroke_rgb=color)
-        _pdf_text(content, cx + 20, 464, label, size=8, bold=True)
+        _pdf_rect(content, cx, 514, 171, 34, fill_rgb=(0.89, 0.90, 0.92), stroke_rgb=(0.82, 0.84, 0.88))
+        _pdf_rect(content, cx + 6, 526, 8, 8, fill_rgb=color, stroke_rgb=color)
+        _pdf_text(content, cx + 20, 530, label, size=8, bold=True)
         # El color del cuadrado ya representa el estado del indicador.
 
     progress_series = [to_float(item.get("progress_w")) for item in weekly]
@@ -839,29 +833,45 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
     theor_series = [to_float(item.get("horas_teoricas")) for item in weekly]
     real_weekly_series = safe_weekly_series(real_series)
     theor_weekly_series = safe_weekly_series(theor_series)
-    _pdf_text(content, 32, 435, "Graficas", size=10, bold=True)
+
+    # Solo se representan las ultimas CHART_WEEKS semanas en las graficas
+    # (para que no queden apelotonadas); las proyecciones e indicadores usan
+    # siempre el historico completo.
+    CHART_WEEKS = 10
+    display_week_labels = week_labels[-CHART_WEEKS:]
+    display_progress = progress_series[-CHART_WEEKS:]
+    display_deviation = deviation_series[-CHART_WEEKS:]
+    display_real_weekly = real_weekly_series[-CHART_WEEKS:]
+    display_theor_weekly = theor_weekly_series[-CHART_WEEKS:]
+
+    _pdf_text(content, 32, 501, "Graficas", size=10, bold=True)
     _pdf_multi_line_chart(
         content,
         32,
-        286,
+        352,
         258,
         140,
         "Progreso semanal",
-        week_labels,
-        [("Avance", (0.15, 0.39, 0.92), progress_series)],
+        display_week_labels,
+        [("Avance", (0.15, 0.39, 0.92), display_progress)],
+        show_value_labels=True,
     )
     _pdf_multi_line_chart(
         content,
         305,
-        286,
+        352,
         258,
         140,
         "Desviación semanal",
-        week_labels,
-        [("Desv %", (0.86, 0.15, 0.15), deviation_series)],
+        display_week_labels,
+        [("Desv %", (0.86, 0.15, 0.15), display_deviation)],
+        show_value_labels=True,
     )
-    assigned_hours_role = payload.get("assigned_hours_role") or {}
-    consumed_hours_role = payload.get("consumed_hours_role") or {}
+    # Se recalculan aqui (en vez de usar payload["assigned_hours_role"] /
+    # payload["consumed_hours_role"], que venian de columnas manuales de
+    # `projects` casi siempre a 0) para que coincidan con lo que ya muestra
+    # la vista "Estado proyecto" en pantalla.
+    assigned_hours_role, consumed_hours_role, _pm_deviation_role, _assigned_pct_role = project_status_role_values(latest)
     role_labels = ["PM", "Consultor", "Tecnico"]
     assigned_role_series = [
         to_float(assigned_hours_role.get("pm")) or 0.0,
@@ -876,7 +886,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
     _pdf_grouped_bar_chart(
         content,
         32,
-        140,
+        206,
         258,
         140,
         "Horas asignadas vs consumidas por rol",
@@ -890,47 +900,46 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
     _pdf_grouped_bar_chart(
         content,
         305,
-        140,
+        206,
         258,
         140,
         "Horas reales vs Teoricas",
-        week_labels,
-        [("Horas reales", (0.11, 0.31, 0.85), real_weekly_series), ("Horas teoricas", (0.98, 0.45, 0.09), theor_weekly_series)],
-    )
-
-    cumulative = []
-    running = 0.0
-    for val in progress_series:
-        if val is None:
-            cumulative.append(None)
-            continue
-        running += val
-        cumulative.append(running)
-    projected = []
-    if cumulative:
-        projected = list(cumulative)
-        known_values = [v for v in cumulative if v is not None]
-        if len(known_values) >= 2:
-            slope = known_values[-1] - known_values[-2]
-            for idx in range(len(projected)):
-                if projected[idx] is None and idx > 0 and projected[idx - 1] is not None:
-                    projected[idx] = projected[idx - 1] + slope
-    _pdf_multi_line_chart(
-        content,
-        32,
-        26,
-        531,
-        108,
-        "Curva S con proyección",
-        week_labels,
-        [("Acumulado", (0.15, 0.39, 0.92), cumulative), ("Proyeccion", (0.98, 0.45, 0.09), projected)],
+        display_week_labels,
+        [("Horas reales", (0.11, 0.31, 0.85), display_real_weekly), ("Horas teoricas", (0.98, 0.45, 0.09), display_theor_weekly)],
+        True,
     )
 
     estimated_close_hours, expected_close_week = compute_projection_meta()
+
+    # Curva S: acumulado real de horas (no la suma de porcentajes de avance,
+    # que no tiene unidades de horas y disparaba el eje muy por encima de lo
+    # razonable), con una proyeccion que llega hasta las horas estimadas de
+    # finalizacion en la semana esperada de cierre.
+    curve_labels = list(display_week_labels)
+    curve_actual = list(real_series[-CHART_WEEKS:])
+    curve_projection = [None] * len(curve_actual)
+    last_known = next((v for v in reversed(curve_actual) if v is not None), None)
+    if estimated_close_hours is not None and last_known is not None and expected_close_week not in (None, "N/A"):
+        curve_labels = curve_labels + [expected_close_week]
+        curve_actual = curve_actual + [None]
+        curve_projection[-1] = last_known
+        curve_projection = curve_projection + [estimated_close_hours]
+    _pdf_multi_line_chart(
+        content,
+        32,
+        92,
+        531,
+        108,
+        "Curva S con proyección",
+        curve_labels,
+        [("Acumulado", (0.15, 0.39, 0.92), curve_actual), ("Proyeccion", (0.98, 0.45, 0.09), curve_projection)],
+        show_value_labels=True,
+    )
+
     _pdf_text(
         content,
         40,
-        18,
+        84,
         f"Horas estimadas de finalizacion: {fmt_num(estimated_close_hours) if estimated_close_hours is not None else 'N/A'}",
         size=8,
         bold=True,
@@ -938,7 +947,7 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
     _pdf_text(
         content,
         310,
-        18,
+        84,
         f"Semana esperada de finalizacion: {expected_close_week}",
         size=8,
         bold=True,
@@ -949,8 +958,8 @@ def build_snapshot_report_pdf(payload: dict) -> bytes:
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
         b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>",
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
         f"<< /Length {len(stream)} >>\nstream\n".encode("ascii") + stream + b"\nendstream",
     ]
     pdf = bytearray(b"%PDF-1.4\n")
