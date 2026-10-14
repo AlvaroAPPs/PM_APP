@@ -360,6 +360,19 @@ def project_status_progress_values(latest: dict) -> dict:
     }
 
 
+def project_status_progress_review(latest: dict) -> dict:
+    review = {}
+    for role, suffix in ROLE_PROGRESS_SUFFIXES.items():
+        excel_value = to_float(latest.get(f"excel_progress_{suffix}"))
+        review_value = to_float(latest.get(f"review_progress_{suffix}"))
+        review[role] = {
+            "manual": bool(latest.get(f"manual_progress_{suffix}")),
+            "excel": round(excel_value, 2) if excel_value is not None else None,
+            "excel_decreased": round(review_value, 2) if review_value is not None else None,
+        }
+    return review
+
+
 def project_status_consumed_role_increment(current: dict, previous: dict | None) -> dict:
     if previous is None:
         return {role: 0.0 for role in current}
@@ -1357,6 +1370,153 @@ def ensure_project_snapshot_status_columns(cur: psycopg.Cursor) -> None:
         ADD COLUMN IF NOT EXISTS status_consumed_hours_technician NUMERIC;
         """
     )
+    # excel_progress_*: avance por rol tal como venía en el Excel del snapshot.
+    # manual_progress_*: el avance efectivo es un valor introducido a mano.
+    # review_progress_*: el Excel bajó respecto al anterior; valor pendiente de revisión.
+    cur.execute(
+        """
+        ALTER TABLE project_snapshot
+        ADD COLUMN IF NOT EXISTS excel_progress_pm NUMERIC,
+        ADD COLUMN IF NOT EXISTS excel_progress_c NUMERIC,
+        ADD COLUMN IF NOT EXISTS excel_progress_e NUMERIC,
+        ADD COLUMN IF NOT EXISTS manual_progress_pm BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS manual_progress_c BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS manual_progress_e BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS review_progress_pm NUMERIC,
+        ADD COLUMN IF NOT EXISTS review_progress_c NUMERIC,
+        ADD COLUMN IF NOT EXISTS review_progress_e NUMERIC;
+        """
+    )
+
+
+ROLE_PROGRESS_SUFFIXES = {"pm": "pm", "consultant": "c", "technician": "e"}
+ROLE_PROGRESS_TOLERANCE = 0.001
+
+
+def resolve_role_progress(new_excel: dict, reference: dict | None) -> dict:
+    """Decide el avance efectivo por rol al importar un snapshot.
+
+    new_excel: {sufijo: avance del Excel nuevo}. reference: fila del snapshot
+    anterior (o el de la misma semana si se reimporta). Reglas por rol:
+      - Excel sube respecto al Excel anterior -> se usa el Excel.
+      - Excel igual -> se mantiene el valor anterior (manual o no).
+      - Excel baja -> se mantiene el valor anterior y se marca para revisión.
+    """
+    result = {}
+    for suffix, excel_value in new_excel.items():
+        excel_value = to_float(excel_value)
+        if excel_value is None:
+            continue
+        entry = {"excel": excel_value, "effective": excel_value, "manual": False, "review": None}
+        if reference is not None:
+            prev_effective = to_float(reference.get(f"progress_{suffix}"))
+            prev_excel = to_float(reference.get(f"excel_progress_{suffix}"))
+            if prev_excel is None:
+                prev_excel = prev_effective
+            if prev_effective is not None and prev_excel is not None:
+                prev_manual = bool(reference.get(f"manual_progress_{suffix}"))
+                if excel_value < prev_excel - ROLE_PROGRESS_TOLERANCE:
+                    entry.update(effective=prev_effective, manual=prev_manual, review=excel_value)
+                elif excel_value <= prev_excel + ROLE_PROGRESS_TOLERANCE:
+                    entry.update(
+                        effective=prev_effective,
+                        manual=prev_manual,
+                        review=to_float(reference.get(f"review_progress_{suffix}")),
+                    )
+        result[suffix] = entry
+    return result
+
+
+def apply_role_progress_review(
+    cur: psycopg.Cursor,
+    project_id: int,
+    snapshot_year: int,
+    snapshot_week: int,
+    snapshot_fields: dict,
+) -> dict:
+    """Ajusta snapshot_fields con el avance efectivo por rol antes de guardarlo.
+
+    Devuelve los campos de control (excel_/manual_/review_progress_*) que hay que
+    persistir tras el upsert con save_role_progress_review.
+    """
+    cur.execute(
+        """
+        SELECT progress_pm, progress_c, progress_e,
+               excel_progress_pm, excel_progress_c, excel_progress_e,
+               manual_progress_pm, manual_progress_c, manual_progress_e,
+               review_progress_pm, review_progress_c, review_progress_e
+        FROM project_snapshot
+        WHERE project_id = %s
+          AND (snapshot_year, snapshot_week) <= (%s, %s)
+        ORDER BY snapshot_year DESC, snapshot_week DESC, snapshot_at DESC
+        LIMIT 1
+        """,
+        (project_id, snapshot_year, snapshot_week),
+    )
+    row = cur.fetchone()
+    reference = dict(zip([desc[0] for desc in cur.description], row)) if row else None
+    resolved = resolve_role_progress(
+        {suffix: snapshot_fields.get(f"progress_{suffix}") for suffix in ROLE_PROGRESS_SUFFIXES.values()},
+        reference,
+    )
+
+    overridden = False
+    control = {}
+    for suffix, entry in resolved.items():
+        if abs(entry["effective"] - entry["excel"]) > ROLE_PROGRESS_TOLERANCE:
+            overridden = True
+        snapshot_fields[f"progress_{suffix}"] = entry["effective"]
+        control[f"excel_progress_{suffix}"] = entry["excel"]
+        control[f"manual_progress_{suffix}"] = entry["manual"]
+        control[f"review_progress_{suffix}"] = entry["review"]
+
+    if overridden:
+        _recompute_snapshot_progress(snapshot_fields)
+    return control
+
+
+def _recompute_snapshot_progress(fields: dict) -> None:
+    # Misma fórmula que importer.map_row, aplicada al avance efectivo.
+    factors = [_percentage_factor(fields.get(f"dist_{suffix}")) for suffix in ROLE_PROGRESS_SUFFIXES.values()]
+    progresses = [to_float(fields.get(f"progress_{suffix}")) for suffix in ROLE_PROGRESS_SUFFIXES.values()]
+    if any(value is None for value in progresses) or not sum(factors):
+        return
+    progress_w = sum(factor * progress for factor, progress in zip(factors, progresses))
+    fields["progress_w"] = progress_w
+    ordered_total = to_float(fields.get("ordered_total"))
+    if ordered_total is None:
+        return
+    horas_teoricas = ordered_total * (progress_w / 100.0)
+    fields["horas_teoricas"] = horas_teoricas
+    real_hours = to_float(fields.get("real_hours"))
+    if real_hours is not None:
+        fields["desviacion_h"] = real_hours - horas_teoricas
+        fields["desviacion_pct"] = (fields["desviacion_h"] / horas_teoricas) * 100.0 if horas_teoricas else None
+
+
+def save_role_progress_review(cur: psycopg.Cursor, snapshot_id: int, control: dict) -> None:
+    if not control:
+        return
+    assignments = ", ".join(f"{column} = %({column})s" for column in control)
+    cur.execute(
+        f"UPDATE project_snapshot SET {assignments} WHERE id = %(snapshot_id)s",
+        {**control, "snapshot_id": snapshot_id},
+    )
+
+
+def import_snapshot_with_role_progress(
+    cur: psycopg.Cursor,
+    project_id: int,
+    import_file_id: int,
+    snapshot_year: int,
+    snapshot_week: int,
+    snapshot_fields: dict,
+) -> dict:
+    control = apply_role_progress_review(cur, project_id, snapshot_year, snapshot_week, snapshot_fields)
+    snapshot_fields = compute_deltas(cur, project_id, snapshot_year, snapshot_week, snapshot_fields)
+    snapshot_id = upsert_snapshot(cur, project_id, import_file_id, snapshot_year, snapshot_week, snapshot_fields)
+    save_role_progress_review(cur, snapshot_id, control)
+    return snapshot_fields
 
 
 def ensure_historical_storage(cur: psycopg.Cursor) -> None:
@@ -2666,6 +2826,7 @@ async def import_excel(
         with conn.cursor() as cur:
             ensure_historical_storage(cur)
             ensure_all_orders_snapshot_storage(cur)
+            ensure_project_snapshot_status_columns(cur)
             cur.execute(
                 """
                 INSERT INTO import_file (filename, snapshot_year, snapshot_week, mapping_version)
@@ -2691,8 +2852,9 @@ async def import_excel(
 
                 if import_type == "OTS":
                     pid = upsert_project(cur, project_fields)
-                    snapshot_fields = compute_deltas(cur, pid, snapshot_year, snapshot_week, snapshot_fields)
-                    upsert_snapshot(cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields)
+                    snapshot_fields = import_snapshot_with_role_progress(
+                        cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields
+                    )
                     imported += 1
                     continue
 
@@ -2756,8 +2918,9 @@ async def import_excel(
                 pid = upsert_project(cur, project_fields)
 
                 if internal_status in {"closed", "hided"}:
-                    snapshot_fields = compute_deltas(cur, pid, snapshot_year, snapshot_week, snapshot_fields)
-                    upsert_snapshot(cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields)
+                    snapshot_fields = import_snapshot_with_role_progress(
+                        cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields
+                    )
                     move_project_to_historical(
                         cur,
                         pid,
@@ -2782,8 +2945,9 @@ async def import_excel(
                         restore_project_from_historical(cur, code)
                         restored += 1
 
-                    snapshot_fields = compute_deltas(cur, pid, snapshot_year, snapshot_week, snapshot_fields)
-                    upsert_snapshot(cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields)
+                    snapshot_fields = import_snapshot_with_role_progress(
+                        cur, pid, import_file_id, snapshot_year, snapshot_week, snapshot_fields
+                    )
                     imported += 1
                     continue
 
@@ -3014,6 +3178,7 @@ def project_details(project_code: str):
     previous_consumed_hours_role = project_status_role_values(previous_dict)[1] if previous_dict else None
     consumed_hours_role_increment = project_status_consumed_role_increment(consumed_hours_role, previous_consumed_hours_role)
     progress_role = project_status_progress_values(latest_dict)
+    progress_role_review = project_status_progress_review(latest_dict)
     pm_deviation_role = project_status_pm_deviation(latest_dict, consumed_hours_role)
 
     project = {
@@ -3039,6 +3204,7 @@ def project_details(project_code: str):
         "consumed_hours_role": consumed_hours_role,
         "consumed_hours_role_increment": consumed_hours_role_increment,
         "progress_role": progress_role,
+        "progress_role_review": progress_role_review,
         "deviation_role": deviation_role,
         "pm_deviation_role": pm_deviation_role,
         "project_comment": normalize_comment(project_comment),
@@ -3958,6 +4124,17 @@ def update_project_status_role_values(project_id: int, payload: ProjectStatusRol
             real_hours_delta = to_float(latest.get("real_hours_delta"))
             values["productividad_proyecto"] = real_hours_delta / values["horas_teoricas_delta"] if real_hours_delta is not None and values["horas_teoricas_delta"] not in (None, 0) else None
             values["snapshot_id"] = latest["id"]
+            # Guardar a mano cuenta como revisión: se conserva el valor del Excel para
+            # compararlo con el siguiente snapshot y se marca como manual lo que difiera.
+            for suffix in ROLE_PROGRESS_SUFFIXES.values():
+                excel_value = to_float(latest.get(f"excel_progress_{suffix}"))
+                if excel_value is None:
+                    excel_value = to_float(latest.get(f"progress_{suffix}"))
+                values[f"excel_progress_{suffix}"] = excel_value
+                values[f"manual_progress_{suffix}"] = (
+                    excel_value is None
+                    or abs(values[f"progress_{suffix}"] - excel_value) > ROLE_PROGRESS_TOLERANCE
+                )
             cur.execute(
                 """
                 UPDATE project_snapshot SET
@@ -3969,7 +4146,10 @@ def update_project_status_role_values(project_id: int, payload: ProjectStatusRol
                     status_consumed_hours_consultant = %(status_consumed_hours_consultant)s,
                     status_consumed_hours_technician = %(status_consumed_hours_technician)s,
                     progress_w_delta = %(progress_w_delta)s, horas_teoricas_delta = %(horas_teoricas_delta)s,
-                    desviacion_pct_delta = %(desviacion_pct_delta)s, productividad_proyecto = %(productividad_proyecto)s
+                    desviacion_pct_delta = %(desviacion_pct_delta)s, productividad_proyecto = %(productividad_proyecto)s,
+                    excel_progress_pm = %(excel_progress_pm)s, excel_progress_c = %(excel_progress_c)s, excel_progress_e = %(excel_progress_e)s,
+                    manual_progress_pm = %(manual_progress_pm)s, manual_progress_c = %(manual_progress_c)s, manual_progress_e = %(manual_progress_e)s,
+                    review_progress_pm = NULL, review_progress_c = NULL, review_progress_e = NULL
                 WHERE id = %(snapshot_id)s
                 """,
                 values,

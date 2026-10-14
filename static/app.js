@@ -189,6 +189,7 @@ function resetUI() {
   setValue("progress_role_pm", "");
   setValue("progress_role_consultant", "");
   setValue("progress_role_technician", "");
+  renderProgressRoleReview({});
   setValue("deviation_role_total", "");
   setValue("deviation_role_pm", "");
   setValue("deviation_role_consultant", "");
@@ -391,6 +392,7 @@ async function loadProject(code) {
   setValue("progress_role_pm", fmtFixed2(progressRoleValues.pm ?? 0));
   setValue("progress_role_consultant", fmtFixed2(progressRoleValues.consultant ?? 0));
   setValue("progress_role_technician", fmtFixed2(progressRoleValues.technician ?? 0));
+  renderProgressRoleReview(s.progress_role_review || {});
 
   const deviationRoleValues = s.deviation_role || {};
   setValue("deviation_role_total", fmtFixed2(deviationRoleValues.total ?? 0));
@@ -407,6 +409,33 @@ async function loadProject(code) {
   setValue("project_comment_input", s.project_comment ?? "");
   updateTaskCounterLinks();
   loadTaskCounters(currentProjectCode);
+}
+
+const PROGRESS_ROLE_LABELS = { pm: "Project Manager (PM)", consultant: "Consultor", technician: "Técnico" };
+
+function renderProgressRoleReview(review) {
+  const warnings = [];
+  for (const [role, label] of Object.entries(PROGRESS_ROLE_LABELS)) {
+    const info = review[role] || {};
+    const flag = $(`progress_role_${role}_flag`);
+    const input = $(`progress_role_${role}`);
+    const decreased = !isEmpty(info.excel_decreased);
+    if (flag) {
+      flag.textContent = decreased ? "⚠ revisar" : info.manual ? "(manual)" : "";
+      flag.className = decreased ? "small text-warning fw-semibold" : "small text-primary";
+      flag.title = info.manual && !isEmpty(info.excel) ? `Valor manual. Excel: ${fmtFixed2(info.excel)}%` : "";
+    }
+    if (input) input.classList.toggle("border-warning", decreased);
+    if (decreased) {
+      warnings.push(`${label}: el Excel ha bajado a ${fmtFixed2(info.excel_decreased)}%; se mantiene ${fmtFixed2($(`progress_role_${role}`)?.value ?? "")}%.`);
+    }
+  }
+  const box = $("progressRoleReview");
+  if (!box) return;
+  box.classList.toggle("d-none", warnings.length === 0);
+  box.innerHTML = warnings.length
+    ? `<div class="fw-semibold">Revisar avance por rol</div>${warnings.map((w) => `<div>${w}</div>`).join("")}<div class="muted">Corrige el valor si procede y pulsa "Guardar valores por rol" para marcarlo como revisado.</div>`
+    : "";
 }
 
 async function postJson(url, payload) {
