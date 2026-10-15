@@ -425,7 +425,14 @@ function renderProgressRoleReview(review) {
       flag.className = decreased ? "small text-warning fw-semibold" : "small text-primary";
       flag.title = info.manual && !isEmpty(info.excel) ? `Valor manual. Excel: ${fmtFixed2(info.excel)}%` : "";
     }
-    if (input) input.classList.toggle("border-warning", decreased);
+    if (input) {
+      const manual = Boolean(info.manual) && !decreased;
+      input.classList.toggle("border-warning", decreased);
+      input.classList.toggle("border-primary", manual);
+      input.classList.toggle("bg-primary-subtle", manual);
+      input.classList.toggle("text-primary", manual);
+      input.classList.toggle("fw-semibold", manual);
+    }
     if (decreased) {
       warnings.push(`${label}: el Excel ha bajado a ${fmtFixed2(info.excel_decreased)}%; se mantiene ${fmtFixed2($(`progress_role_${role}`)?.value ?? "")}%.`);
     }
