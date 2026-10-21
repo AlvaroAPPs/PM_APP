@@ -21,6 +21,7 @@ from openpyxl.utils import get_column_letter
 from importer import read_and_normalize_excel, map_row, upsert_project, upsert_snapshot, compute_deltas
 from meeting_minutes.router import router as meeting_minutes_router
 from meeting_minutes.storage import ensure_meeting_minutes_storage
+from notifications.service import build_notification_payload, fetch_pm_notifications
 from reports.project_closures import (
     ensure_closed_hours_review_storage,
     fetch_closed_hours_tracking,
@@ -4497,6 +4498,16 @@ def save_configured_pm(pm_name: str = Form(...)):
             )
         conn.commit()
     return RedirectResponse(url="/configuracion?saved=true", status_code=303)
+
+
+@app.get("/api/notifications")
+def pm_notifications(days: int = Query(7, ge=0, le=60)):
+    pm_name = get_configured_pm_name()
+    today = date.today()
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            items = fetch_pm_notifications(cur, pm_name, today, days)
+    return build_notification_payload(pm_name, items, today, days)
 
 
 @app.get("/configuracion/checklist", response_class=HTMLResponse)
