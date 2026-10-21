@@ -2036,7 +2036,7 @@ def stopped_unplanned_row_class(is_stopped: bool, is_unplanned: bool) -> str:
 def index(
     request: Request,
     q: str = Query(""),
-    my_projects: bool = Query(False),
+    my_projects: bool = Query(True),
     include_historical: bool = Query(False),
     team_filter: list[str] = Query(default=[]),
 ):
