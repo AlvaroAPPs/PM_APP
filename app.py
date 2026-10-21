@@ -7,7 +7,7 @@ import re
 import html
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -1593,6 +1593,46 @@ def ensure_historical_storage(cur: psycopg.Cursor) -> None:
     )
 
 
+DEFAULT_PM_NAME = "Alvaro Blanco Pérez"
+APP_SETTING_PM_NAME = "pm_name"
+
+
+def ensure_app_settings_storage(cur: psycopg.Cursor) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """
+    )
+
+
+def get_configured_pm_name() -> str:
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_app_settings_storage(cur)
+            cur.execute("SELECT value FROM app_settings WHERE key = %s", (APP_SETTING_PM_NAME,))
+            row = cur.fetchone()
+        conn.commit()
+    return (row[0] or "").strip() if row and row[0] else DEFAULT_PM_NAME
+
+
+def fetch_project_manager_options() -> list[str]:
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT BTRIM(project_manager)
+                FROM projects
+                WHERE NULLIF(BTRIM(project_manager), '') IS NOT NULL
+                ORDER BY 1
+                """
+            )
+            return [row[0] for row in cur.fetchall()]
+
+
 def ensure_project_tasks_storage(cur: psycopg.Cursor) -> None:
     cur.execute(
         """
@@ -2000,7 +2040,7 @@ def index(
     include_historical: bool = Query(False),
     team_filter: list[str] = Query(default=[]),
 ):
-    pm_name = "Alvaro Blanco Pérez"
+    pm_name = get_configured_pm_name()
     team_options = [
         {"label": "BD1", "value": "BD1", "patterns": ["BD1", "%Badajo%T1%"]},
         {"label": "BD2", "value": "BD2", "patterns": ["BD2", "%Badajo%T2%"]},
@@ -2431,7 +2471,7 @@ def fetch_project_list(
 
 @app.get("/menu-personal", response_class=HTMLResponse)
 def menu_personal(request: Request):
-    pm_name = "Alvaro Blanco Pérez"
+    pm_name = get_configured_pm_name()
     projects = fetch_project_list(pm_name=pm_name)
     return templates.TemplateResponse(
         "menu_personal.html",
@@ -4428,8 +4468,35 @@ def project_checklist_page(request: Request, project_code: str):
 
 
 @app.get("/configuracion", response_class=HTMLResponse)
-def configuration_page(request: Request):
-    return templates.TemplateResponse("configuration.html", {"request": request})
+def configuration_page(request: Request, saved: bool = Query(False)):
+    pm_name = get_configured_pm_name()
+    pm_options = fetch_project_manager_options()
+    if pm_name not in pm_options:
+        pm_options = sorted([*pm_options, pm_name], key=str.lower)
+    return templates.TemplateResponse(
+        "configuration.html",
+        {"request": request, "pm_name": pm_name, "pm_options": pm_options, "saved": saved},
+    )
+
+
+@app.post("/configuracion/pm")
+def save_configured_pm(pm_name: str = Form(...)):
+    pm_name = pm_name.strip()
+    if not pm_name:
+        raise HTTPException(status_code=400, detail="Debes seleccionar un PM.")
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_app_settings_storage(cur)
+            cur.execute(
+                """
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES (%s, %s, now())
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+                """,
+                (APP_SETTING_PM_NAME, pm_name),
+            )
+        conn.commit()
+    return RedirectResponse(url="/configuracion?saved=true", status_code=303)
 
 
 @app.get("/configuracion/checklist", response_class=HTMLResponse)

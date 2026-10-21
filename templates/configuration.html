@@ -22,6 +22,29 @@
       <a href="/" class="btn btn-outline-secondary">Menú principal</a>
     </div>
 
+    <div class="card shadow-soft mb-3">
+      <div class="card-body">
+        <h5 class="fw-semibold mb-1">PM de la aplicación</h5>
+        <div class="text-muted small mb-3">Se usa en el filtro "Mis proyectos" y en el menú personal.</div>
+        {% if saved %}
+        <div class="alert alert-success py-2">PM guardado: <strong>{{ pm_name }}</strong></div>
+        {% endif %}
+        <form method="post" action="/configuracion/pm" class="row g-2 align-items-end">
+          <div class="col-12 col-md-6">
+            <label for="pmName" class="form-label">Project Manager</label>
+            <select id="pmName" name="pm_name" class="form-select" required>
+              {% for option in pm_options %}
+              <option value="{{ option }}" {% if option == pm_name %}selected{% endif %}>{{ option }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-primary">Guardar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <div class="card shadow-soft">
       <div class="card-body">
         <div class="d-flex flex-wrap gap-2">
