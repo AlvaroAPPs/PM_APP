@@ -1627,10 +1627,10 @@ def fetch_project_manager_options() -> list[str]:
                 SELECT DISTINCT BTRIM(project_manager)
                 FROM projects
                 WHERE NULLIF(BTRIM(project_manager), '') IS NOT NULL
-                ORDER BY 1
+                  AND LOWER(BTRIM(project_manager)) NOT IN ('nan', 'none', 'null', 'interno')
                 """
             )
-            return [row[0] for row in cur.fetchall()]
+            return sorted((row[0] for row in cur.fetchall()), key=str.lower)
 
 
 def ensure_project_tasks_storage(cur: psycopg.Cursor) -> None:
