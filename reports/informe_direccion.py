@@ -26,6 +26,16 @@ from datetime import date, timedelta
 
 import psycopg
 
+from reports.project_closures import (
+    _effective_hours,
+    _select_vanished_rows,
+    build_vanished_rows,
+    fetch_all_orders_rows_for_batch,
+    fetch_closed_hours_tracking,
+    fetch_vanished_closures,
+    frozen_hours_map,
+)
+
 DB_DSN = os.environ.get("DB_DSN", "postgresql://postgres:TU_PASSWORD@localhost:5432/mecalux")
 
 TIPO_DIRECCION = "DIRECCION"
@@ -251,7 +261,11 @@ def calcular_metricas(rows: list[dict], real_hours: dict[str, float], fecha_cort
 
 def calcular_entregas(rows: list[dict], fecha_corte: date) -> dict:
     """Graficos 8 y 9: horas y n.o de proyectos cerrados acumulados por mes
-    (Internal Status = Closed y fecha End en el ano del corte), hasta el mes del corte."""
+    (Internal Status = Closed y fecha End en el ano del corte), hasta el mes del corte.
+
+    Las horas de cada cierre siguen la misma prioridad que el informe de
+    Cierre de proyectos (`_effective_hours`): correccion manual, horas
+    congeladas al cerrarse y, si no hay ninguna, las horas del AllOrders."""
     horas = [0.0] * 12
     proyectos = [0] * 12
     for row in rows:
@@ -260,7 +274,7 @@ def calcular_entregas(rows: list[dict], fecha_corte: date) -> dict:
         end = row.get("date_end")
         if not isinstance(end, date) or end.year != fecha_corte.year:
             continue
-        horas[end.month - 1] += _ordered(row)
+        horas[end.month - 1] += _effective_hours(row) if "ordered_total" in row else _ordered(row)
         proyectos[end.month - 1] += 1
 
     def _cumulative(values: list) -> list:
@@ -493,9 +507,34 @@ def calcular_corte(
 ) -> dict:
     rows = fetch_all_orders_rows(cur, all_orders_import_id, equipos, tipos)
     metricas = calcular_metricas(rows, fetch_real_hours(cur, ots_import_id), fecha_corte)
-    metricas["entregas"] = calcular_entregas(rows, fecha_corte)
+    metricas["entregas"] = calcular_entregas(fetch_closed_rows(cur, all_orders_import_id, equipos, tipos), fecha_corte)
     metricas["filas"] = len(rows)
     return metricas
+
+
+def fetch_closed_rows(cur: psycopg.Cursor, import_id: int, equipos: list[str], tipos: list[str]) -> list[dict]:
+    """Filas del AllOrders para las entregas, con la misma logica que el informe
+    de Cierre de proyectos: horas congeladas al cierre (o las aceptadas al
+    revisar), correcciones manuales y proyectos cerrados que ya no aparecen en
+    el AllOrders (salvo que se hayan excluido al revisarlos).
+
+    Las revisiones y correcciones son las vigentes hoy, no las del dia del corte."""
+    cur.execute("SELECT snapshot_year, snapshot_week FROM import_file WHERE id = %s", (import_id,))
+    snapshot_year, snapshot_week = cur.fetchone()
+    frozen = frozen_hours_map(fetch_closed_hours_tracking(cur))
+    vanished_rows = build_vanished_rows(fetch_vanished_closures(cur), snapshot_year)
+    extra = _select_vanished_rows(vanished_rows, snapshot_year, snapshot_week)
+    equipos_set = {e.strip() for e in equipos}
+    tipos_set = {t.strip().lower() for t in tipos}
+    rows = []
+    for row in fetch_all_orders_rows_for_batch(cur, import_id, frozen, extra):
+        if (row.get("team") or "").strip() not in equipos_set:
+            continue
+        # Las filas de proyectos desaparecidos no traen tipo; ya vienen filtradas por tipo OTS.
+        if row.get("project_type") is not None and row["project_type"].strip().lower() not in tipos_set:
+            continue
+        rows.append(row)
+    return rows
 
 
 def crear_corte(

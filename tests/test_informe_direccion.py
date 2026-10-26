@@ -67,6 +67,19 @@ class EntregasTests(unittest.TestCase):
         self.assertEqual(entregas["horas"][:4], [10, 10, 15, None])
         self.assertEqual(entregas["proyectos"][:3], [1, 1, 2])
 
+    def test_closed_hours_follow_closure_report_priority(self):
+        def closed(code, total, **extra):
+            return {"project_code": code, "internal_status": "Closed", "date_end": date(2026, 1, 10),
+                    "ordered_total": total, **extra}
+
+        rows = [
+            closed("1", 81, frozen_hours=138),                              # congeladas al cierre
+            closed("2", 50, frozen_hours=40, closed_hours_override=45),     # correccion manual
+            closed("3", 20),                                                 # sin congelar: actuales
+        ]
+        entregas = inf.calcular_entregas(rows, date(2026, 1, 31))
+        self.assertEqual(entregas["horas"][0], 138 + 45 + 20)
+
 
 class CompararCortesTests(unittest.TestCase):
     def test_entradas_y_salidas(self):
