@@ -19,7 +19,8 @@
     .e-naranja { color: #ff8205; }
     .e-rojo { color: #ff0000; }
     .e-pendiente { color: #212529; }
-    .ninguno { color: #9ca3af; font-weight: 600; }
+    .ninguno { color: #9ca3af; font-weight: 600; display: block; text-align: center; }
+    .obj-table td.centrada { text-align: center; vertical-align: middle; }
     .legend span { margin-right: 1rem; font-weight: 600; }
     .comment { white-space: pre-wrap; font-size: .8rem; max-height: 6.5em; overflow: auto; }
   </style>
@@ -91,7 +92,7 @@
     function celdaPequenos(entries, conConseguidos) {
       if (!entries.length) return '<span class="ninguno">Ninguno</span>';
       const ok = entries.filter(e => e.estado === 'ok').length;
-      return conConseguidos ? `<strong>${entries.length}</strong> (<span class="e-ok fw-semibold">conseguidos ${ok}</span>)`
+      return conConseguidos && ok ? `<strong>${entries.length}</strong> (<span class="e-ok fw-semibold">conseguidos ${ok}</span>)`
                        : `<strong>${entries.length}</strong>`;
     }
 
@@ -108,7 +109,7 @@
           const entries = t.celdas[`${ym}|${tramo}`] || [];
           const body = tramo === 's' ? celdaPequenos(entries, t.con_conseguidos[i])
             : (entries.length ? entries.map(entradaHtml).join('') : '<span class="ninguno">Ninguno</span>');
-          return `<td>${body}</td>`;
+          return `<td class="${tramo === 's' || !entries.length ? 'centrada' : ''}">${body}</td>`;
         }).join('') + '</tr>').join('');
         return `<div class="card shadow-soft mb-3"><div class="card-body">
           <div class="fw-semibold fs-5 mb-2">Objetivos ${esc(t.titulo)}</div>

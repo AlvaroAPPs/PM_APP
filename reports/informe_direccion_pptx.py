@@ -319,6 +319,29 @@ def _prototype_paragraph(table):
     raise ValueError("Tabla de objetivos sin texto de ejemplo")
 
 
+def _centered_paragraph(table):
+    """Molde de parrafo centrado y sin vineta (como la celda de <100 h o "Ninguno")."""
+    prototype = copy.deepcopy(table.cell(1, 1).text_frame.paragraphs[0])
+    p_pr = prototype._p.get_or_add_pPr()
+    p_pr.set("algn", "ctr")
+    p_pr.set("marL", "0")
+    p_pr.set("indent", "0")
+    ns = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+    for tag in ("buClr", "buSzPct", "buSzPts", "buFont", "buChar", "buAutoNum", "buNone"):
+        for child in p_pr.findall(f"{ns}{tag}"):
+            p_pr.remove(child)
+    bu_none = etree.SubElement(p_pr, f"{ns}buNone")
+    # buNone debe ir antes de tabLst/defRPr/extLst segun el esquema
+    for tag in ("tabLst", "defRPr", "extLst"):
+        following = p_pr.find(f"{ns}{tag}")
+        if following is not None:
+            following.addprevious(bu_none)
+            break
+    if not prototype.runs:
+        etree.SubElement(prototype._p, f"{ns}r").append(etree.Element(f"{ns}t"))
+    return prototype
+
+
 def _color_run(run, color) -> None:
     if color == TEXT:
         run.font.color.theme_color = MSO_THEME_COLOR.TEXT_1
@@ -329,7 +352,8 @@ def _color_run(run, color) -> None:
 
 
 def _write_cell(cell, prototype, lines: list[list[tuple[str, object]]]) -> None:
-    """Escribe en la celda una linea por elemento; cada linea es [(texto, color)]."""
+    """Escribe en la celda una linea (parrafo clonado de `prototype`) por
+    elemento; cada linea es [(texto, color)]."""
     from pptx.text.text import _Paragraph
 
     tx_body = cell.text_frame._txBody
@@ -360,28 +384,32 @@ def _write_cell(cell, prototype, lines: list[list[tuple[str, object]]]) -> None:
 def _fill_objetivos(slide, tabla: dict) -> None:
     table = next(s for s in slide.shapes if s.has_table).table
     prototype = copy.deepcopy(_prototype_paragraph(table))
+    centered = _centered_paragraph(table)
+    ninguno = [[("Ninguno", GREY)]]
     meses = tabla["meses"]
     for column, ym in enumerate(meses, start=1):
         header = table.cell(0, column).text_frame.paragraphs[0]
         _set_runs(header, [mes_titulo(ym)])
 
+        # <100 h: solo el recuento, centrado y sin vineta
         small = tabla["celdas"][(ym, "s")]
+        ok = sum(1 for e in small if e["estado"] == ESTADO_OK)
         if not small:
-            lines = [[("Ninguno", GREY)]]
-        elif ym <= tabla["mes_corte"]:
-            ok = sum(1 for e in small if e["estado"] == ESTADO_OK)
+            lines = ninguno
+        elif ym <= tabla["mes_corte"] and ok:
             lines = [[(f"{len(small)} (", TEXT), (f"conseguidos {ok}", COLOR_ESTADO[ESTADO_OK]), (")", TEXT)]]
         else:
+            # Mes futuro, o ninguno conseguido todavia: solo el numero
             lines = [[(str(len(small)), TEXT)]]
-        _write_cell(table.cell(1, column), prototype, lines)
+        _write_cell(table.cell(1, column), centered, lines)
 
         for row, tramo in ((2, "m"), (3, "l")):
             entries = tabla["celdas"][(ym, tramo)]
             if entries:
                 lines = [[(e["nombre"], COLOR_ESTADO.get(e["estado"], TEXT))] for e in entries]
+                _write_cell(table.cell(row, column), prototype, lines)
             else:
-                lines = [[("Ninguno", GREY)]]
-            _write_cell(table.cell(row, column), prototype, lines)
+                _write_cell(table.cell(row, column), centered, ninguno)
 
 
 def _retrasado_texto(item: dict) -> str:
