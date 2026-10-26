@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Objetivos y retrasos</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body { background: #f6f7fb; }
+    .card { border: 1px solid #e7e9f0; border-radius: 16px; }
+    .shadow-soft { box-shadow: 0 10px 30px rgba(16,24,40,.06); }
+    .muted { color: #6b7280; }
+    .obj-table th, .obj-table td { vertical-align: top; font-size: .85rem; }
+    .obj-table th:first-child { width: 140px; }
+    .proj { display: block; cursor: pointer; font-weight: 600; }
+    .proj:hover { text-decoration: underline; }
+    .e-ok { color: #005892; }
+    .e-naranja { color: #ff8205; }
+    .e-rojo { color: #ff0000; }
+    .e-pendiente { color: #212529; }
+    .ninguno { color: #9ca3af; font-weight: 600; }
+    .legend span { margin-right: 1rem; font-weight: 600; }
+    .comment { white-space: pre-wrap; font-size: .8rem; max-height: 6.5em; overflow: auto; }
+  </style>
+  <link rel="stylesheet" href="/static/theme.css">
+</head>
+<body>
+  <div class="container py-4">
+    <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+      <a href="/informes/direccion" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Cortes
+      </a>
+      <div class="me-auto">
+        <h1 class="fw-bold mb-0">Objetivos y retrasos</h1>
+        <div class="muted">Corte del {{ fecha_corte }} ({{ 'Dirección' if tipo == 'DIRECCION' else 'Interno' }}) · <span id="anterior"></span></div>
+      </div>
+      <a class="btn btn-primary" href="/informes/direccion/{{ corte_id }}.pptx">
+        <i class="bi bi-filetype-pptx me-1"></i> Generar presentación
+      </a>
+    </div>
+
+    <div class="alert alert-warning" id="aviso" hidden></div>
+
+    <div class="legend small mb-2">
+      <span class="e-ok">Conseguido</span>
+      <span class="e-naranja">Replanificado al mes siguiente</span>
+      <span class="e-rojo">Retrasado más de un mes / parado / mes pasado sin conseguir</span>
+      <span class="e-pendiente">Pendiente</span>
+      <span class="muted fw-normal">Pulsa un proyecto para cambiar el nombre que sale en el informe.</span>
+    </div>
+
+    <div id="tablas"><div class="muted">Calculando…</div></div>
+
+    <div class="card shadow-soft mt-3">
+      <div class="card-body">
+        <div class="fw-semibold fs-5 mb-1">Hitos retrasados (anexo)</div>
+        <div class="muted small mb-3">
+          Proyectos de 100 h o más marcados en naranja o rojo. Escribe el motivo de cada uno; se guarda al salir del
+          campo. Si un proyecto ya tenía motivo en un informe anterior para el mismo hito, se propone ese texto.
+        </div>
+        <div id="retrasados"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const CORTE_ID = {{ corte_id }};
+    const ORDEN = ['K', 'D', 'V', 'G', 'E'];
+    const TRAMOS = [['s', '<100 h'], ['m', 'Entre 100 y 400 h'], ['l', '>400 h']];
+
+    function esc(text) {
+      const div = document.createElement('div');
+      div.textContent = text ?? '';
+      return div.innerHTML;
+    }
+
+    async function api(url, options = {}) {
+      const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `Error ${res.status}`);
+      return data;
+    }
+
+    function entradaHtml(e) {
+      const extra = e.nuevo_mes ? ` <span class="small fw-normal">→ ${esc(e.nuevo_mes.toLowerCase())}</span>` : '';
+      return `<span class="proj e-${e.estado}" data-code="${esc(e.code)}" data-nombre="${esc(e.nombre)}"
+                title="${esc(e.code)} · ${Math.round(e.horas)} h">${esc(e.nombre)}${extra}</span>`;
+    }
+
+    function celdaPequenos(entries, index) {
+      if (!entries.length) return '<span class="ninguno">Ninguno</span>';
+      const ok = entries.filter(e => e.estado === 'ok').length;
+      return index < 2 ? `<strong>${entries.length}</strong> (<span class="e-ok fw-semibold">conseguidos ${ok}</span>)`
+                       : `<strong>${entries.length}</strong>`;
+    }
+
+    function render(data) {
+      document.getElementById('anterior').textContent = data.anterior
+        ? `replanificaciones respecto al corte de dirección del ${data.anterior}` : 'sin corte de dirección anterior';
+      const aviso = document.getElementById('aviso');
+      aviso.hidden = !data.aviso;
+      aviso.textContent = data.aviso || '';
+
+      document.getElementById('tablas').innerHTML = ORDEN.filter(k => data.objetivos[k]).map(k => {
+        const t = data.objetivos[k];
+        const rows = TRAMOS.map(([tramo, label]) => `<tr><th>${label}</th>` + t.claves_meses.map((ym, i) => {
+          const entries = t.celdas[`${ym}|${tramo}`] || [];
+          const body = tramo === 's' ? celdaPequenos(entries, i)
+            : (entries.length ? entries.map(entradaHtml).join('') : '<span class="ninguno">Ninguno</span>');
+          return `<td>${body}</td>`;
+        }).join('') + '</tr>').join('');
+        return `<div class="card shadow-soft mb-3"><div class="card-body">
+          <div class="fw-semibold fs-5 mb-2">Objetivos ${esc(t.titulo)}</div>
+          <div class="table-responsive"><table class="table table-bordered obj-table mb-0">
+            <thead><tr><th></th>${t.meses.map(m => `<th>${m}</th>`).join('')}</tr></thead>
+            <tbody>${rows}</tbody></table></div></div></div>`;
+      }).join('');
+
+      const ret = document.getElementById('retrasados');
+      const grupos = ORDEN.filter(k => data.retrasados[k]);
+      ret.innerHTML = grupos.length ? grupos.map(k => `
+        <div class="mb-3">
+          <div class="fw-bold text-primary mb-1">${esc(data.titulos[k]).toUpperCase()}</div>
+          ${data.retrasados[k].map(e => `
+            <div class="row g-2 mb-2 align-items-start">
+              <div class="col-md-4">
+                <span class="proj e-${e.estado}" data-code="${esc(e.code)}" data-nombre="${esc(e.nombre)}">${esc(e.nombre)}</span>
+                <div class="small muted">${Math.round(e.horas)} h · ${e.nuevo_mes ? 'replanificado a ' + esc(e.nuevo_mes.toLowerCase()) : 'sin fecha nueva / parado / no conseguido'}</div>
+                ${e.comentario ? `<details class="small"><summary class="muted">Último comentario</summary><div class="comment">${esc(e.comentario)}</div></details>` : ''}
+              </div>
+              <div class="col-md-8">
+                <textarea class="form-control form-control-sm motivo" rows="2" data-code="${esc(e.code)}" data-hito="${k}"
+                  placeholder="Motivo del retraso">${esc(e.motivo)}</textarea>
+                <div class="form-text motivo-status">${e.motivo_heredado ? 'Texto del informe anterior: revísalo.' : ''}</div>
+              </div>
+            </div>`).join('')}
+        </div>`).join('') : '<div class="muted">No hay hitos retrasados de 100 h o más.</div>';
+
+      document.querySelectorAll('.proj').forEach(el => el.addEventListener('click', async () => {
+        const nombre = prompt(`Nombre en el informe para ${el.dataset.code} (vacío = nombre del proyecto):`, el.dataset.nombre);
+        if (nombre === null) return;
+        try {
+          await api(`/api/informe-direccion/nombres/${encodeURIComponent(el.dataset.code)}`, { method: 'PUT', body: JSON.stringify({ nombre }) });
+          load();
+        } catch (err) { alert(err.message); }
+      }));
+      document.querySelectorAll('.motivo').forEach(el => el.addEventListener('change', async () => {
+        const status = el.parentElement.querySelector('.motivo-status');
+        try {
+          await api(`/api/informe-direccion/cortes/${CORTE_ID}/motivos`, {
+            method: 'PUT', body: JSON.stringify({ project_code: el.dataset.code, hito: el.dataset.hito, motivo: el.value }),
+          });
+          status.textContent = 'Guardado';
+        } catch (err) { status.textContent = err.message; }
+      }));
+    }
+
+    async function load() {
+      try { render(await api(`/api/informe-direccion/cortes/${CORTE_ID}/objetivos`)); }
+      catch (err) { document.getElementById('tablas').textContent = err.message; }
+    }
+    load();
+  </script>
+</body>
+</html>

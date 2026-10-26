@@ -26,6 +26,14 @@ from reports.informe_direccion import (
     recalcular_corte,
 )
 from reports.informe_direccion_pptx import generar_presentacion
+from reports.informe_objetivos import (
+    HITO_TITULOS,
+    datos_objetivos,
+    ensure_objetivos_storage,
+    serializar,
+    set_motivo,
+    set_nombre,
+)
 
 router = APIRouter(tags=["informe-direccion"])
 templates = Jinja2Templates(directory="templates")
@@ -44,6 +52,16 @@ class CorteCreateIn(BaseModel):
 
 class CorteUpdateIn(BaseModel):
     tipo: str
+
+
+class NombreIn(BaseModel):
+    nombre: str
+
+
+class MotivoIn(BaseModel):
+    project_code: str
+    hito: str
+    motivo: str
 
 
 def _validate_tipo(tipo: str) -> str:
@@ -190,15 +208,61 @@ def informe_direccion_resumen(corte_id: int):
     }, default=str))
 
 
+@router.get("/informes/direccion/{corte_id}/objetivos")
+def informe_direccion_objetivos_page(request: Request, corte_id: int):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            corte = _corte_or_404(cur, corte_id)
+    return templates.TemplateResponse(
+        "informe_direccion_objetivos.html",
+        {"request": request, "corte_id": corte_id, "fecha_corte": corte["fecha_corte"].isoformat(),
+         "tipo": corte["tipo"]},
+    )
+
+
+@router.get("/api/informe-direccion/cortes/{corte_id}/objetivos")
+def informe_direccion_objetivos(corte_id: int):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            datos = datos_objetivos(cur, _corte_or_404(cur, corte_id))
+        conn.commit()
+    return serializar(datos)
+
+
+@router.put("/api/informe-direccion/nombres/{project_code}")
+def informe_direccion_nombre(project_code: str, payload: NombreIn):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_objetivos_storage(cur)
+            set_nombre(cur, project_code, payload.nombre)
+        conn.commit()
+    return {"ok": True}
+
+
+@router.put("/api/informe-direccion/cortes/{corte_id}/motivos")
+def informe_direccion_motivo(corte_id: int, payload: MotivoIn):
+    if payload.hito not in HITO_TITULOS:
+        raise HTTPException(status_code=400, detail="Hito no valido")
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            _corte_or_404(cur, corte_id)
+            ensure_objetivos_storage(cur)
+            set_motivo(cur, corte_id, payload.project_code, payload.hito, payload.motivo)
+        conn.commit()
+    return {"ok": True}
+
+
 @router.get("/informes/direccion/{corte_id}.pptx")
 def informe_direccion_pptx(corte_id: int):
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             datos = datos_presentacion(cur, _corte_or_404(cur, corte_id))
+            objetivos = datos_objetivos(cur, datos["corte"])
+        conn.commit()
     corte = datos["corte"]
     if not corte["metricas"].get("tramos"):
         raise HTTPException(status_code=400, detail="Este corte no tiene los datos de los graficos de tramos")
-    blob = generar_presentacion(corte, datos["historico"], datos["delta"], datos["entregas_anterior"])
+    blob = generar_presentacion(corte, datos["historico"], datos["delta"], datos["entregas_anterior"], objetivos)
     filename = f"Estado Ampliaciones {corte['fecha_corte'].isoformat()}.pptx"
     return StreamingResponse(
         io.BytesIO(blob),

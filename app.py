@@ -31,6 +31,7 @@ from reports.project_closures import (
 )
 from reports.router import router as reports_router
 from reports.informe_direccion import ensure_informe_storage
+from reports.informe_objetivos import ensure_objetivos_storage
 from reports.informe_direccion_router import router as informe_direccion_router
 from planning.router import router as planning_router
 from planning.storage import ensure_project_gantt_storage, sync_checklist_milestone
@@ -63,6 +64,7 @@ def startup_init() -> None:
             ensure_closed_hours_review_storage(cur)
             ensure_general_internal_project(cur)
             ensure_informe_storage(cur)
+            ensure_objetivos_storage(cur)
         conn.commit()
 
 PHASES = ("design", "development", "pem", "hypercare")
@@ -1836,7 +1838,13 @@ def ensure_all_orders_snapshot_storage(cur: psycopg.Cursor) -> None:
         ALTER TABLE all_orders_snapshot
         ADD COLUMN IF NOT EXISTS status_pct NUMERIC,
         ADD COLUMN IF NOT EXISTS payment_total NUMERIC,
-        ADD COLUMN IF NOT EXISTS payment_inv NUMERIC;
+        ADD COLUMN IF NOT EXISTS payment_inv NUMERIC,
+        ADD COLUMN IF NOT EXISTS kickoff_ok BOOLEAN,
+        ADD COLUMN IF NOT EXISTS design_ok BOOLEAN,
+        ADD COLUMN IF NOT EXISTS validation_ok BOOLEAN,
+        ADD COLUMN IF NOT EXISTS golive_ok BOOLEAN,
+        ADD COLUMN IF NOT EXISTS reception_ok BOOLEAN,
+        ADD COLUMN IF NOT EXISTS end_ok BOOLEAN;
         """
     )
 
@@ -2923,14 +2931,16 @@ async def import_excel(
                         order_phase, offer_code,
                         date_kickoff, date_design, date_validation, date_golive, date_reception, date_end,
                         ordered_n, ordered_e, ordered_total, real_hours, progress_w, comments,
-                        status_pct, payment_total, payment_inv
+                        status_pct, payment_total, payment_inv,
+                        kickoff_ok, design_ok, validation_ok, golive_ok, reception_ok, end_ok
                     ) VALUES (
                         %(import_file_id)s, %(project_code)s, %(project_name)s, %(client)s, %(company)s, %(team)s,
                         %(project_manager)s, %(consultant)s, %(project_type)s, %(service_type)s, %(internal_status)s,
                         %(order_phase)s, %(offer_code)s,
                         %(date_kickoff)s, %(date_design)s, %(date_validation)s, %(date_golive)s, %(date_reception)s, %(date_end)s,
                         %(ordered_n)s, %(ordered_e)s, %(ordered_total)s, %(real_hours)s, %(progress_w)s, %(comments)s,
-                        %(status_pct)s, %(payment_total)s, %(payment_inv)s
+                        %(status_pct)s, %(payment_total)s, %(payment_inv)s,
+                        %(kickoff_ok)s, %(design_ok)s, %(validation_ok)s, %(golive_ok)s, %(reception_ok)s, %(end_ok)s
                     )
                     """,
                     {
