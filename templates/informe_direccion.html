@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Informe de dirección</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body { background: #f6f7fb; }
+    .card { border: 1px solid #e7e9f0; border-radius: 16px; }
+    .shadow-soft { box-shadow: 0 10px 30px rgba(16,24,40,.06); }
+    .muted { color: #6b7280; }
+    .check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .25rem .75rem; }
+    tr.interno td { color: #6b7280; }
+    .resumen ul { margin-bottom: .5rem; }
+  </style>
+  <link rel="stylesheet" href="/static/theme.css">
+</head>
+<body>
+  <div class="container py-4">
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <a href="/informes" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Informes
+      </a>
+      <div>
+        <h1 class="fw-bold mb-0">Informe de dirección</h1>
+        <div class="muted">Estado Ampliaciones: cortes guardados y generación de la presentación.</div>
+      </div>
+    </div>
+
+    <div class="alert alert-light border small">
+      Cada <strong>corte</strong> guarda congeladas las cifras de un AllOrders (y las horas reales de su OTS).
+      Los gráficos históricos muestran solo los cortes de <strong>DIRECCIÓN</strong> (los 12 últimos), y las
+      entradas/salidas se calculan siempre contra el <strong>corte de dirección anterior</strong>: los cortes
+      <strong>INTERNO</strong> se ignoran.
+    </div>
+
+    <div class="card shadow-soft mb-3">
+      <div class="card-body">
+        <div class="fw-semibold fs-5 mb-2">Añadir corte</div>
+        <form id="corteForm" class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label small mb-1" for="aoSelect">AllOrders</label>
+            <select class="form-select" id="aoSelect" required>
+              <option value="">Selecciona una importación…</option>
+              {% for f in opciones.all_orders %}
+              <option value="{{ f.id }}" data-year="{{ f.year }}" data-week="{{ f.week }}"
+                      data-filename="{{ f.filename }}" data-progress="{{ 1 if f.has_progress else 0 }}">
+                S{{ f.week }}/{{ f.year }} · {{ f.filename }}{% if not f.has_progress %} (sin avance: reimportar){% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small mb-1" for="otsSelect">OTS (horas reales)</label>
+            <select class="form-select" id="otsSelect">
+              <option value="">Sin OTS</option>
+              {% for f in opciones.ots %}
+              <option value="{{ f.id }}" data-year="{{ f.year }}" data-week="{{ f.week }}">
+                S{{ f.week }}/{{ f.year }} · {{ f.filename }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small mb-1" for="fechaCorte">Fecha del corte</label>
+            <input type="date" class="form-control" id="fechaCorte" value="{{ today }}" required>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small mb-1" for="tipoCorte">Tipo</label>
+            <select class="form-select" id="tipoCorte">
+              <option value="DIRECCION">Dirección</option>
+              <option value="INTERNO">Interno</option>
+            </select>
+          </div>
+          <div class="col-12" id="filtrosBox" hidden>
+            <div class="small fw-semibold mb-1">Equipos</div>
+            <div class="check-grid mb-2" id="equiposBox"></div>
+            <div class="small fw-semibold mb-1">Tipos de proyecto</div>
+            <div class="check-grid" id="tiposBox"></div>
+          </div>
+          <div class="col-12 d-flex align-items-center gap-2">
+            <button class="btn btn-primary" type="submit" id="crearBtn">
+              <i class="bi bi-plus-lg me-1"></i> Calcular y guardar corte
+            </button>
+            <span class="small text-danger" id="formError"></span>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card shadow-soft">
+      <div class="card-body">
+        <div class="fw-semibold fs-5 mb-2">Cortes</div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Origen</th>
+                <th>AllOrders / OTS</th>
+                <th class="text-end">Proyectos</th>
+                <th class="text-end">Horas</th>
+                <th class="text-end">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in cortes %}
+              <tr class="{{ 'interno' if c.tipo == 'INTERNO' else '' }}" data-id="{{ c.id }}">
+                <td class="text-nowrap">{{ c.fecha_corte }}</td>
+                <td>
+                  <select class="form-select form-select-sm tipo-select" style="width: 120px;">
+                    <option value="DIRECCION" {% if c.tipo == 'DIRECCION' %}selected{% endif %}>Dirección</option>
+                    <option value="INTERNO" {% if c.tipo == 'INTERNO' %}selected{% endif %}>Interno</option>
+                  </select>
+                </td>
+                <td class="small">{{ c.origen }}</td>
+                <td class="small">
+                  {{ c.all_orders or '—' }}<br><span class="muted">{{ c.ots or '—' }}</span>
+                </td>
+                <td class="text-end">{{ c.proyectos if c.proyectos is not none else '—' }}</td>
+                <td class="text-end">{{ c.horas if c.horas is not none else '—' }}</td>
+                <td class="text-end text-nowrap">
+                  <a class="btn btn-sm btn-primary" href="/informes/direccion/{{ c.id }}.pptx" title="Generar presentación">
+                    <i class="bi bi-filetype-pptx"></i>
+                  </a>
+                  <button class="btn btn-sm btn-outline-secondary resumen-btn" type="button" title="Ver entradas/salidas">
+                    <i class="bi bi-arrow-left-right"></i>
+                  </button>
+                  {% if c.puede_recalcular %}
+                  <button class="btn btn-sm btn-outline-secondary recalc-btn" type="button" title="Recalcular con los datos actuales">
+                    <i class="bi bi-arrow-clockwise"></i>
+                  </button>
+                  {% endif %}
+                  <button class="btn btn-sm btn-outline-danger delete-btn" type="button" title="Eliminar corte">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </td>
+              </tr>
+              <tr class="resumen-row" hidden><td colspan="7" class="resumen small bg-light"></td></tr>
+              {% else %}
+              <tr><td colspan="7" class="muted">Todavía no hay cortes.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DEFAULT_TEAMS = {{ default_teams | tojson }};
+    const DEFAULT_TYPES = {{ default_types | tojson }};
+    const aoSelect = document.getElementById('aoSelect');
+    const otsSelect = document.getElementById('otsSelect');
+    const fechaCorte = document.getElementById('fechaCorte');
+    const formError = document.getElementById('formError');
+
+    function lower(list) { return list.map(v => v.toLowerCase()); }
+
+    function renderChecks(box, name, values, defaults) {
+      const defs = lower(defaults);
+      box.innerHTML = '';
+      values.forEach((value, i) => {
+        const id = `${name}_${i}`;
+        const wrap = document.createElement('div');
+        wrap.className = 'form-check';
+        wrap.innerHTML = `<input class="form-check-input" type="checkbox" id="${id}" name="${name}">
+                          <label class="form-check-label small" for="${id}"></label>`;
+        wrap.querySelector('input').value = value;
+        wrap.querySelector('input').checked = defs.includes(value.toLowerCase());
+        wrap.querySelector('label').textContent = value;
+        box.appendChild(wrap);
+      });
+    }
+
+    function checked(name) {
+      return [...document.querySelectorAll(`input[name="${name}"]:checked`)].map(i => i.value);
+    }
+
+    async function api(url, options = {}) {
+      const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `Error ${res.status}`);
+      return data;
+    }
+
+    aoSelect.addEventListener('change', async () => {
+      formError.textContent = '';
+      const opt = aoSelect.selectedOptions[0];
+      if (!opt || !opt.value) { document.getElementById('filtrosBox').hidden = true; return; }
+      if (opt.dataset.progress === '0') {
+        formError.textContent = 'Este AllOrders no tiene el avance guardado: vuelve a importarlo para poder usarlo.';
+      }
+      // OTS de la misma semana
+      const sameWeek = [...otsSelect.options].find(o => o.dataset.year === opt.dataset.year && o.dataset.week === opt.dataset.week);
+      otsSelect.value = sameWeek ? sameWeek.value : '';
+      // Fecha AAMMDD del nombre del fichero (p. ej. "All Orders 261019.xlsx")
+      const match = (opt.dataset.filename || '').match(/(\d{2})(\d{2})(\d{2})(?!\d)/g);
+      if (match) {
+        const token = match[match.length - 1];
+        fechaCorte.value = `20${token.slice(0, 2)}-${token.slice(2, 4)}-${token.slice(4, 6)}`;
+      }
+      const filtros = await api(`/api/informe-direccion/importaciones/${opt.value}/filtros`);
+      const teams = [...new Set([...filtros.equipos, ...DEFAULT_TEAMS.filter(t => !lower(filtros.equipos).includes(t.toLowerCase()))])];
+      renderChecks(document.getElementById('equiposBox'), 'equipo', teams, DEFAULT_TEAMS);
+      renderChecks(document.getElementById('tiposBox'), 'tipo', filtros.tipos, DEFAULT_TYPES);
+      document.getElementById('filtrosBox').hidden = false;
+    });
+
+    document.getElementById('corteForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      formError.textContent = '';
+      const button = document.getElementById('crearBtn');
+      button.disabled = true;
+      try {
+        await api('/api/informe-direccion/cortes', {
+          method: 'POST',
+          body: JSON.stringify({
+            fecha_corte: fechaCorte.value,
+            tipo: document.getElementById('tipoCorte').value,
+            all_orders_import_id: Number(aoSelect.value),
+            ots_import_id: otsSelect.value ? Number(otsSelect.value) : null,
+            equipos: checked('equipo'),
+            tipos_proyecto: checked('tipo'),
+          }),
+        });
+        location.reload();
+      } catch (err) {
+        formError.textContent = err.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    function fmtHours(h) {
+      return (Math.round(h * 10) / 10).toLocaleString('es-ES');
+    }
+
+    function esc(text) {
+      const div = document.createElement('div');
+      div.textContent = text ?? '';
+      return div.innerHTML;
+    }
+
+    function listHtml(title, items) {
+      const lis = items.length
+        ? items.map(i => `<li>${esc(i.client || i.project_name)} (${fmtHours(i.hours)} h)` +
+            (i.motivo && i.motivo !== 'Nuevo' && i.motivo !== 'Closed' && i.motivo !== 'Cambio de horas'
+              ? ` <span class="muted">· ${esc(i.motivo)}</span>` : '') + `</li>`).join('')
+        : '<li class="muted">Ninguno</li>';
+      return `<div class="fw-semibold">${title}</div><ul>${lis}</ul>`;
+    }
+
+    function resumenHtml(data) {
+      if (!data.delta) return `<div class="text-warning">${esc(data.aviso_delta)}</div>`;
+      const e = data.delta.entradas, s = data.delta.salidas, q = data.delta.cuadre;
+      const small = list => `${list.length} proyectos · ${fmtHours(list.reduce((a, i) => a + i.hours, 0))} h`;
+      const cuadre = Math.abs(q.diferencia) < 1
+        ? `<span class="text-success">Cuadra con la variación de horas totales (${fmtHours(q.variacion_totales)} h).</span>`
+        : `<span class="text-warning">No cuadra: neto ${fmtHours(q.neto)} h frente a variación de horas totales ${fmtHours(q.variacion_totales)} h
+           (diferencia ${fmtHours(q.diferencia)} h; los cortes cargados del Excel pueden diferir un poco de la BD).</span>`;
+      return `<div class="mb-2">Comparado con el corte de dirección del <strong>${data.anterior}</strong>. ${cuadre}</div>
+        <div class="row">
+          <div class="col-md-6">
+            <div class="fs-6 fw-bold">Entradas: ${fmtHours(e.total_horas)} h</div>
+            ${listHtml(`Cambio horas proyectos existentes: ${fmtHours(e.cambios_horas)} h`, e.cambios)}
+            ${listHtml('Proyectos >400 h', e.tramos.l)}
+            ${listHtml('Proyectos entre 100 y 400 h', e.tramos.m)}
+            <div class="fw-semibold">Proyectos &lt;100 h</div><div class="mb-2">${small(e.tramos.s)}</div>
+          </div>
+          <div class="col-md-6">
+            <div class="fs-6 fw-bold">Salidas: ${fmtHours(s.total_horas)} h</div>
+            ${listHtml('Proyectos >400 h', s.tramos.l)}
+            ${listHtml('Proyectos entre 100 y 400 h', s.tramos.m)}
+            <div class="fw-semibold">Proyectos &lt;100 h</div><div>${small(s.tramos.s)}</div>
+          </div>
+        </div>`;
+    }
+
+    document.querySelectorAll('tr[data-id]').forEach(row => {
+      const id = row.dataset.id;
+      row.querySelector('.tipo-select').addEventListener('change', async (ev) => {
+        try {
+          await api(`/api/informe-direccion/cortes/${id}`, { method: 'PATCH', body: JSON.stringify({ tipo: ev.target.value }) });
+          row.classList.toggle('interno', ev.target.value === 'INTERNO');
+        } catch (err) { alert(err.message); }
+      });
+      row.querySelector('.resumen-btn').addEventListener('click', async () => {
+        const detail = row.nextElementSibling;
+        if (!detail.hidden) { detail.hidden = true; return; }
+        const cell = detail.querySelector('td');
+        cell.textContent = 'Calculando…';
+        detail.hidden = false;
+        try {
+          cell.innerHTML = resumenHtml(await api(`/api/informe-direccion/cortes/${id}/resumen`));
+        } catch (err) { cell.textContent = err.message; }
+      });
+      row.querySelector('.recalc-btn')?.addEventListener('click', async () => {
+        if (!confirm('¿Recalcular este corte con los datos actuales de la base de datos? Se sustituyen sus cifras guardadas.')) return;
+        try { await api(`/api/informe-direccion/cortes/${id}/recalcular`, { method: 'POST' }); location.reload(); }
+        catch (err) { alert(err.message); }
+      });
+      row.querySelector('.delete-btn').addEventListener('click', async () => {
+        if (!confirm('¿Eliminar este corte? Dejará de aparecer en los gráficos y en las comparaciones.')) return;
+        try { await api(`/api/informe-direccion/cortes/${id}`, { method: 'DELETE' }); location.reload(); }
+        catch (err) { alert(err.message); }
+      });
+    });
+  </script>
+</body>
+</html>

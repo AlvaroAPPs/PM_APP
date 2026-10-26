@@ -18,7 +18,7 @@ from psycopg.types.json import Json
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from importer import read_and_normalize_excel, map_row, upsert_project, upsert_snapshot, compute_deltas
+from importer import read_and_normalize_excel, map_row, upsert_project, upsert_snapshot, compute_deltas, _to_float
 from meeting_minutes.router import router as meeting_minutes_router
 from meeting_minutes.storage import ensure_meeting_minutes_storage
 from notifications.service import build_notification_payload, fetch_pm_notifications
@@ -30,12 +30,15 @@ from reports.project_closures import (
     save_vanished_review,
 )
 from reports.router import router as reports_router
+from reports.informe_direccion import ensure_informe_storage
+from reports.informe_direccion_router import router as informe_direccion_router
 from planning.router import router as planning_router
 from planning.storage import ensure_project_gantt_storage, sync_checklist_milestone
 
 app = FastAPI()
 app.include_router(meeting_minutes_router)
 app.include_router(reports_router)
+app.include_router(informe_direccion_router)
 app.include_router(planning_router)
 
 # Static + templates
@@ -59,6 +62,7 @@ def startup_init() -> None:
             ensure_all_orders_snapshot_storage(cur)
             ensure_closed_hours_review_storage(cur)
             ensure_general_internal_project(cur)
+            ensure_informe_storage(cur)
         conn.commit()
 
 PHASES = ("design", "development", "pem", "hypercare")
@@ -1825,6 +1829,16 @@ def ensure_all_orders_snapshot_storage(cur: psycopg.Cursor) -> None:
         ON all_orders_snapshot (project_code, imported_at DESC);
         """
     )
+    # Campos del AllOrders que usa el informe de direccion: avance (Status %),
+    # importe del pedido (Payment Total) y % facturado (Payment Inv.).
+    cur.execute(
+        """
+        ALTER TABLE all_orders_snapshot
+        ADD COLUMN IF NOT EXISTS status_pct NUMERIC,
+        ADD COLUMN IF NOT EXISTS payment_total NUMERIC,
+        ADD COLUMN IF NOT EXISTS payment_inv NUMERIC;
+        """
+    )
 
 
 def ensure_general_internal_project(cur: psycopg.Cursor) -> None:
@@ -2908,17 +2922,20 @@ async def import_excel(
                         project_manager, consultant, project_type, service_type, internal_status,
                         order_phase, offer_code,
                         date_kickoff, date_design, date_validation, date_golive, date_reception, date_end,
-                        ordered_n, ordered_e, ordered_total, real_hours, progress_w, comments
+                        ordered_n, ordered_e, ordered_total, real_hours, progress_w, comments,
+                        status_pct, payment_total, payment_inv
                     ) VALUES (
                         %(import_file_id)s, %(project_code)s, %(project_name)s, %(client)s, %(company)s, %(team)s,
                         %(project_manager)s, %(consultant)s, %(project_type)s, %(service_type)s, %(internal_status)s,
                         %(order_phase)s, %(offer_code)s,
                         %(date_kickoff)s, %(date_design)s, %(date_validation)s, %(date_golive)s, %(date_reception)s, %(date_end)s,
-                        %(ordered_n)s, %(ordered_e)s, %(ordered_total)s, %(real_hours)s, %(progress_w)s, %(comments)s
+                        %(ordered_n)s, %(ordered_e)s, %(ordered_total)s, %(real_hours)s, %(progress_w)s, %(comments)s,
+                        %(status_pct)s, %(payment_total)s, %(payment_inv)s
                     )
                     """,
                     {
                         **snapshot_fields,
+                        "status_pct": _to_float(row.get("status_pct")),
                         "import_file_id": import_file_id,
                         "project_code": code,
                         "project_name": project_fields.get("project_name"),
