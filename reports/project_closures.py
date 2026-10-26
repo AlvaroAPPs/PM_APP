@@ -254,18 +254,40 @@ def _build_closure_streaks(cur: psycopg.Cursor) -> dict[str, dict]:
 
 
 def _latest_batch_codes(cur: psycopg.Cursor) -> tuple[int | None, set[str], set[str]]:
-    """(id del ultimo batch, todos los project_code que trae, los que estan Closed)."""
+    """(id del ultimo batch, los project_code que trae como tipo del informe
+    (OTSSoftware/OTSRobotic), los que estan Closed).
+
+    Un proyecto que sigue en el Excel pero con otro tipo (p. ej. paso de
+    OTSSoftware a Software) no cuenta como presente: para el informe es como
+    si hubiera desaparecido."""
     latest_batch = fetch_latest_batch_ids(cur, 1)
     if not latest_batch:
         return None, set(), set()
     cur.execute(
-        "SELECT project_code, lower(internal_status) FROM all_orders_snapshot WHERE import_file_id = %s",
+        """
+        SELECT project_code, lower(internal_status), lower(COALESCE(project_type, ''))
+        FROM all_orders_snapshot WHERE import_file_id = %s
+        """,
         (latest_batch[0],),
     )
     rows = cur.fetchall()
-    all_codes = {code for code, _status in rows}
-    closed_codes = {code for code, status in rows if status == "closed"}
+    all_codes = {code for code, _status, ptype in rows if ptype in REPORT_PROJECT_TYPES}
+    closed_codes = {code for code, status, _ptype in rows if status == "closed"}
     return latest_batch[0], all_codes, closed_codes
+
+
+def _latest_batch_other_types(cur: psycopg.Cursor, batch_id: int | None) -> dict[str, str]:
+    """project_code -> tipo, de los que el ultimo batch trae con un tipo ajeno al informe."""
+    if batch_id is None:
+        return {}
+    cur.execute(
+        """
+        SELECT project_code, project_type FROM all_orders_snapshot
+        WHERE import_file_id = %s AND NOT (lower(COALESCE(project_type, '')) = ANY(%s))
+        """,
+        (batch_id, list(REPORT_PROJECT_TYPES)),
+    )
+    return dict(cur.fetchall())
 
 
 def fetch_closed_hours_tracking(cur: psycopg.Cursor) -> dict[str, dict]:
@@ -309,14 +331,16 @@ def fetch_closed_hours_tracking(cur: psycopg.Cursor) -> dict[str, dict]:
 
 def fetch_vanished_closures(cur: psycopg.Cursor) -> dict[str, dict]:
     """Proyectos cuyo ultimo estado conocido era Closed pero que ya no
-    aparecen en absoluto en el ultimo AllOrders cargado (el origen dejo de
-    listarlos, no es que se hayan reabierto). Si el usuario no ha decidido
-    nada todavia (`pending_review`), por defecto se siguen contando en el
-    informe con sus ultimos datos conocidos (`keep_hours`); si decide
-    'excluir', dejan de contarse."""
+    aparecen en el ultimo AllOrders cargado como tipo del informe: o el
+    origen dejo de listarlos, o siguen pero con otro tipo (`current_type`,
+    p. ej. de OTSSoftware a Software). No es que se hayan reabierto. Si el
+    usuario no ha decidido nada todavia (`pending_review`), por defecto se
+    siguen contando en el informe con sus ultimos datos conocidos
+    (`keep_hours`); si decide 'excluir', dejan de contarse."""
     ensure_closed_hours_review_storage(cur)
     streaks = _build_closure_streaks(cur)
-    _latest_id, all_codes, _closed_codes = _latest_batch_codes(cur)
+    latest_id, all_codes, _closed_codes = _latest_batch_codes(cur)
+    other_types = _latest_batch_other_types(cur, latest_id)
     # Solo interesan cierres recientes: el AllOrders de origen deja de listar
     # por su cuenta cierres antiguos con el paso del tiempo, y avisar de esos
     # seria solo ruido (no una desaparicion real que haya que revisar).
@@ -343,6 +367,7 @@ def fetch_vanished_closures(cur: psycopg.Cursor) -> dict[str, dict]:
         action = reviews.get(code)
         entry["manual_override"] = overrides.get(code)
         entry["frozen_hours"] = entry["latest_hours"]
+        entry["current_type"] = other_types.get(code)
         entry["review_action"] = action
         entry["keep_hours"] = action != "exclude"
         entry["pending_review"] = action is None

@@ -2,6 +2,7 @@ import unittest
 from datetime import date
 
 from reports import informe_direccion as inf
+from reports import project_closures as pc
 
 CORTE = date(2026, 10, 5)
 
@@ -79,6 +80,30 @@ class EntregasTests(unittest.TestCase):
         ]
         entregas = inf.calcular_entregas(rows, date(2026, 1, 31))
         self.assertEqual(entregas["horas"][0], 138 + 45 + 20)
+
+
+class LatestBatchCodesTests(unittest.TestCase):
+    def test_project_with_non_ots_type_is_not_present(self):
+        class FakeCursor:
+            def __init__(self):
+                self.result = []
+
+            def execute(self, query, params=None):
+                if "SELECT id, snapshot_year" in query:
+                    self.result = [(255,)]
+                else:
+                    self.result = [
+                        ("A", "closed", "otssoftware"),
+                        ("MONDELEZ", "normal", "software"),
+                        ("B", "normal", "otsrobotic"),
+                    ]
+
+            def fetchall(self):
+                return self.result
+
+        _batch, present, closed = pc._latest_batch_codes(FakeCursor())
+        self.assertEqual(present, {"A", "B"})
+        self.assertEqual(closed, {"A"})
 
 
 class CompararCortesTests(unittest.TestCase):

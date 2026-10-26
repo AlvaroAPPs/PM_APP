@@ -90,8 +90,9 @@
           {% if pending_vanished %}<span class="badge text-bg-warning ms-1">{{ pending_vanished|length }}</span>{% endif %}
         </h2>
         <div class="muted mb-2">
-          Estos proyectos estaban cerrados y ya no aparecen en absoluto en el último Excel de AllOrders (no es que
-          se hayan reabierto). Mientras no lo decidas, el informe los sigue contando con sus últimos datos conocidos.
+          Estos proyectos estaban cerrados y en el último Excel de AllOrders ya no aparecen, o aparecen con un tipo
+          que no es OTSSoftware/OTSRobotic (no es que se hayan reabierto). Mientras no lo decidas, el informe los
+          sigue contando con sus últimos datos conocidos.
         </div>
         {% if pending_vanished %}
         <div class="table-responsive">
@@ -111,7 +112,10 @@
               {% for item in pending_vanished %}
               <tr data-project-code="{{ item.project_code }}">
                 <td class="text-nowrap">{{ item.project_code }}</td>
-                <td>{{ item.project_name }}</td>
+                <td>
+                  {{ item.project_name }}
+                  {% if item.current_type %}<div class="form-text">Sigue en el Excel como tipo «{{ item.current_type }}»</div>{% endif %}
+                </td>
                 <td>{{ item.team or '—' }}</td>
                 <td class="text-end">{{ "%.2f"|format(item.latest_hours or 0) }}</td>
                 <td class="text-nowrap">{{ item.date_end.strftime("%d/%m/%Y") if item.date_end else '—' }}</td>
