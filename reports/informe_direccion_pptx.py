@@ -368,7 +368,7 @@ def _fill_objetivos(slide, tabla: dict) -> None:
         small = tabla["celdas"][(ym, "s")]
         if not small:
             lines = [[("Ninguno", GREY)]]
-        elif column < 3:
+        elif ym <= tabla["mes_corte"]:
             ok = sum(1 for e in small if e["estado"] == ESTADO_OK)
             lines = [[(f"{len(small)} (", TEXT), (f"conseguidos {ok}", COLOR_ESTADO[ESTADO_OK]), (")", TEXT)]]
         else:

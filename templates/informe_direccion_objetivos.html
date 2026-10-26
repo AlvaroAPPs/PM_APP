@@ -88,10 +88,10 @@
                 title="${esc(e.code)} · ${Math.round(e.horas)} h">${esc(e.nombre)}${extra}</span>`;
     }
 
-    function celdaPequenos(entries, index) {
+    function celdaPequenos(entries, conConseguidos) {
       if (!entries.length) return '<span class="ninguno">Ninguno</span>';
       const ok = entries.filter(e => e.estado === 'ok').length;
-      return index < 2 ? `<strong>${entries.length}</strong> (<span class="e-ok fw-semibold">conseguidos ${ok}</span>)`
+      return conConseguidos ? `<strong>${entries.length}</strong> (<span class="e-ok fw-semibold">conseguidos ${ok}</span>)`
                        : `<strong>${entries.length}</strong>`;
     }
 
@@ -106,7 +106,7 @@
         const t = data.objetivos[k];
         const rows = TRAMOS.map(([tramo, label]) => `<tr><th>${label}</th>` + t.claves_meses.map((ym, i) => {
           const entries = t.celdas[`${ym}|${tramo}`] || [];
-          const body = tramo === 's' ? celdaPequenos(entries, i)
+          const body = tramo === 's' ? celdaPequenos(entries, t.con_conseguidos[i])
             : (entries.length ? entries.map(entradaHtml).join('') : '<span class="ninguno">Ninguno</span>');
           return `<td>${body}</td>`;
         }).join('') + '</tr>').join('');

@@ -4,6 +4,9 @@ del informe de direccion.
 Reglas (acordadas con jefatura de proyectos):
 
 - Columnas: mes anterior, mes actual y mes siguiente a la fecha del corte.
+  Avanzan un mes (actual, siguiente y el de despues) cuando en el mes del
+  corte ya se presento algun informe de direccion (que por tanto incluia el
+  mes anterior completo) y el corte es posterior al dia 15.
 - Un proyecto esta en la columna del mes en que cae la fecha del hito en el
   AllOrders del corte (se recalcula en cada informe). Solo Normal y Closed.
 - Tramos por horas del pedido: <100 h, entre 100 y 400 h, >400 h.
@@ -215,18 +218,29 @@ def replanificados_previos(history: list[dict[str, dict]]) -> set[tuple[str, str
     return seen
 
 
+def meses_tabla(fecha_corte: date, fechas_direccion_anteriores: list[date]) -> list[tuple[int, int]]:
+    """Los tres meses de las tablas. Normalmente anterior, actual y siguiente;
+    pasan a actual, siguiente y el de despues si en este mes ya se presento un
+    informe de direccion (con el mes anterior completo) y estamos despues del 15."""
+    current = (fecha_corte.year, fecha_corte.month)
+    ya_presentado = any((f.year, f.month) == current and f < fecha_corte for f in fechas_direccion_anteriores)
+    first = current if ya_presentado and fecha_corte.day > 15 else _add_months(current, -1)
+    return [first, _add_months(first, 1), _add_months(first, 2)]
+
+
 def calcular_objetivos(
     fecha_corte: date,
     actual: dict[str, dict],
     anterior: dict[str, dict] | None,
     ya_replanificados: set[tuple[str, str]],
     nombres: dict[str, str],
+    meses: list[tuple[int, int]] | None = None,
 ) -> dict:
     """Tablas por hito: {hito: {"meses": [...], "celdas": {(ym, tramo): [entradas]}}}.
 
     Cada entrada: code, nombre, horas, estado, nuevo_mes (si se replanifico), comentario."""
     current = (fecha_corte.year, fecha_corte.month)
-    meses = [_add_months(current, -1), current, _add_months(current, 1)]
+    meses = meses or meses_tabla(fecha_corte, [])
     resultado = {}
 
     for key, date_col, ok_col, title in HITOS:
@@ -276,7 +290,7 @@ def calcular_objetivos(
 
         for entries in celdas.values():
             entries.sort(key=lambda e: e["nombre"].upper())
-        resultado[key] = {"titulo": title, "meses": meses, "celdas": celdas}
+        resultado[key] = {"titulo": title, "meses": meses, "mes_corte": current, "celdas": celdas}
     return resultado
 
 
@@ -324,8 +338,10 @@ def datos_objetivos(cur: psycopg.Cursor, corte: dict) -> dict:
         (corte["all_orders_import_id"],),
     )
     sin_ok = cur.fetchone()[0] == 0
+    fechas_direccion = [c["fecha_corte"] for c in list_cortes(cur, "DIRECCION")
+                        if (c["fecha_corte"], c["id"]) < (corte["fecha_corte"], corte["id"])]
     objetivos = calcular_objetivos(corte["fecha_corte"], actual, anterior, replanificados_previos(history),
-                                   fetch_nombres(cur))
+                                   fetch_nombres(cur), meses_tabla(corte["fecha_corte"], fechas_direccion))
     avisos = []
     if sin_ok:
         avisos.append("Este AllOrders se importó sin los OK de los hitos: vuelve a importarlo para ver los conseguidos.")
@@ -357,6 +373,7 @@ def serializar(datos: dict) -> dict:
                 for (ym, tramo), entries in tabla["celdas"].items()
             },
             "claves_meses": [f"{ym[0]}-{ym[1]:02d}" for ym in tabla["meses"]],
+            "con_conseguidos": [ym <= tabla["mes_corte"] for ym in tabla["meses"]],
         }
     return json.loads(json.dumps({
         "aviso": datos.get("aviso"),

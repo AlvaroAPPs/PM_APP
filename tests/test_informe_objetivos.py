@@ -24,6 +24,18 @@ class ObjetivosTests(unittest.TestCase):
         result = ob.calcular_objetivos(CORTE, {}, None, set(), {})
         self.assertEqual(result["D"]["meses"], [SEP, OCT, NOV])
 
+    def test_months_shift_after_15th_when_month_already_reported(self):
+        anteriores = [date(2026, 9, 14), date(2026, 10, 5)]
+        self.assertEqual(ob.meses_tabla(date(2026, 10, 26), anteriores), [OCT, NOV, (2026, 12)])
+        # Primer informe del mes: sigue mostrando el mes anterior completo
+        self.assertEqual(ob.meses_tabla(date(2026, 10, 5), [date(2026, 9, 14)]), [SEP, OCT, NOV])
+        # Ya hubo informe en el mes, pero aun no ha pasado el 15
+        self.assertEqual(ob.meses_tabla(date(2026, 10, 12), anteriores), [SEP, OCT, NOV])
+        # Pasado el 15 pero sin informe previo en el mes
+        self.assertEqual(ob.meses_tabla(date(2026, 10, 26), [date(2026, 9, 28)]), [SEP, OCT, NOV])
+        # Cambio de ano
+        self.assertEqual(ob.meses_tabla(date(2026, 12, 20), [date(2026, 12, 2)]), [(2026, 12), (2027, 1), (2027, 2)])
+
     def test_states_without_replanning(self):
         actual = {
             "ok": row("ok", 150, date(2026, 9, 10), design_ok=True),
