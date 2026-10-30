@@ -36,6 +36,45 @@
       <strong>INTERNO</strong> se ignoran.
     </div>
 
+    {% if conflictos %}
+    <div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div>
+        <strong>{{ conflictos }}</strong> decisi{{ 'ones' if conflictos != 1 else 'ón' }} de horas cerradas no
+        coincide{{ 'n' if conflictos != 1 else '' }} con las de otra persona y está{{ 'n' if conflictos != 1 else '' }}
+        pendiente{{ 's' if conflictos != 1 else '' }} de validar. Mientras tanto el informe usa tus valores.
+      </div>
+      <a href="/historicals#conflictos" class="btn btn-sm btn-warning">Revisar</a>
+    </div>
+    {% endif %}
+
+    <div class="card shadow-soft mb-3">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+          <div>
+            <div class="fw-semibold fs-5">Compartir con otras personas</div>
+            <div class="muted small" style="max-width: 640px;">
+              <strong>Exportar</strong> crea un fichero con los 12 últimos cortes de dirección (con su detalle de
+              proyectos y motivos), los nombres cortos y las decisiones de horas cerradas.
+              <strong>Importar</strong> añade solo los cortes de dirección cuya fecha no tengas, y aplica las decisiones
+              de horas con doble validación.
+              {% if yo %}Firmas como <strong>{{ yo }}</strong>.{% else %}<span class="text-danger">Configura tu nombre de PM
+              en <a href="/configuracion">Configuración</a> para poder exportar e importar.</span>{% endif %}
+            </div>
+          </div>
+          <div class="d-flex gap-2 align-items-center flex-wrap">
+            <a class="btn btn-outline-primary {{ '' if yo else 'disabled' }}" href="/api/informe-direccion/exportar">
+              <i class="bi bi-box-arrow-up me-1"></i> Exportar
+            </a>
+            <label class="btn btn-outline-primary mb-0 {{ '' if yo else 'disabled' }}">
+              <i class="bi bi-box-arrow-in-down me-1"></i> Importar
+              <input type="file" id="importFile" accept=".gz,.json" hidden>
+            </label>
+          </div>
+        </div>
+        <div id="importResult" class="small mt-3" hidden></div>
+      </div>
+    </div>
+
     <div class="card shadow-soft mb-3">
       <div class="card-body">
         <div class="fw-semibold fs-5 mb-2">Añadir corte</div>
@@ -116,7 +155,10 @@
                     <option value="INTERNO" {% if c.tipo == 'INTERNO' %}selected{% endif %}>Interno</option>
                   </select>
                 </td>
-                <td class="small">{{ c.origen }}</td>
+                <td class="small">
+                  {{ c.origen }}
+                  {% if c.importado_de %}<div class="muted">de {{ c.importado_de }}</div>{% endif %}
+                </td>
                 <td class="small">
                   {{ c.all_orders or '—' }}<br><span class="muted">{{ c.ots or '—' }}</span>
                 </td>
@@ -235,6 +277,43 @@
         formError.textContent = err.message;
       } finally {
         button.disabled = false;
+      }
+    });
+
+    const RESULTADOS = {
+      anadida: 'Añadida', confirmada: 'Confirmada por los dos', sustituida: 'Sustituida (estaba confirmada)',
+      mantenida: 'Se mantiene la tuya', conflicto: 'Conflicto: pendiente de validar', omitida: 'No aplicada',
+    };
+
+    document.getElementById('importFile').addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const box = document.getElementById('importResult');
+      box.hidden = false;
+      box.textContent = 'Importando…';
+      const body = new FormData();
+      body.append('file', file);
+      try {
+        const res = await fetch('/api/informe-direccion/importar', { method: 'POST', body });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || `Error ${res.status}`);
+        const anadidos = data.cortes_anadidos.map(c => `${c.fecha}${c.enlazado ? '' : ' (sin AllOrders local: no se podrá recalcular)'}`);
+        const saltados = data.cortes_saltados.map(c => `${c.fecha}${c.diferencias ? ` <span class="text-warning">— distinto: ${esc(c.diferencias)}</span>` : ''}`);
+        const decisiones = data.decisiones.map(d =>
+          `<li>${esc(RESULTADOS[d.resultado] || d.resultado)} · ${esc(d.tipo)} · ${esc(d.project_code)} ${esc(d.project_name)}${d.detalle ? ` <span class="muted">(${esc(d.detalle)})</span>` : ''}</li>`);
+        box.innerHTML = `<div class="alert alert-light border mb-0">
+          <div class="fw-semibold mb-1">Importado el fichero de ${esc(data.exportado_por)}</div>
+          <div>Cortes añadidos: ${anadidos.length ? anadidos.map(esc).join(', ') : 'ninguno'}</div>
+          <div>Cortes que ya tenías (no se tocan): ${saltados.length ? saltados.join(', ') : 'ninguno'}</div>
+          <div>Nombres cortos añadidos: ${data.nombres_anadidos}</div>
+          <div class="mt-1">Decisiones de horas: ${decisiones.length ? `<ul class="mb-1">${decisiones.join('')}</ul>` : 'sin cambios'}</div>
+          ${data.conflictos_pendientes ? `<div class="text-warning fw-semibold">Tienes ${data.conflictos_pendientes} conflicto(s) pendiente(s): <a href="/historicals#conflictos">revisar en Históricos</a>.</div>` : ''}
+          <button class="btn btn-sm btn-outline-secondary mt-2" onclick="location.reload()">Actualizar la lista de cortes</button>
+        </div>`;
+      } catch (err) {
+        box.innerHTML = `<div class="text-danger">${esc(err.message)}</div>`;
+      } finally {
+        event.target.value = '';
       }
     });
 

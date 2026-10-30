@@ -23,6 +23,36 @@
       </div>
     </div>
 
+    <div class="card shadow-soft mb-3" id="conflictos" hidden style="border-left: 4px solid #b5760a;">
+      <div class="card-body">
+        <h2 class="h5 fw-bold mb-1">
+          Decisiones que no coinciden con otra persona
+          <span class="badge text-bg-warning ms-1" id="conflictosCount"></span>
+        </h2>
+        <div class="muted mb-2">
+          Al importar el informe de dirección de otra persona, estas decisiones de horas cerradas no coinciden con
+          las tuyas y ninguna estaba validada por dos personas. Mientras no lo resuelvas se usa tu valor. Lo que
+          elijas cuenta como tu validación: si aceptas su valor queda confirmado por los dos; si mantienes el tuyo,
+          le aparecerá a esa persona para que lo valide cuando importe tu próximo fichero.
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Proyecto</th>
+                <th>Qué</th>
+                <th>Tu valor</th>
+                <th>Su valor</th>
+                <th>Qué hacer</th>
+              </tr>
+            </thead>
+            <tbody id="conflictosBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div class="card shadow-soft mb-3" id="revision-horas" style="border-left: 4px solid {% if pending_reviews %}#b5760a{% else %}#2f7d4f{% endif %};">
       <div class="card-body">
         <h2 class="h5 fw-bold mb-1">
@@ -248,5 +278,65 @@
     </div>
   </div>
   <script src="/static/historicals.js"></script>
+  <script>
+    (function () {
+      const ACCIONES = { keep: 'Mantener', exclude: 'Excluir' };
+      function esc(text) {
+        const div = document.createElement('div');
+        div.textContent = text ?? '';
+        return div.innerHTML;
+      }
+      function valorTexto(valor) {
+        if (!valor) return '—';
+        if ('horas' in valor) return valor.horas == null ? 'Sin corrección' : `${valor.horas} h`;
+        if ('aceptadas' in valor) {
+          if (valor.aceptadas != null) return `Acepta ${valor.aceptadas} h`;
+          if (valor.descartadas != null) return `Mantiene congeladas (descarta ${valor.descartadas} h)`;
+          return 'Sin revisar';
+        }
+        if ('accion' in valor) return valor.accion ? ACCIONES[valor.accion] || valor.accion : 'Sin revisar';
+        return JSON.stringify(valor);
+      }
+      function firma(lado) {
+        const quien = (lado.validado_por || []).join(', ') || 'sin validar';
+        const cuando = lado.at ? ` · ${new Date(lado.at).toLocaleDateString('es-ES')}` : '';
+        return `<div class="form-text">${esc(quien)}${esc(cuando)}</div>`;
+      }
+      async function cargar() {
+        const res = await fetch('/api/informe-direccion/conflictos');
+        if (!res.ok) return;
+        const data = await res.json();
+        const card = document.getElementById('conflictos');
+        card.hidden = !data.conflictos.length;
+        document.getElementById('conflictosCount').textContent = data.conflictos.length;
+        document.getElementById('conflictosBody').innerHTML = data.conflictos.map(c => `
+          <tr data-tipo="${esc(c.tipo)}" data-code="${esc(c.project_code)}">
+            <td class="text-nowrap">${esc(c.project_code)}</td>
+            <td>${esc(c.project_name)}</td>
+            <td class="small">${esc(c.titulo)}</td>
+            <td>${esc(valorTexto(c.local.valor))}${firma(c.local)}</td>
+            <td>${esc(valorTexto(c.remoto.valor))}${firma(c.remoto)}</td>
+            <td>
+              <div class="btn-group btn-group-sm">
+                <button type="button" class="btn btn-outline-secondary" data-accion="mia">Mantener el mío</button>
+                <button type="button" class="btn btn-outline-primary" data-accion="suya">Aceptar el suyo</button>
+              </div>
+              <div class="form-text estado"></div>
+            </td>
+          </tr>`).join('');
+        document.querySelectorAll('#conflictosBody button').forEach(btn => btn.addEventListener('click', async () => {
+          const row = btn.closest('tr');
+          const res = await fetch(`/api/informe-direccion/conflictos/${encodeURIComponent(row.dataset.tipo)}/${encodeURIComponent(row.dataset.code)}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: btn.dataset.accion }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) { row.querySelector('.estado').textContent = data.detail || 'Error'; return; }
+          location.reload();
+        }));
+        if (location.hash === '#conflictos' && data.conflictos.length) card.scrollIntoView();
+      }
+      cargar();
+    })();
+  </script>
 </body>
 </html>

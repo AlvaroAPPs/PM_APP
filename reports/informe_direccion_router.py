@@ -5,7 +5,7 @@ import json
 from datetime import date
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -16,6 +16,7 @@ from reports.informe_direccion import (
     DEFAULT_TEAMS,
     TIPO_DIRECCION,
     TIPO_INTERNO,
+    completar_detalles,
     crear_corte,
     datos_presentacion,
     ensure_informe_storage,
@@ -33,6 +34,16 @@ from reports.informe_objetivos import (
     serializar,
     set_motivo,
     set_nombre,
+)
+from reports.informe_sync import (
+    contar_conflictos,
+    ensure_sync_storage,
+    exportar,
+    importar,
+    leer_fichero,
+    listar_conflictos,
+    mi_nombre,
+    resolver_conflicto,
 )
 
 router = APIRouter(tags=["informe-direccion"])
@@ -62,6 +73,10 @@ class MotivoIn(BaseModel):
     project_code: str
     hito: str
     motivo: str
+
+
+class ConflictoIn(BaseModel):
+    accion: str
 
 
 def _validate_tipo(tipo: str) -> str:
@@ -107,6 +122,7 @@ def _corte_out(corte: dict, filenames: dict[int, str]) -> dict:
         "proyectos": (metricas.get("proyectos") or {}).get("totales"),
         "horas": (metricas.get("horas") or {}).get("totales"),
         "equipos": corte["equipos"] or [],
+        "importado_de": corte.get("importado_de"),
     }
 
 
@@ -114,11 +130,14 @@ def _corte_out(corte: dict, filenames: dict[int, str]) -> dict:
 def informe_direccion_page(request: Request):
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
-            ensure_informe_storage(cur)
+            ensure_sync_storage(cur)
+            completar_detalles(cur)
             cortes = list_cortes(cur)
             cur.execute("SELECT id, filename FROM import_file")
             filenames = dict(cur.fetchall())
             opciones = fetch_import_options(cur)
+            conflictos = contar_conflictos(cur)
+            yo = mi_nombre(cur)
         conn.commit()
     return templates.TemplateResponse(
         "informe_direccion.html",
@@ -129,8 +148,68 @@ def informe_direccion_page(request: Request):
             "default_teams": DEFAULT_TEAMS,
             "default_types": DEFAULT_PROJECT_TYPES,
             "today": date.today().isoformat(),
+            "conflictos": conflictos,
+            "yo": yo,
         },
     )
+
+
+@router.get("/api/informe-direccion/exportar")
+def informe_direccion_exportar():
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            try:
+                blob, filename = exportar(cur)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return StreamingResponse(
+        io.BytesIO(blob),
+        media_type="application/gzip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/api/informe-direccion/importar")
+async def informe_direccion_importar(file: UploadFile = File(...)):
+    try:
+        data = leer_fichero(await file.read())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            try:
+                resumen = importar(cur, data)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return resumen
+
+
+@router.get("/api/informe-direccion/conflictos")
+def informe_direccion_conflictos():
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_sync_storage(cur)
+            result = {"yo": mi_nombre(cur), "conflictos": listar_conflictos(cur)}
+        conn.commit()
+    return json.loads(json.dumps(result, default=str))
+
+
+@router.post("/api/informe-direccion/conflictos/{tipo}/{project_code}")
+def informe_direccion_resolver(tipo: str, project_code: str, payload: ConflictoIn):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_sync_storage(cur)
+            yo = mi_nombre(cur)
+            if not yo:
+                raise HTTPException(status_code=400, detail="Configura tu nombre de PM en Configuración.")
+            try:
+                resolver_conflicto(cur, yo, tipo, project_code, payload.accion)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conn.commit()
+    return {"ok": True}
 
 
 @router.get("/api/informe-direccion/importaciones/{import_id}/filtros")

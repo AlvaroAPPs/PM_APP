@@ -90,6 +90,19 @@ def ensure_informe_storage(cur: psycopg.Cursor) -> None:
         ON informe_cortes (fecha_corte);
         """
     )
+    # Quien exporto el corte, si vino de otra base de datos
+    cur.execute("ALTER TABLE informe_cortes ADD COLUMN IF NOT EXISTS importado_de TEXT;")
+    # Foto del detalle de proyectos del corte (filtrado por sus equipos y tipos):
+    # el corte no depende de la importacion AllOrders y se puede exportar.
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS informe_corte_detalle (
+            corte_id BIGINT PRIMARY KEY REFERENCES informe_cortes(id) ON DELETE CASCADE,
+            filas JSONB NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """
+    )
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS app_settings (
@@ -398,6 +411,107 @@ def fetch_all_orders_rows(cur: psycopg.Cursor, import_id: int, equipos: list[str
     return [dict(zip(AO_COLUMNS, row)) for row in cur.fetchall()]
 
 
+DETALLE_COLUMNS = AO_COLUMNS + (
+    "comments",
+    "date_kickoff", "date_validation", "date_golive",
+    "kickoff_ok", "design_ok", "validation_ok", "golive_ok", "end_ok",
+)
+DETALLE_DATES = ("date_kickoff", "date_design", "date_validation", "date_golive", "date_end")
+
+
+def _detalle_desde_importacion(cur: psycopg.Cursor, import_id: int, equipos: list[str], tipos: list[str]) -> list[dict]:
+    cur.execute(
+        f"""
+        SELECT {", ".join(DETALLE_COLUMNS)}
+        FROM all_orders_snapshot
+        WHERE import_file_id = %s
+          AND LOWER(BTRIM(COALESCE(project_type, ''))) = ANY(%s)
+          AND BTRIM(COALESCE(team, '')) = ANY(%s)
+        ORDER BY id
+        """,
+        (import_id, [t.strip().lower() for t in tipos], [e.strip() for e in equipos]),
+    )
+    return [dict(zip(DETALLE_COLUMNS, row)) for row in cur.fetchall()]
+
+
+def _fila_json(row: dict) -> dict:
+    result = {}
+    for key, value in row.items():
+        if isinstance(value, date):
+            value = value.isoformat()
+        elif value is not None and not isinstance(value, (str, bool, int, float)):
+            value = float(value)
+        result[key] = value
+    return result
+
+
+def _fila_desde_json(row: dict) -> dict:
+    result = dict(row)
+    for key in DETALLE_DATES:
+        if result.get(key):
+            result[key] = date.fromisoformat(result[key][:10])
+    return result
+
+
+def guardar_detalle(cur: psycopg.Cursor, corte_id: int, filas: list[dict]) -> None:
+    cur.execute(
+        """
+        INSERT INTO informe_corte_detalle (corte_id, filas, updated_at) VALUES (%s, %s, now())
+        ON CONFLICT (corte_id) DO UPDATE SET filas = EXCLUDED.filas, updated_at = now()
+        """,
+        (corte_id, json.dumps([_fila_json(f) for f in filas])),
+    )
+
+
+def detalle_json(cur: psycopg.Cursor, corte_id: int) -> list[dict] | None:
+    """Detalle tal cual se guarda (fechas en texto), para exportarlo."""
+    cur.execute("SELECT filas FROM informe_corte_detalle WHERE corte_id = %s", (corte_id,))
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def filas_corte(cur: psycopg.Cursor, corte: dict, equipos: list[str] | None = None,
+                tipos: list[str] | None = None) -> list[dict] | None:
+    """Detalle de proyectos del corte. Usa la foto guardada; si no la tiene,
+    la toma de su importacion AllOrders. Opcionalmente se filtra por equipos y
+    tipos (para comparar dos cortes con el mismo filtro). None si no hay datos."""
+    stored = detalle_json(cur, corte["id"])
+    if stored is not None:
+        rows = [_fila_desde_json(r) for r in stored]
+    elif corte.get("all_orders_import_id"):
+        rows = _detalle_desde_importacion(cur, corte["all_orders_import_id"],
+                                          corte["equipos"] or DEFAULT_TEAMS,
+                                          corte["tipos_proyecto"] or DEFAULT_PROJECT_TYPES)
+    else:
+        return None
+    if equipos is not None:
+        equipos_set = {e.strip() for e in equipos}
+        rows = [r for r in rows if (r.get("team") or "").strip() in equipos_set]
+    if tipos is not None:
+        tipos_set = {t.strip().lower() for t in tipos}
+        rows = [r for r in rows if (r.get("project_type") or "").strip().lower() in tipos_set]
+    return rows
+
+
+def completar_detalles(cur: psycopg.Cursor) -> int:
+    """Guarda la foto del detalle en los cortes que aun no la tienen y tienen
+    AllOrders asociado (cortes creados antes de existir la foto)."""
+    cur.execute(
+        """
+        SELECT c.id FROM informe_cortes c
+        LEFT JOIN informe_corte_detalle d ON d.corte_id = c.id
+        WHERE d.corte_id IS NULL AND c.all_orders_import_id IS NOT NULL
+        """
+    )
+    ids = [row[0] for row in cur.fetchall()]
+    for corte_id in ids:
+        corte = get_corte(cur, corte_id)
+        guardar_detalle(cur, corte_id, _detalle_desde_importacion(
+            cur, corte["all_orders_import_id"], corte["equipos"] or DEFAULT_TEAMS,
+            corte["tipos_proyecto"] or DEFAULT_PROJECT_TYPES))
+    return len(ids)
+
+
 def fetch_real_hours(cur: psycopg.Cursor, ots_import_id: int | None) -> dict[str, float]:
     """Horas reales (columna Real del OTS) por codigo para la semana de esa importacion."""
     if not ots_import_id:
@@ -461,7 +575,7 @@ def fetch_filter_options(cur: psycopg.Cursor, import_id: int) -> dict:
 
 CORTE_COLUMNS = (
     "id", "fecha_corte", "tipo", "origen", "all_orders_import_id", "ots_import_id",
-    "equipos", "tipos_proyecto", "metricas",
+    "equipos", "tipos_proyecto", "metricas", "importado_de",
 )
 
 
@@ -557,20 +671,23 @@ def crear_corte(
         (fecha_corte, tipo, all_orders_import_id, ots_import_id,
          json.dumps(equipos), json.dumps(tipos), json.dumps(metricas)),
     )
-    return cur.fetchone()[0]
+    corte_id = cur.fetchone()[0]
+    guardar_detalle(cur, corte_id, _detalle_desde_importacion(cur, all_orders_import_id, equipos, tipos))
+    return corte_id
 
 
 def recalcular_corte(cur: psycopg.Cursor, corte: dict) -> None:
     if not corte.get("all_orders_import_id"):
         raise ValueError("El corte no tiene importacion AllOrders asociada; no se puede recalcular.")
-    metricas = calcular_corte(
-        cur, corte["fecha_corte"], corte["all_orders_import_id"], corte.get("ots_import_id"),
-        corte["equipos"] or DEFAULT_TEAMS, corte["tipos_proyecto"] or DEFAULT_PROJECT_TYPES,
-    )
+    equipos = corte["equipos"] or DEFAULT_TEAMS
+    tipos = corte["tipos_proyecto"] or DEFAULT_PROJECT_TYPES
+    metricas = calcular_corte(cur, corte["fecha_corte"], corte["all_orders_import_id"],
+                              corte.get("ots_import_id"), equipos, tipos)
     cur.execute(
         "UPDATE informe_cortes SET metricas = %s, origen = 'APP', updated_at = now() WHERE id = %s",
         (json.dumps(metricas), corte["id"]),
     )
+    guardar_detalle(cur, corte["id"], _detalle_desde_importacion(cur, corte["all_orders_import_id"], equipos, tipos))
 
 
 def datos_presentacion(cur: psycopg.Cursor, corte: dict) -> dict:
@@ -588,18 +705,17 @@ def datos_presentacion(cur: psycopg.Cursor, corte: dict) -> dict:
     anterior = corte_anterior_direccion(cur, corte)
     delta = None
     aviso_delta = None
+    equipos = corte["equipos"] or DEFAULT_TEAMS
+    tipos = corte["tipos_proyecto"] or DEFAULT_PROJECT_TYPES
+    filas_anterior = filas_corte(cur, anterior, equipos, tipos) if anterior else None
+    filas_actual = filas_corte(cur, corte, equipos, tipos)
     if anterior is None:
         aviso_delta = "No hay un corte de direccion anterior con el que comparar."
-    elif not anterior.get("all_orders_import_id") or not corte.get("all_orders_import_id"):
-        aviso_delta = (f"El corte del {anterior['fecha_corte']:%d/%m/%Y} o este no tienen AllOrders asociado; "
+    elif filas_anterior is None or filas_actual is None:
+        aviso_delta = (f"El corte del {anterior['fecha_corte']:%d/%m/%Y} o este no tienen detalle de proyectos; "
                        "no se pueden calcular entradas/salidas.")
     else:
-        equipos = corte["equipos"] or DEFAULT_TEAMS
-        tipos = corte["tipos_proyecto"] or DEFAULT_PROJECT_TYPES
-        delta = comparar_cortes(
-            fetch_all_orders_rows(cur, anterior["all_orders_import_id"], equipos, tipos),
-            fetch_all_orders_rows(cur, corte["all_orders_import_id"], equipos, tipos),
-        )
+        delta = comparar_cortes(filas_anterior, filas_actual)
         # Cuadre con la diapositiva de horas: el neto debe coincidir con la
         # variacion de horas totales guardada en los dos cortes (redondeadas).
         neto = delta["entradas"]["total_horas"] - delta["salidas"]["total_horas"]

@@ -29,7 +29,11 @@ from datetime import date
 
 import psycopg
 
-from reports.informe_direccion import DEFAULT_PROJECT_TYPES, DEFAULT_TEAMS, list_cortes
+from reports.informe_direccion import DEFAULT_PROJECT_TYPES, DEFAULT_TEAMS, filas_corte, list_cortes
+
+# Cortes de direccion anteriores que se miran para saber si un hito ya se
+# replanifico (los mismos que viajan al exportar)
+HISTORICO_CORTES = 12
 
 HITOS = (
     # clave, columna de fecha, columna OK, titulo
@@ -50,12 +54,6 @@ TRAMOS = ("s", "m", "l")
 MESES = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO",
          "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"]
 
-ROW_COLUMNS = (
-    "project_code", "project_name", "client", "team", "project_type", "internal_status", "order_phase",
-    "ordered_n", "ordered_e", "comments",
-    "date_kickoff", "date_design", "date_validation", "date_golive", "date_end",
-    "kickoff_ok", "design_ok", "validation_ok", "golive_ok", "end_ok",
-)
 
 
 # ------------------------------------
@@ -179,24 +177,15 @@ def _is_later(new: tuple[int, int] | None, old: tuple[int, int]) -> bool:
     return new is None or new > old
 
 
-def fetch_rows(cur: psycopg.Cursor, import_id: int, equipos: list[str], tipos: list[str]) -> dict[str, dict]:
-    """Filas Normal/Closed de un AllOrders por codigo (primera fila de cada codigo)."""
-    cur.execute(
-        f"""
-        SELECT {", ".join(ROW_COLUMNS)}
-        FROM all_orders_snapshot
-        WHERE import_file_id = %s
-          AND LOWER(BTRIM(COALESCE(project_type, ''))) = ANY(%s)
-          AND BTRIM(COALESCE(team, '')) = ANY(%s)
-          AND LOWER(BTRIM(COALESCE(internal_status, ''))) IN ('normal', 'closed')
-        ORDER BY id
-        """,
-        (import_id, [t.strip().lower() for t in tipos], [e.strip() for e in equipos]),
-    )
+def fetch_rows(cur: psycopg.Cursor, corte: dict, equipos: list[str], tipos: list[str]) -> dict[str, dict] | None:
+    """Filas Normal/Closed del detalle del corte por codigo (primera fila de cada codigo)."""
+    filas = filas_corte(cur, corte, equipos, tipos)
+    if filas is None:
+        return None
     rows: dict[str, dict] = {}
-    for values in cur.fetchall():
-        row = dict(zip(ROW_COLUMNS, values))
-        rows.setdefault((row["project_code"] or "").strip(), row)
+    for row in filas:
+        if (row.get("internal_status") or "").strip().lower() in ("normal", "closed"):
+            rows.setdefault((row.get("project_code") or "").strip(), row)
     return rows
 
 
@@ -320,24 +309,22 @@ def datos_objetivos(cur: psycopg.Cursor, corte: dict) -> dict:
     """Tablas de objetivos y retrasados de un corte, comparando con los cortes
     DIRECCION anteriores (los INTERNO no cuentan)."""
     ensure_objetivos_storage(cur)
-    if not corte.get("all_orders_import_id"):
-        return {"aviso": "El corte no tiene AllOrders asociado.", "objetivos": {}, "retrasados": {}}
-
     equipos = corte["equipos"] or DEFAULT_TEAMS
     tipos = corte["tipos_proyecto"] or DEFAULT_PROJECT_TYPES
+    actual = fetch_rows(cur, corte, equipos, tipos)
+    if actual is None:
+        return {"aviso": "El corte no tiene detalle de proyectos.", "objetivos": {}, "retrasados": {}}
+
+    # Historico para saber si un hito ya se replanifico: los cortes DIRECCION
+    # anteriores con detalle (como mucho los que viajan al exportar)
     anteriores = [
         c for c in list_cortes(cur, "DIRECCION")
-        if (c["fecha_corte"], c["id"]) < (corte["fecha_corte"], corte["id"]) and c.get("all_orders_import_id")
-    ]
-    history = [fetch_rows(cur, c["all_orders_import_id"], equipos, tipos) for c in anteriores]
-    actual = fetch_rows(cur, corte["all_orders_import_id"], equipos, tipos)
+        if (c["fecha_corte"], c["id"]) < (corte["fecha_corte"], corte["id"])
+    ][-HISTORICO_CORTES:]
+    history = [rows for rows in (fetch_rows(cur, c, equipos, tipos) for c in anteriores) if rows is not None]
     anterior = history[-1] if history else None
 
-    cur.execute(
-        "SELECT COUNT(*) FROM all_orders_snapshot WHERE import_file_id = %s AND kickoff_ok IS NOT NULL",
-        (corte["all_orders_import_id"],),
-    )
-    sin_ok = cur.fetchone()[0] == 0
+    sin_ok = not any(row.get("kickoff_ok") is not None for row in actual.values())
     fechas_direccion = [c["fecha_corte"] for c in list_cortes(cur, "DIRECCION")
                         if (c["fecha_corte"], c["id"]) < (corte["fecha_corte"], corte["id"])]
     objetivos = calcular_objetivos(corte["fecha_corte"], actual, anterior, replanificados_previos(history),
