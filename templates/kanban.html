@@ -37,6 +37,11 @@
     .quick-add-btn { border: 1px dashed #c9cbd3; background: transparent; border-radius: 10px; padding: 6px; font-size: .8rem; color: #6b7280; text-align: left; }
     .quick-add-btn:hover { background: #fff; color: #1f3a5f; }
     .quick-add-form { background: #fff; border: 1px solid #1f3a5f; border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .project-picker { position: relative; }
+    .project-suggest { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; margin-top: 2px; background: #fff; border: 1px solid #d3d2ca; border-radius: 8px; box-shadow: 0 8px 24px rgba(16,24,40,.12); max-height: 260px; overflow-y: auto; }
+    .project-suggest-item { padding: 5px 8px; font-size: .78rem; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .project-suggest-item.active, .project-suggest-item:hover { background: #e9edf2; }
+    .project-suggest-empty { padding: 6px 8px; font-size: .78rem; color: #9ca3af; }
     .empty-col { font-size: .8rem; color: #9ca3af; text-align: center; padding: 12px 0; }
   </style>
   <link rel="stylesheet" href="/static/theme.css">
@@ -103,7 +108,6 @@
     </div>
 
     <div id="board" class="board"></div>
-    <datalist id="quickAddProjects"></datalist>
   </div>
 
   <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
@@ -210,6 +214,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="/static/kanban.js?v=3"></script>
+  <script src="/static/kanban.js?v=5"></script>
 </body>
 </html>

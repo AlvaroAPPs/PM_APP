@@ -350,16 +350,7 @@ function buildQuickAdd(columnKey) {
   title.placeholder = "Título y Enter";
   title.required = true;
 
-  const project = document.createElement("input");
-  project.className = "form-control form-control-sm";
-  project.placeholder = "Proyecto (código o nombre)";
-  project.setAttribute("list", "quickAddProjects");
-  project.value = projectLabel(allProjects.find((p) => p.id === quickAdd.projectId));
-  project.addEventListener("focus", () => project.select());
-  project.addEventListener("input", () => {
-    const match = allProjects.find((p) => projectLabel(p) === project.value);
-    quickAdd.projectId = match ? match.id : 0;
-  });
+  const project = buildProjectPicker();
 
   const row = document.createElement("div");
   row.className = "d-flex gap-1";
@@ -462,16 +453,115 @@ function projectLabel(project) {
   return project ? `${project.project_code} · ${project.project_name || ""}` : "";
 }
 
-function renderProjectDatalist() {
-  // Primero los proyectos que ya tienen tarjetas en el tablero.
+function normalizeText(value) {
+  // Sin tildes ni puntuación: "ALIMERKA, S.A." se encuentra con "alimerka sa".
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[.,'´`]/g, "")
+    .replace(/[^a-z0-9ñ]+/g, " ")
+    .trim();
+}
+
+// Busca por código o nombre (sin tildes, varias palabras). Prioriza código que empieza igual
+// y, a igualdad, los proyectos que ya tienen tarjetas en el tablero.
+function searchProjects(query, limit = 8) {
+  const words = normalizeText(query).split(/\s+/).filter(Boolean);
   const withTasks = new Set(tasks.map((t) => t.project_id));
-  const ordered = [...allProjects].sort((a, b) => withTasks.has(b.id) - withTasks.has(a.id));
-  $("quickAddProjects").innerHTML = "";
-  for (const p of ordered) {
-    const opt = document.createElement("option");
-    opt.value = projectLabel(p);
-    $("quickAddProjects").appendChild(opt);
+  const scored = [];
+  for (const p of allProjects) {
+    const code = normalizeText(p.project_code);
+    const name = normalizeText(p.project_name);
+    const haystack = `${code} ${name}`;
+    if (!words.every((w) => haystack.includes(w))) continue;
+    let score = 2;
+    if (words.length && code.startsWith(words[0])) score = 0;
+    else if (words.length && name.split(" ").some((part) => part.startsWith(words[0]))) score = 1;
+    if (!withTasks.has(p.id)) score += 0.5;
+    scored.push({ p, score });
   }
+  scored.sort((a, b) => a.score - b.score || String(a.p.project_code).localeCompare(String(b.p.project_code)));
+  return scored.slice(0, limit).map((row) => row.p);
+}
+
+function buildProjectPicker() {
+  const wrap = document.createElement("div");
+  wrap.className = "project-picker";
+  const input = document.createElement("input");
+  input.className = "form-control form-control-sm";
+  input.placeholder = "Proyecto: escribe código o nombre";
+  input.autocomplete = "off";
+  input.value = projectLabel(allProjects.find((p) => p.id === quickAdd.projectId));
+  const list = document.createElement("div");
+  list.className = "project-suggest d-none";
+  wrap.append(input, list);
+
+  let results = [];
+  let active = 0;
+
+  const choose = (p) => {
+    quickAdd.projectId = p.id;
+    input.value = projectLabel(p);
+    list.classList.add("d-none");
+  };
+
+  const renderList = () => {
+    list.innerHTML = "";
+    if (!results.length) {
+      list.innerHTML = '<div class="project-suggest-empty">Sin coincidencias</div>';
+    }
+    results.forEach((p, idx) => {
+      const item = document.createElement("div");
+      item.className = `project-suggest-item${idx === active ? " active" : ""}`;
+      const code = document.createElement("strong");
+      code.textContent = p.project_code;
+      item.append(code, document.createTextNode(` ${p.project_name || ""}`));
+      // mousedown para elegir antes de que el blur cierre la lista
+      item.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        choose(p);
+      });
+      list.appendChild(item);
+    });
+    list.classList.remove("d-none");
+  };
+
+  const refresh = () => {
+    results = searchProjects(input.value);
+    active = 0;
+    renderList();
+  };
+
+  input.addEventListener("focus", () => {
+    input.select();
+    results = searchProjects("");
+    active = 0;
+    renderList();
+  });
+  input.addEventListener("input", () => {
+    quickAdd.projectId = 0;
+    refresh();
+  });
+  input.addEventListener("blur", () => list.classList.add("d-none"));
+  input.addEventListener("keydown", (event) => {
+    const open = !list.classList.contains("d-none");
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!open) return refresh();
+      if (!results.length) return;
+      active = (active + (event.key === "ArrowDown" ? 1 : -1) + results.length) % results.length;
+      renderList();
+    } else if (event.key === "Enter" && open && results[active]) {
+      event.preventDefault();
+      choose(results[active]);
+      input.closest("form").querySelector("input").focus();
+    } else if (event.key === "Escape" && open) {
+      event.stopPropagation();
+      list.classList.add("d-none");
+    }
+  });
+  return wrap;
 }
 
 async function loadAllProjects() {
@@ -674,7 +764,6 @@ async function loadTasks() {
     return;
   }
   tasks = await res.json();
-  renderProjectDatalist();
   render();
 }
 
