@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kanban</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body { background: #f6f7fb; }
+    .card { border: 1px solid #e7e9f0; border-radius: 16px; }
+    .shadow-soft { box-shadow: 0 10px 30px rgba(16,24,40,.06); }
+    .muted { color: #6b7280; }
+    .board { display: grid; grid-template-columns: repeat(5, minmax(240px, 1fr)); gap: 12px; overflow-x: auto; padding-bottom: 8px; }
+    .kcol { background: #eef0f4; border-radius: 14px; padding: 10px; min-height: 60vh; display: flex; flex-direction: column; }
+    .kcol.kcol-today { background: #e8f1ff; }
+    .kcol.drag-over { outline: 2px dashed #1f3a5f; outline-offset: -4px; }
+    .kcol-head { display: flex; justify-content: space-between; align-items: center; font-weight: 700; margin-bottom: 8px; padding: 0 4px; }
+    .kcol-count { font-size: .75rem; background: #fff; border-radius: 999px; padding: 1px 8px; color: #6b7280; }
+    .kcol-body { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+    .kcard { background: #fff; border: 1px solid #e3e2dc; border-left: 5px solid var(--project-color, #9ca3af); border-radius: 10px; padding: 8px 10px; cursor: grab; }
+    .kcard:hover { box-shadow: 0 4px 12px rgba(16,24,40,.08); }
+    .kcard.dragging { opacity: .5; }
+    .kcard-project { font-size: .72rem; font-weight: 600; color: var(--project-color, #6b7280); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .kcard-title { font-weight: 600; font-size: .9rem; margin: 2px 0 6px; }
+    .kcard-meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: .72rem; }
+    .kbadge { border-radius: 999px; padding: 1px 7px; border: 1px solid transparent; }
+    .kbadge-task { background:#e7f0ff; border-color:#bfdbfe; color:#1e3a8a; }
+    .kbadge-pp { background:#f3e8ff; border-color:#e9d5ff; color:#6b21a8; }
+    .kbadge-owner { background:#f3f4f6; color:#374151; }
+    .kbadge-late { background:#fde8e6; border-color:#f5c2bd; color:#b3392f; font-weight: 600; }
+    .kcard.late { border-color: #f5c2bd; }
+    .project-chip { border: 1px solid #e3e2dc; background: #fff; border-radius: 999px; padding: 2px 10px 2px 6px; font-size: .8rem; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+    .project-chip .dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+    .project-chip.off { opacity: .4; }
+    .project-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .empty-col { font-size: .8rem; color: #9ca3af; text-align: center; padding: 12px 0; }
+  </style>
+  <link rel="stylesheet" href="/static/theme.css">
+</head>
+<body>
+  <div class="container-fluid py-4 px-3 px-lg-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+      <div class="d-flex align-items-center gap-2">
+        <a href="/menu-personal" class="btn btn-outline-secondary">Volver</a>
+        <h1 class="fw-bold mb-0">Kanban</h1>
+      </div>
+      <div class="d-flex gap-2">
+        <a href="/calendar" class="btn btn-outline-primary">Calendario</a>
+        <a href="/tasks?new=1" class="btn btn-dark">Nueva Tarea / PP</a>
+      </div>
+    </div>
+
+    <div class="card shadow-soft mb-3">
+      <div class="card-body">
+        <div class="d-flex align-items-end gap-3 flex-wrap mb-3">
+          <div>
+            <label class="form-label mb-1" for="filterSearch">Buscar</label>
+            <input id="filterSearch" class="form-control" placeholder="Título o proyecto" />
+          </div>
+          <div>
+            <label class="form-label mb-1" for="filterType">Tipo</label>
+            <select id="filterType" class="form-select">
+              <option value="">Tareas y PP</option>
+              <option value="TASK">Solo tareas</option>
+              <option value="PP">Solo PP</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label mb-1" for="filterOwner">Responsable</label>
+            <select id="filterOwner" class="form-select">
+              <option value="">Todos</option>
+              <option value="PM">PM</option>
+              <option value="CONSULTORIA">Consultoria</option>
+              <option value="TECH">Tech</option>
+              <option value="COMERCIAL">Comercial</option>
+              <option value="CLIENTE">Cliente</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label mb-1" for="filterDate">Fecha</label>
+            <select id="filterDate" class="form-select">
+              <option value="">Todas</option>
+              <option value="LATE">Retrasadas</option>
+              <option value="WEEK">Esta semana</option>
+              <option value="NONE">Sin fecha</option>
+            </select>
+          </div>
+          <button id="clearFilters" type="button" class="btn btn-outline-secondary">Limpiar filtros</button>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="form-label mb-0">Proyectos</span>
+          <div class="d-flex gap-2">
+            <button id="projectsAll" type="button" class="btn btn-sm btn-link p-0">Todos</button>
+            <button id="projectsNone" type="button" class="btn btn-sm btn-link p-0">Ninguno</button>
+          </div>
+        </div>
+        <div id="projectChips" class="project-chips"></div>
+      </div>
+    </div>
+
+    <div id="board" class="board"></div>
+  </div>
+
+  <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Editar Tarea / PP</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="d-flex align-items-center gap-2 mb-3">
+            <input id="editProjectColor" type="color" class="form-control form-control-color" title="Color del proyecto" />
+            <div>
+              <div id="editProject" class="fw-semibold">—</div>
+              <div class="small muted">Color del proyecto (se aplica a todas sus tarjetas)</div>
+            </div>
+          </div>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label" for="editTitle">Título</label>
+              <input id="editTitle" class="form-control" />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="editType">Tipo</label>
+              <select id="editType" class="form-select">
+                <option value="TASK">Tarea</option>
+                <option value="PP">PP</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="editOwner">Responsable</label>
+              <select id="editOwner" class="form-select">
+                <option value="PM">PM</option>
+                <option value="CONSULTORIA">Consultoria</option>
+                <option value="TECH">Tech</option>
+                <option value="COMERCIAL">Comercial</option>
+                <option value="CLIENTE">Cliente</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="editDate">Fecha prevista</label>
+              <input id="editDate" type="date" class="form-control" />
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="editStatus">Estado</label>
+              <select id="editStatus" class="form-select">
+                <option value="OPEN">Abierta</option>
+                <option value="IN_PROGRESS">En curso</option>
+                <option value="PAUSED">Esperando</option>
+                <option value="CLOSED">Cerrada</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="editDescription">Descripción</label>
+              <textarea id="editDescription" class="form-control" rows="4"></textarea>
+            </div>
+            <div id="editSubtasksBlock" class="col-12 d-none">
+              <label class="form-label">Tareas (check list)</label>
+              <div id="editSubtasks" class="d-flex flex-column gap-1"></div>
+            </div>
+            <div id="editNotesBlock" class="col-12 d-none">
+              <label class="form-label">Historial de notas / log</label>
+              <div id="editNotesLog" class="small d-flex flex-column gap-1"></div>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="editNewNote">Añadir nota / log</label>
+              <textarea id="editNewNote" class="form-control" rows="2"></textarea>
+            </div>
+          </div>
+          <div id="editError" class="text-danger small mt-2"></div>
+        </div>
+        <div class="modal-footer">
+          <button id="editCloseTask" type="button" class="btn btn-outline-success me-auto">Marcar como hecha</button>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button id="editSave" type="button" class="btn btn-dark">Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="rescheduleModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">¿Para cuándo?</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <div id="rescheduleTitle" class="small muted mb-2"></div>
+          <div class="d-grid gap-2 mb-3">
+            <button type="button" class="btn btn-outline-dark" data-reschedule="tomorrow">Mañana</button>
+            <button type="button" class="btn btn-outline-dark" data-reschedule="monday">Próximo lunes</button>
+            <button type="button" class="btn btn-outline-secondary" data-reschedule="none">Sin fecha</button>
+          </div>
+          <label class="form-label" for="rescheduleDate">Otra fecha</label>
+          <div class="d-flex gap-2">
+            <input id="rescheduleDate" type="date" class="form-control" />
+            <button id="rescheduleCustom" type="button" class="btn btn-dark">OK</button>
+          </div>
+          <div id="rescheduleError" class="text-danger small mt-2"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/static/kanban.js?v=1"></script>
+</body>
+</html>

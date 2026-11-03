@@ -330,6 +330,7 @@ function buildDayCell(day, tasksByDay, notesByDay, outsideMonth) {
     chip.type = "button";
     const chipClass = task.type === "PP" ? "task-chip-pp" : "task-chip-task";
     chip.className = `task-chip ${chipClass}`;
+    if (task.project_color) chip.style.borderLeft = `4px solid ${task.project_color}`;
     chip.textContent = task.title || "(Sin título)";
     chip.title = `${typeLabel(task.type)} · ${task.project_code || "—"}`;
     chip.addEventListener("click", (event) => {

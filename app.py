@@ -56,6 +56,7 @@ def startup_init() -> None:
         with conn.cursor() as cur:
             ensure_historical_storage(cur)
             ensure_project_tasks_storage(cur)
+            ensure_project_color_storage(cur)
             ensure_project_notes_storage(cur)
             ensure_project_checklist_storage(cur)
             ensure_project_gantt_storage(cur)
@@ -174,6 +175,15 @@ class ProjectTaskUpdateIn(BaseModel):
     title: str
     description: str
     notes: str | None = None
+
+
+class ProjectTaskKanbanMoveIn(BaseModel):
+    status: str | None = None
+    planned_date: str | None = None
+
+
+class ProjectColorIn(BaseModel):
+    color: str | None = None
 
 
 class ChecklistToggleIn(BaseModel):
@@ -1685,6 +1695,46 @@ def ensure_project_tasks_storage(cur: psycopg.Cursor) -> None:
     )
 
 
+PROJECT_COLOR_PALETTE = (
+    "#2563eb", "#16a34a", "#dc2626", "#9333ea", "#ea580c", "#0891b2",
+    "#ca8a04", "#db2777", "#4f46e5", "#059669", "#7c3aed", "#b45309",
+)
+PROJECT_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+KANBAN_DONE_DAYS = 14
+
+
+def ensure_project_color_storage(cur: psycopg.Cursor) -> None:
+    cur.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS color TEXT;")
+
+
+def normalize_project_color(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text.lower() if PROJECT_COLOR_RE.match(text) else None
+
+
+def resolve_project_color(project_id: int, stored_color: object) -> str:
+    return normalize_project_color(stored_color) or PROJECT_COLOR_PALETTE[int(project_id) % len(PROJECT_COLOR_PALETTE)]
+
+
+def kanban_column(status: str, planned_date: date | None, today: date) -> str:
+    """Columna del Kanban: HOY agrupa lo abierto con fecha de hoy o anterior."""
+    if status == "CLOSED":
+        return "DONE"
+    if status == "IN_PROGRESS":
+        return "IN_PROGRESS"
+    if status == "PAUSED":
+        return "WAITING"
+    if planned_date is not None and planned_date <= today:
+        return "TODAY"
+    return "TODO"
+
+
+def kanban_days_overdue(status: str, planned_date: date | None, today: date) -> int:
+    if status == "CLOSED" or planned_date is None or planned_date >= today:
+        return 0
+    return (today - planned_date).days
+
+
 
 
 def ensure_project_notes_storage(cur: psycopg.Cursor) -> None:
@@ -2724,6 +2774,11 @@ def calendar_view(request: Request):
     return templates.TemplateResponse("calendar.html", {"request": request})
 
 
+@app.get("/kanban", response_class=HTMLResponse)
+def kanban_view(request: Request):
+    return templates.TemplateResponse("kanban.html", {"request": request})
+
+
 @app.get("/historicals", response_class=HTMLResponse)
 def historicals(request: Request, q: str = Query("")):
     query = (q or "").strip()
@@ -3569,11 +3624,12 @@ def list_project_tasks(
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
             ensure_project_tasks_storage(cur)
+            ensure_project_color_storage(cur)
             cur.execute(
                 f"""
                 SELECT t.id, t.project_id, p.project_code, p.project_name,
                        t.type, t.owner_role, t.planned_date, t.status, t.title, t.description,
-                       t.notes_log, t.created_at, t.updated_at
+                       t.notes_log, t.created_at, t.updated_at, p.color
                 FROM project_tasks t
                 JOIN projects p ON p.id = t.project_id
                 WHERE {where_sql}
@@ -3598,9 +3654,115 @@ def list_project_tasks(
             "notes_log": normalize_task_notes_log(r[10]),
             "created_at": r[11].isoformat() if r[11] else None,
             "updated_at": r[12].isoformat() if r[12] else None,
+            "project_color": resolve_project_color(r[1], r[13]),
         }
         for r in rows
     ]
+
+
+@app.get("/api/kanban/tasks")
+def list_kanban_tasks(done_days: int = Query(default=KANBAN_DONE_DAYS, ge=0, le=365)):
+    today = date.today()
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_tasks_storage(cur)
+            ensure_project_color_storage(cur)
+            cur.execute(
+                """
+                SELECT t.id, t.project_id, p.project_code, p.project_name, p.color,
+                       t.type, t.owner_role, t.planned_date, t.status, t.title, t.description,
+                       t.notes_log, t.updated_at
+                FROM project_tasks t
+                JOIN projects p ON p.id = t.project_id
+                WHERE COALESCE(p.is_historical, FALSE) = FALSE
+                  AND (t.status <> 'CLOSED' OR t.updated_at >= now() - make_interval(days => %s))
+                ORDER BY t.planned_date ASC NULLS LAST, t.id ASC
+                """,
+                (done_days,),
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "id": r[0],
+            "project_id": r[1],
+            "project_code": r[2],
+            "project_name": r[3],
+            "project_color": resolve_project_color(r[1], r[4]),
+            "type": r[5],
+            "owner_role": r[6],
+            "planned_date": to_date_iso(r[7]),
+            "status": r[8],
+            "title": r[9],
+            "description": r[10],
+            "notes": latest_task_notes(r[11]),
+            "notes_log": normalize_task_notes_log(r[11]),
+            "updated_at": r[12].isoformat() if r[12] else None,
+            "column": kanban_column(r[8], r[7], today),
+            "days_overdue": kanban_days_overdue(r[8], r[7], today),
+        }
+        for r in rows
+    ]
+
+
+@app.patch("/project-tasks/{task_id}/kanban")
+def move_project_task_kanban(task_id: int, payload: ProjectTaskKanbanMoveIn):
+    """Mueve una tarjeta: cambia estado y/o fecha prevista (planned_date null la deja sin fecha)."""
+    sets: list[str] = []
+    params: list[object] = []
+    if payload.status is not None:
+        status = payload.status.strip().upper()
+        if status not in TASK_STATUSES:
+            raise HTTPException(status_code=400, detail="Invalid status")
+        sets.append("status = %s")
+        params.append(status)
+    if "planned_date" in payload.model_fields_set:
+        planned_date = None
+        if payload.planned_date:
+            try:
+                planned_date = date.fromisoformat(payload.planned_date)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid planned_date")
+        sets.append("planned_date = %s")
+        params.append(planned_date)
+    if not sets:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_tasks_storage(cur)
+            cur.execute(
+                f"""
+                UPDATE project_tasks t
+                SET {", ".join(sets)},
+                    updated_at = now()
+                FROM projects p
+                WHERE t.id = %s
+                  AND p.id = t.project_id
+                  AND COALESCE(p.is_historical, FALSE) = FALSE
+                RETURNING t.id
+                """,
+                (*params, task_id),
+            )
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Task not found")
+        conn.commit()
+    return {"status": "ok"}
+
+
+@app.put("/api/projects/{project_id}/color")
+def update_project_color(project_id: int, payload: ProjectColorIn):
+    raw = (payload.color or "").strip()
+    color = normalize_project_color(raw)
+    if raw and not color:
+        raise HTTPException(status_code=400, detail="Invalid color")
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_color_storage(cur)
+            cur.execute("UPDATE projects SET color = %s WHERE id = %s RETURNING id", (color, project_id))
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Project not found")
+        conn.commit()
+    return {"status": "ok", "color": resolve_project_color(project_id, color)}
 
 
 @app.get("/project-tasks/open-projects")
