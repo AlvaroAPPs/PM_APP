@@ -164,9 +164,12 @@
               <label class="form-label" for="editDescription">Descripción</label>
               <textarea id="editDescription" class="form-control" rows="4"></textarea>
             </div>
-            <div id="editSubtasksBlock" class="col-12 d-none">
-              <label class="form-label">Tareas (check list)</label>
-              <div id="editSubtasks" class="d-flex flex-column gap-1"></div>
+            <div class="col-12">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="form-label mb-0">Tareas (check list)</label>
+                <button id="editAddSubtask" type="button" class="btn btn-sm btn-outline-secondary">Añadir fila</button>
+              </div>
+              <div id="editSubtasks" class="d-flex flex-column gap-2"></div>
             </div>
             <div id="editNotesBlock" class="col-12 d-none">
               <label class="form-label">Historial de notas / log</label>
@@ -215,6 +218,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="/static/kanban.js?v=6"></script>
+  <script src="/static/kanban.js?v=7"></script>
 </body>
 </html>

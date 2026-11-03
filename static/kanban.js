@@ -632,23 +632,54 @@ async function moveTask(task, targetColumn) {
   if (await patchTask(task, changes)) renderBoard();
 }
 
-function renderEditSubtasks(subtasks) {
-  const container = $("editSubtasks");
-  container.innerHTML = "";
-  $("editSubtasksBlock").classList.toggle("d-none", !subtasks.length);
-  subtasks.forEach((row, idx) => {
-    const label = document.createElement("label");
-    label.className = "d-flex align-items-center gap-2";
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.className = "form-check-input mt-0";
-    input.checked = row.done;
-    input.addEventListener("change", () => {
-      row.done = input.checked;
-    });
-    label.append(input, document.createTextNode(row.text));
-    container.appendChild(label);
+function addEditSubtaskRow(text = "", done = false, focus = false) {
+  const row = document.createElement("div");
+  row.className = "input-group input-group-sm";
+
+  const checkWrapper = document.createElement("span");
+  checkWrapper.className = "input-group-text";
+  const check = document.createElement("input");
+  check.className = "form-check-input mt-0 subtaskDone";
+  check.type = "checkbox";
+  check.checked = !!done;
+  checkWrapper.appendChild(check);
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "form-control subtaskText";
+  input.placeholder = "Escribe la subtarea...";
+  input.value = String(text || "");
+  // Enter crea la fila siguiente para ir apuntando checks seguidos.
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    addEditSubtaskRow("", false, true);
   });
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "btn btn-outline-danger";
+  removeBtn.textContent = "Quitar";
+  removeBtn.addEventListener("click", () => row.remove());
+
+  row.append(checkWrapper, input, removeBtn);
+  $("editSubtasks").appendChild(row);
+  if (focus) input.focus();
+}
+
+function renderEditSubtasks(subtasks) {
+  $("editSubtasks").innerHTML = "";
+  subtasks.forEach((row) => addEditSubtaskRow(row.text, row.done));
+  if (!subtasks.length) addEditSubtaskRow();
+}
+
+function readEditSubtasks() {
+  return [...$("editSubtasks").querySelectorAll(".input-group")]
+    .map((row) => ({
+      done: row.querySelector(".subtaskDone").checked,
+      text: (row.querySelector(".subtaskText").value || "").trim(),
+    }))
+    .filter((row) => row.text);
 }
 
 function renderEditNotes(notesLog) {
@@ -672,7 +703,6 @@ function renderEditNotes(notesLog) {
 function openEditModal(task) {
   selectedTask = task;
   const { description, subtasks } = splitDescriptionAndSubtasks(task.description);
-  selectedTask.editSubtasks = subtasks;
   $("editProject").textContent = `${task.project_code || "—"} · ${task.project_name || ""}`;
   $("editProjectColor").value = task.project_color;
   $("editTitle").value = task.title || "";
@@ -697,7 +727,7 @@ async function saveEdit() {
     owner_role: $("editOwner").value,
     planned_date: $("editDate").value || null,
     status: $("editStatus").value,
-    description: composeDescriptionWithSubtasks($("editDescription").value, selectedTask.editSubtasks),
+    description: composeDescriptionWithSubtasks($("editDescription").value, readEditSubtasks()),
   };
   if (!payload.title || !payload.description) {
     $("editError").textContent = "Título y descripción son obligatorios.";
@@ -849,6 +879,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("editSave").addEventListener("click", saveEdit);
   $("editCloseTask").addEventListener("click", closeSelectedTask);
   $("editDeleteTask").addEventListener("click", deleteSelectedTask);
+  $("editAddSubtask").addEventListener("click", () => addEditSubtaskRow("", false, true));
   $("editProjectColor").addEventListener("change", saveProjectColor);
 
   syncFilterInputs();
