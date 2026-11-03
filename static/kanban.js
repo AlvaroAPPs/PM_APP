@@ -738,6 +738,26 @@ async function closeSelectedTask() {
   }
 }
 
+async function deleteSelectedTask() {
+  if (!selectedTask) return;
+  const label = selectedTask.type === "PP" ? "este PP" : "esta tarea";
+  const ok = window.confirm(
+    `¿Eliminar ${label} definitivamente?\n\n${selectedTask.title || ""}\n\nSe borrarán también sus notas y subtareas y no se puede deshacer. ` +
+      "Si solo está terminada, usa «Marcar como hecha»."
+  );
+  if (!ok) return;
+  const res = await fetch(`${API}/project-tasks/${selectedTask.id}`, { method: "DELETE" });
+  if (!res.ok) {
+    $("editError").textContent = "No se pudo eliminar.";
+    return;
+  }
+  const deletedId = selectedTask.id;
+  tasks = tasks.filter((t) => t.id !== deletedId);
+  selectedTask = null;
+  editModal.hide();
+  render();
+}
+
 async function saveProjectColor() {
   if (!selectedTask) return;
   const color = $("editProjectColor").value;
@@ -828,6 +848,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   $("editSave").addEventListener("click", saveEdit);
   $("editCloseTask").addEventListener("click", closeSelectedTask);
+  $("editDeleteTask").addEventListener("click", deleteSelectedTask);
   $("editProjectColor").addEventListener("change", saveProjectColor);
 
   syncFilterInputs();

@@ -3867,6 +3867,29 @@ def update_project_task(task_id: int, payload: ProjectTaskUpdateIn):
     return {"status": "ok"}
 
 
+@app.delete("/project-tasks/{task_id}")
+def delete_project_task(task_id: int):
+    with psycopg.connect(DB_DSN) as conn:
+        with conn.cursor() as cur:
+            ensure_project_tasks_storage(cur)
+            cur.execute(
+                """
+                DELETE FROM project_tasks t
+                USING projects p
+                WHERE t.id = %s
+                  AND p.id = t.project_id
+                  AND COALESCE(p.is_historical, FALSE) = FALSE
+                RETURNING t.id
+                """,
+                (task_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Task not found")
+        conn.commit()
+    return {"status": "ok"}
+
+
 @app.post("/project-tasks/{task_id}/notes")
 def add_project_task_note(task_id: int, payload: ProjectTaskNoteIn):
     notes = (payload.notes or "").strip()
