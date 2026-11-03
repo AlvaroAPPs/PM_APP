@@ -13,7 +13,11 @@ const COLUMNS = [
 const COLUMN_STATUS = { TODO: "OPEN", TODAY: "OPEN", IN_PROGRESS: "IN_PROGRESS", WAITING: "PAUSED", DONE: "CLOSED" };
 const OWNER_LABELS = { PM: "PM", CONSULTORIA: "Consultoría", TECH: "Tech", COMERCIAL: "Comercial", CLIENTE: "Cliente" };
 
+const LAST_PROJECT_KEY = "kanban.lastProject.v1";
+
 let tasks = [];
+let allProjects = [];
+let quickAdd = null; // { column, projectId, type, owner } mientras el formulario rápido está abierto
 let filters = loadFilters();
 let selectedTask = null;
 let editModal = null;
@@ -267,6 +271,7 @@ function renderBoard() {
 
     const body = document.createElement("div");
     body.className = "kcol-body";
+    if (column.key !== "DONE") body.appendChild(buildQuickAdd(column.key));
     if (!cards.length) {
       const empty = document.createElement("div");
       empty.className = "empty-col";
@@ -297,6 +302,181 @@ function renderBoard() {
 function render() {
   renderProjectChips();
   renderBoard();
+}
+
+function loadLastProjectId() {
+  try {
+    return Number(localStorage.getItem(LAST_PROJECT_KEY) || 0);
+  } catch {
+    return 0;
+  }
+}
+
+function defaultQuickAddProjectId() {
+  // Con un solo proyecto visible en el filtro, se crea en ese; si no, en el último usado.
+  const visible = projectsFromTasks().filter((p) => !filters.hiddenProjects.includes(p.id));
+  if (visible.length === 1) return visible[0].id;
+  const last = loadLastProjectId();
+  if (allProjects.some((p) => p.id === last)) return last;
+  return visible[0]?.id || 0;
+}
+
+function openQuickAdd(columnKey) {
+  quickAdd = {
+    column: columnKey,
+    projectId: quickAdd?.projectId || defaultQuickAddProjectId(),
+    type: quickAdd?.type || "TASK",
+    owner: quickAdd?.owner || "PM",
+    focus: true,
+  };
+  renderBoard();
+}
+
+function buildQuickAdd(columnKey) {
+  if (!quickAdd || quickAdd.column !== columnKey) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "quick-add-btn";
+    btn.innerHTML = '<i class="bi bi-plus-lg"></i> Añadir tarjeta';
+    btn.addEventListener("click", () => openQuickAdd(columnKey));
+    return btn;
+  }
+
+  const form = document.createElement("form");
+  form.className = "quick-add-form";
+
+  const title = document.createElement("input");
+  title.className = "form-control form-control-sm";
+  title.placeholder = "Título y Enter";
+  title.required = true;
+
+  const project = document.createElement("input");
+  project.className = "form-control form-control-sm";
+  project.placeholder = "Proyecto (código o nombre)";
+  project.setAttribute("list", "quickAddProjects");
+  project.value = projectLabel(allProjects.find((p) => p.id === quickAdd.projectId));
+  project.addEventListener("focus", () => project.select());
+  project.addEventListener("input", () => {
+    const match = allProjects.find((p) => projectLabel(p) === project.value);
+    quickAdd.projectId = match ? match.id : 0;
+  });
+
+  const row = document.createElement("div");
+  row.className = "d-flex gap-1";
+  const type = document.createElement("select");
+  type.className = "form-select form-select-sm";
+  type.innerHTML = '<option value="TASK">Tarea</option><option value="PP">PP</option>';
+  type.value = quickAdd.type;
+  type.addEventListener("change", () => {
+    quickAdd.type = type.value;
+  });
+  const owner = document.createElement("select");
+  owner.className = "form-select form-select-sm";
+  owner.innerHTML = Object.entries(OWNER_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
+  owner.value = quickAdd.owner;
+  owner.addEventListener("change", () => {
+    quickAdd.owner = owner.value;
+  });
+  row.append(type, owner);
+
+  const actions = document.createElement("div");
+  actions.className = "d-flex gap-1 align-items-center";
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "btn btn-sm btn-dark";
+  submit.textContent = "Añadir";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "btn btn-sm btn-link text-secondary";
+  cancel.textContent = "Cancelar";
+  cancel.addEventListener("click", closeQuickAdd);
+  const error = document.createElement("span");
+  error.className = "text-danger small";
+  actions.append(submit, cancel, error);
+
+  form.append(title, project, row, actions);
+  form.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeQuickAdd();
+  });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const text = title.value.trim();
+    if (!text) return;
+    if (!quickAdd.projectId) {
+      error.textContent = "Elige un proyecto de la lista.";
+      return;
+    }
+    submit.disabled = true;
+    error.textContent = "";
+    if (await createQuickTask(columnKey, text)) {
+      quickAdd.focus = true;
+      await loadTasks();
+    } else {
+      submit.disabled = false;
+      error.textContent = "No se pudo crear.";
+    }
+  });
+  if (quickAdd.focus) {
+    // Solo al abrir o tras crear: otros repintados (p. ej. al escribir en Buscar) no deben robar el foco.
+    quickAdd.focus = false;
+    setTimeout(() => title.focus(), 0);
+  }
+  return form;
+}
+
+function closeQuickAdd() {
+  quickAdd = null;
+  renderBoard();
+}
+
+async function createQuickTask(columnKey, title) {
+  const payload = {
+    project_id: quickAdd.projectId,
+    type: quickAdd.type,
+    owner_role: quickAdd.owner,
+    status: COLUMN_STATUS[columnKey],
+    planned_date: columnKey === "TODAY" || columnKey === "IN_PROGRESS" ? todayIso() : null,
+    title,
+    description: title,
+  };
+  const res = await fetch(`${API}/project-tasks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) return false;
+  try {
+    localStorage.setItem(LAST_PROJECT_KEY, String(quickAdd.projectId));
+  } catch {
+    /* sin almacenamiento */
+  }
+  // Que la tarjeta nueva no quede oculta por el filtro de proyectos.
+  if (filters.hiddenProjects.includes(quickAdd.projectId)) {
+    filters.hiddenProjects = filters.hiddenProjects.filter((id) => id !== quickAdd.projectId);
+    saveFilters();
+  }
+  return true;
+}
+
+function projectLabel(project) {
+  return project ? `${project.project_code} · ${project.project_name || ""}` : "";
+}
+
+function renderProjectDatalist() {
+  // Primero los proyectos que ya tienen tarjetas en el tablero.
+  const withTasks = new Set(tasks.map((t) => t.project_id));
+  const ordered = [...allProjects].sort((a, b) => withTasks.has(b.id) - withTasks.has(a.id));
+  $("quickAddProjects").innerHTML = "";
+  for (const p of ordered) {
+    const opt = document.createElement("option");
+    opt.value = projectLabel(p);
+    $("quickAddProjects").appendChild(opt);
+  }
+}
+
+async function loadAllProjects() {
+  const res = await fetch(`${API}/projects/non-historical?limit=5000`);
+  allProjects = res.ok ? await res.json() : [];
 }
 
 function askRescheduleDate(task) {
@@ -494,6 +674,7 @@ async function loadTasks() {
     return;
   }
   tasks = await res.json();
+  renderProjectDatalist();
   render();
 }
 
@@ -562,5 +743,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   syncFilterInputs();
   bindFilters();
+  await loadAllProjects();
   await loadTasks();
 });
