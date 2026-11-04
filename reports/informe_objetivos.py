@@ -15,8 +15,10 @@ Reglas (acordadas con jefatura de proyectos):
   ido a un mes posterior, o ha desaparecido): el proyecto se queda tambien en
   su columna antigua marcado en NARANJA si se ha movido al mes siguiente, o en
   ROJO si se ha movido mas de un mes, se ha quedado sin fecha o se ha parado.
-  Solo la PRIMERA vez que se replanifica ese hito; si ya se replanifico en un
-  informe anterior, simplemente aparece en su nueva columna sin marcar.
+  Se mira a nivel de informe: solo se marca si el mes antiguo es una de las
+  columnas de este informe. Si el cambio fue en un mes que no se ve (p. ej. la
+  validacion pasa de enero a febrero con columnas oct-dic), cuando ese mes
+  entre en la tabla el proyecto sale sin marcar en su nueva columna.
 - Meses ya pasados: lo que no esta conseguido sale en rojo (retrasado).
 - Hitos retrasados: los proyectos de 100 h o mas marcados en naranja o rojo,
   con un motivo que se escribe en la app (con el ultimo comentario como pista).
@@ -31,8 +33,7 @@ import psycopg
 
 from reports.informe_direccion import DEFAULT_PROJECT_TYPES, DEFAULT_TEAMS, filas_corte, list_cortes
 
-# Cortes de direccion anteriores que se miran para saber si un hito ya se
-# replanifico (los mismos que viajan al exportar)
+# Cortes de direccion anteriores que viajan al exportar
 HISTORICO_CORTES = 12
 
 HITOS = (
@@ -189,24 +190,6 @@ def fetch_rows(cur: psycopg.Cursor, corte: dict, equipos: list[str], tipos: list
     return rows
 
 
-def replanificados_previos(history: list[dict[str, dict]]) -> set[tuple[str, str]]:
-    """(codigo, hito) que ya se marcaron como replanificados en algun informe
-    anterior: entre dos cortes DIRECCION consecutivos la fecha se fue a un mes
-    posterior (o se quedo sin fecha)."""
-    seen: set[tuple[str, str]] = set()
-    for older, newer in zip(history, history[1:]):
-        for code, old in older.items():
-            new = newer.get(code)
-            for key, date_col, _ok, _title in HITOS:
-                old_month = _month(old.get(date_col))
-                if old_month is None:
-                    continue
-                new_month = _month(new.get(date_col)) if new else None
-                if new is not None and _is_later(new_month, old_month):
-                    seen.add((code, key))
-    return seen
-
-
 def meses_tabla(fecha_corte: date, fechas_direccion_anteriores: list[date]) -> list[tuple[int, int]]:
     """Los tres meses de las tablas. Normalmente anterior, actual y siguiente;
     pasan a actual, siguiente y el de despues si en este mes ya se presento un
@@ -221,7 +204,6 @@ def calcular_objetivos(
     fecha_corte: date,
     actual: dict[str, dict],
     anterior: dict[str, dict] | None,
-    ya_replanificados: set[tuple[str, str]],
     nombres: dict[str, str],
     meses: list[tuple[int, int]] | None = None,
 ) -> dict:
@@ -256,7 +238,6 @@ def calcular_objetivos(
                 and old_month in meses
                 and old_month != month
                 and _is_later(month, old_month)
-                and (code, key) not in ya_replanificados
                 and not row.get(ok_col)
             )
             stopped_now = _stopped(row) and not _stopped(previous) and not row.get(ok_col)
@@ -315,19 +296,21 @@ def datos_objetivos(cur: psycopg.Cursor, corte: dict) -> dict:
     if actual is None:
         return {"aviso": "El corte no tiene detalle de proyectos.", "objetivos": {}, "retrasados": {}}
 
-    # Historico para saber si un hito ya se replanifico: los cortes DIRECCION
-    # anteriores con detalle (como mucho los que viajan al exportar)
+    # Se compara con el ultimo corte DIRECCION anterior que tenga detalle
     anteriores = [
         c for c in list_cortes(cur, "DIRECCION")
         if (c["fecha_corte"], c["id"]) < (corte["fecha_corte"], corte["id"])
-    ][-HISTORICO_CORTES:]
-    history = [rows for rows in (fetch_rows(cur, c, equipos, tipos) for c in anteriores) if rows is not None]
-    anterior = history[-1] if history else None
+    ]
+    anterior = None
+    for c in reversed(anteriores):
+        anterior = fetch_rows(cur, c, equipos, tipos)
+        if anterior is not None:
+            break
 
     sin_ok = not any(row.get("kickoff_ok") is not None for row in actual.values())
     fechas_direccion = [c["fecha_corte"] for c in list_cortes(cur, "DIRECCION")
                         if (c["fecha_corte"], c["id"]) < (corte["fecha_corte"], corte["id"])]
-    objetivos = calcular_objetivos(corte["fecha_corte"], actual, anterior, replanificados_previos(history),
+    objetivos = calcular_objetivos(corte["fecha_corte"], actual, anterior,
                                    fetch_nombres(cur), meses_tabla(corte["fecha_corte"], fechas_direccion))
     avisos = []
     if sin_ok:

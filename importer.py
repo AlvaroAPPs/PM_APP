@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numbers
 import re
 import unicodedata
 from datetime import date, datetime
@@ -87,7 +88,12 @@ def _to_bool(v) -> Optional[bool]:
         return None
     if isinstance(v, bool):
         return v
+    # Excel suele traer las marcas como 1.0 / 0.0
+    if isinstance(v, numbers.Number):
+        return v != 0
     s = str(v).strip().lower()
+    if s in ("1.0", "0.0"):
+        return s == "1.0"
     if s in ("true", "verdadero", "1", "yes", "y", "si", "sí"):
         return True
     if s in ("false", "falso", "0", "no", "n"):

@@ -21,7 +21,7 @@ def celda(result, ym, tramo):
 
 class ObjetivosTests(unittest.TestCase):
     def test_months_are_previous_current_next(self):
-        result = ob.calcular_objetivos(CORTE, {}, None, set(), {})
+        result = ob.calcular_objetivos(CORTE, {}, None, {})
         self.assertEqual(result["D"]["meses"], [SEP, OCT, NOV])
 
     def test_months_shift_after_15th_when_month_already_reported(self):
@@ -43,7 +43,7 @@ class ObjetivosTests(unittest.TestCase):
             "now": row("now", 150, date(2026, 10, 20)),             # mes actual pendiente
             "small": row("small", 20, date(2026, 10, 1)),
         }
-        result = ob.calcular_objetivos(CORTE, actual, actual, set(), {})
+        result = ob.calcular_objetivos(CORTE, actual, actual, {})
         self.assertEqual(celda(result, SEP, "m"), {"ok": ob.ESTADO_OK, "late": ob.ESTADO_ROJO})
         self.assertEqual(celda(result, OCT, "m"), {"now": ob.ESTADO_PENDIENTE})
         self.assertEqual(list(celda(result, OCT, "s")), ["small"])
@@ -59,28 +59,28 @@ class ObjetivosTests(unittest.TestCase):
             "b": row("b", 150, date(2026, 12, 1)),                  # +3 meses -> rojo
             "c": row("c", 150, date(2026, 10, 10), phase="Stopped"),  # parado -> rojo
         }
-        result = ob.calcular_objetivos(CORTE, actual, anterior, set(), {})
+        result = ob.calcular_objetivos(CORTE, actual, anterior, {})
         self.assertEqual(celda(result, SEP, "m"), {"a": ob.ESTADO_NARANJA, "b": ob.ESTADO_ROJO})
         self.assertEqual(celda(result, OCT, "m"), {"a": ob.ESTADO_PENDIENTE, "c": ob.ESTADO_ROJO})
 
-    def test_second_replanning_is_not_marked(self):
+    def test_replanning_marked_again_in_a_later_report(self):
+        # Ya se replanifico antes: si vuelve a moverse desde un mes visible, se marca
         anterior = {"a": row("a", 150, date(2026, 9, 10))}
         actual = {"a": row("a", 150, date(2026, 10, 15))}
-        result = ob.calcular_objetivos(CORTE, actual, anterior, {("a", "D")}, {})
-        self.assertEqual(celda(result, SEP, "m"), {})
-        self.assertEqual(celda(result, OCT, "m"), {"a": ob.ESTADO_PENDIENTE})
+        result = ob.calcular_objetivos(CORTE, actual, anterior, {})
+        self.assertEqual(celda(result, SEP, "m"), {"a": ob.ESTADO_NARANJA})
 
-    def test_previous_replannings_from_history(self):
-        history = [
-            {"a": row("a", 150, date(2026, 8, 10)), "b": row("b", 150, date(2026, 8, 10))},
-            {"a": row("a", 150, date(2026, 9, 10)), "b": row("b", 150, date(2026, 7, 10))},
-        ]
-        self.assertEqual(ob.replanificados_previos(history), {("a", "D")})
+    def test_replanning_from_hidden_month_is_not_marked(self):
+        # Pasa de enero a febrero con columnas sep-nov: no se ve, no se marca
+        anterior = {"a": row("a", 150, date(2027, 1, 10))}
+        actual = {"a": row("a", 150, date(2027, 2, 10))}
+        result = ob.calcular_objetivos(CORTE, actual, anterior, {})
+        self.assertTrue(all(not e for e in result["D"]["celdas"].values()))
 
     def test_short_name_and_delayed_list(self):
         anterior = {"a": row("a", 150, date(2026, 9, 10)), "s": row("s", 50, date(2026, 9, 10))}
         actual = {"a": row("a", 150, date(2026, 10, 15)), "s": row("s", 50, date(2026, 10, 15))}
-        result = ob.calcular_objetivos(CORTE, actual, anterior, set(), {"a": "CLIENTE A - Fase 2"})
+        result = ob.calcular_objetivos(CORTE, actual, anterior, {"a": "CLIENTE A - Fase 2"})
         delayed = ob.retrasados(result, {("a", "D"): {"motivo": "Falta firma", "heredado": True}})
         self.assertEqual([(e["code"], e["nombre"], e["motivo"]) for e in delayed["D"]],
                          [("a", "CLIENTE A - Fase 2", "Falta firma")])
