@@ -427,7 +427,7 @@ function openTaskDetail(task) {
   selectedTask = task;
   const modalTitle = $("detailModalTitle");
   if (modalTitle) modalTitle.textContent = "Detalle de tarea";
-  $("detailClose").textContent = "Close";
+  $("detailClose").textContent = "Complete";
   const parsed = splitDescriptionAndSubtasks(task.description || "");
   $("detailProject").textContent = `${task.project_code || "—"} - ${task.project_name || "—"}`;
   $("detailTitle").textContent = task.title || "—";
