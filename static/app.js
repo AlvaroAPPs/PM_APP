@@ -98,6 +98,50 @@ function setKpiColor(id, sign) {
   else if (sign < 0) el.classList.add("text-success");
 }
 
+// Hitos: colorea la fecha según su estado.
+//  - verde: hito marcado OK (aunque no tenga fecha)
+//  - rojo: fecha anterior a hoy y no OK (retrasado)
+//  - naranja: fecha a 7 días o menos de hoy y no OK
+const MILESTONE_DELAY_DIAS = 7;
+const MILESTONE_COLOR_CLASSES = ["text-success", "text-danger", "text-orange"];
+
+// Devuelve {y, m, d} en hora local para comparar solo días (sin horas).
+function parseISODateParts(value) {
+  if (isEmpty(value)) return null;
+  const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    return { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) };
+  }
+  const direct = new Date(value);
+  if (Number.isNaN(direct.getTime())) return null;
+  return { y: direct.getFullYear(), m: direct.getMonth() + 1, d: direct.getDate() };
+}
+
+function dayNumber(parts) {
+  return Math.floor(Date.UTC(parts.y, parts.m - 1, parts.d) / 86400000);
+}
+
+function milestoneColor(ok, dateValue) {
+  if (ok === true) return "text-success";
+  const parts = parseISODateParts(dateValue);
+  if (!parts) return null;
+  const now = new Date();
+  const today = { y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate() };
+  const diff = dayNumber(parts) - dayNumber(today);
+  if (diff < 0) return "text-danger";
+  if (diff <= MILESTONE_DELAY_DIAS) return "text-orange";
+  return null;
+}
+
+function setMilestone(id, ok, dateValue) {
+  const el = $(id);
+  if (!el) return;
+  setText(id, fmtDateISO(dateValue));
+  el.classList.remove(...MILESTONE_COLOR_CLASSES);
+  const color = milestoneColor(ok === true, dateValue);
+  if (color) el.classList.add(color);
+}
+
 function setActionsEnabled(isEnabled) {
   const actTasks = $("actTasks");
   const actCharts = $("actCharts");
@@ -167,6 +211,17 @@ function resetUI() {
     "notesCount",
   ];
   idsToClear.forEach((id) => setText(id, "—"));
+  [
+    "date_kickoff",
+    "date_design",
+    "date_validation",
+    "date_golive",
+    "date_reception",
+    "date_end",
+  ].forEach((id) => {
+    const el = $(id);
+    if (el) el.classList.remove(...MILESTONE_COLOR_CLASSES);
+  });
   updateTaskCounterLinks();
   setKpiColor("kpi_desviacion_pct", 0);
   setValue("phase_design", "");
@@ -289,12 +344,12 @@ async function loadProject(code) {
 
   // Dates row
   show("datesRow");
-  setText("date_kickoff", fmtDateISO(l.date_kickoff));
-  setText("date_design", fmtDateISO(l.date_design));
-  setText("date_validation", fmtDateISO(l.date_validation));
-  setText("date_golive", fmtDateISO(l.date_golive));
-  setText("date_reception", fmtDateISO(l.date_reception));
-  setText("date_end", fmtDateISO(l.date_end));
+  setMilestone("date_kickoff", l.kickoff_ok, l.date_kickoff);
+  setMilestone("date_design", l.design_ok, l.date_design);
+  setMilestone("date_validation", l.validation_ok, l.date_validation);
+  setMilestone("date_golive", l.golive_ok, l.date_golive);
+  setMilestone("date_reception", l.reception_ok, l.date_reception);
+  setMilestone("date_end", l.end_ok, l.date_end);
 
   // activar acciones cuando ya hay proyecto cargado
   setActionsEnabled(true);
