@@ -121,8 +121,18 @@ function dayNumber(parts) {
   return Math.floor(Date.UTC(parts.y, parts.m - 1, parts.d) / 86400000);
 }
 
+// Acepta booleanos y también los valores que a veces llegan como texto/número.
+function isMilestoneOk(value) {
+  if (value === true || value === 1) return true;
+  if (typeof value === "string") {
+    const s = value.trim().toLowerCase();
+    return s === "true" || s === "1" || s === "si" || s === "sí";
+  }
+  return false;
+}
+
 function milestoneColor(ok, dateValue) {
-  if (ok === true) return "text-success";
+  if (isMilestoneOk(ok)) return "text-success";
   const parts = parseISODateParts(dateValue);
   if (!parts) return null;
   const now = new Date();
@@ -138,7 +148,7 @@ function setMilestone(id, ok, dateValue) {
   if (!el) return;
   setText(id, fmtDateISO(dateValue));
   el.classList.remove(...MILESTONE_COLOR_CLASSES);
-  const color = milestoneColor(ok === true, dateValue);
+  const color = milestoneColor(ok, dateValue);
   if (color) el.classList.add(color);
 }
 
